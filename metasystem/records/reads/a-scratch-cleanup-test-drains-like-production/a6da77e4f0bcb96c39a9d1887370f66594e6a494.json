@@ -1,0 +1,74 @@
+{
+  "canonicalRead": {
+    "engine": "dc6550be6e1e0d27e2ffb8c2530103c54eb6cc0d",
+    "findings": [
+      {
+        "change": "None needed. Optionally, name the second test repair in the goal record so the 'one test' scope matches what was built.",
+        "claim": "The goal's Next step says 'one test', but the unit also changes a second test: the symlink-escape subtest of TestHostResourceCapacityWaitsWithoutOwningSlot in host_resources_test.go. The change is test-only, keeps what the subtest proves, and is explained in its comment (a frozen export runs the package from a temporary directory, so the working directory is no longer outside the temporary roots). It neither ships a defect nor weakens what certifies the work.",
+        "class": "scope",
+        "evidence": "In host_resources_test.go around lines 186-200, the escape target changed from os.Getwd() to '/'. The refusal still fires before anything is created (host_resources.go:280-286). The subtest passed 30 times in a row plus 5 times under the race detector.",
+        "id": "code-critic-3961de32de6a44e3aef8c308:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/proofrun/host_resources_test.go"
+      },
+      {
+        "change": "None needed. Optionally, split the wiring step into its own test.",
+        "claim": "The Next step asks for the real-process wiring proof to be kept 'separate'. Here it is the last step of the same test function, not its own test. It is still bounded generously and kept apart from the fake-clock timing assertions, so this changes nothing about whether the test works or is safe.",
+        "class": "other",
+        "evidence": "In scratch_test.go around lines 383-393, the wiring step uses defaultScratchDrain after release(), and the timing is asserted before it on the fake clock.",
+        "id": "code-critic-3961de32de6a44e3aef8c308:2",
+        "material": false,
+        "relation": "goal a-scratch-cleanup-test-drains-like-production Next step: keep any real-process wiring proof separate and generously bounded",
+        "severity": "low",
+        "where": "metasystem/internal/proofrun/scratch_test.go"
+      }
+    ],
+    "id": "code-critic-3961de32de6a44e3aef8c308",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-scratch-cleanup-test-drains-like-production/metasystem/artifacts/agents/code-critic-3961de32de6a44e3aef8c308/rounds/1/return.md",
+    "subject": {
+      "commit": "a6da77e4f0bcb96c39a9d1887370f66594e6a494",
+      "diffDigest": "1e118f5a3b471bf8de9e641ba4251d7d224a568fad37d836c9e8d5d88799cb99",
+      "kind": "commit",
+      "parent": "5379b5fd83eb8564f3cc1c61137938ef2bc2309c",
+      "tree": "16648c1d3185e2663c4a56f88357c15783077eeb"
+    }
+  },
+  "readDigest": "5ff8f554ab0d84f9d1dd2cfbe603a3db3e823e7d7b954ca1d879dd884e0fbcc0",
+  "schemaVersion": 1,
+  "goal": "a-scratch-cleanup-test-drains-like-production",
+  "unit": "drain",
+  "subject": {
+    "commit": "a6da77e4f0bcb96c39a9d1887370f66594e6a494",
+    "parent": "5379b5fd83eb8564f3cc1c61137938ef2bc2309c",
+    "tree": "16648c1d3185e2663c4a56f88357c15783077eeb",
+    "patchDigest": "1e118f5a3b471bf8de9e641ba4251d7d224a568fad37d836c9e8d5d88799cb99",
+    "unitDigest": "89b68adc7c729ec6516580d3c229a616d0897d6a8309b0f222835c9c933114e0"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3961de32de6a44e3aef8c308",
+    "round": 1,
+    "closureSha256": "a1659e97ec6ef400e15924a050deaec3191774e959f98d61d068aa9caec83b16"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "16648c1d3185e2663c4a56f88357c15783077eeb",
+    "runId": "goal-read-gate-20261111t082717z-596168330237946a"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/proofrun/host_resources_test.go",
+      "readerWord": "reviewed by critic root code-critic-3961de32de6a44e3aef8c308"
+    },
+    {
+      "path": "metasystem/internal/proofrun/scratch_test.go",
+      "readerWord": "reviewed by critic root code-critic-3961de32de6a44e3aef8c308"
+    }
+  ],
+  "sha256": "e39299a9c2a12c87aec12f08c2895c62f6dd837e26d3f6006d4d2a50a0782924"
+}
