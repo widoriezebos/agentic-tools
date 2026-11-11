@@ -1,0 +1,76 @@
+{
+  "canonicalRead": {
+    "engine": "d77d7f47c0c98a5b1b3eef46224cfbbb00b160c7",
+    "findings": [
+      {
+        "change": "None in this unit. When U6 lands, U6's acceptance should remove this skip and run manual round 2.",
+        "claim": "Design D1 asks for a revise after each row, including the explicit --check rows. In this commit the manual (explicit --check) rows assert only round 1, and their second round is skipped and handed to unit U6, which fixes finding 576 (the second round cannot find the admission act). The correction brief's option (b) explicitly allows this, so it does not violate the brief. It does mean the D1 acceptance for manual checks across rounds is not yet proven.",
+        "class": "incomplete-item",
+        "evidence": "intent_unit_check_directory_test.go:146-151 runs t.Skip(\"U6 (D6): round-scoped admission act; finding 576\") on the round-2 sub-step for the manual rows only. The rows for the default declared check still run both rounds and pass.",
+        "id": "code-critic-5dae35ab613496e7c268924c:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_unit_check_directory_test.go"
+      },
+      {
+        "change": "None required.",
+        "claim": "unitRequest no longer checks with os.Stat that the worktree's installation folder exists before using it as the proof folder. A worktree without that folder would now give a folder that does not exist, where the old code fell back to the caller's folder. There is no reproduction: a goal worktree always contains the installation. resolveUnitCheck also sets the same folder without any check, so this is not new risk.",
+        "class": "other",
+        "evidence": "intent_work.go:1145-1148 (the os.Stat fallback was removed); intent_unit_check.go:58 sets Directory the same way without a check.",
+        "id": "code-critic-5dae35ab613496e7c268924c:2",
+        "material": false,
+        "relation": "code-critique Layer 2 admission: no reproduction or traced path",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_work.go"
+      }
+    ],
+    "id": "code-critic-5dae35ab613496e7c268924c",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-unit-route-runs-on-the-real-layout/metasystem/artifacts/agents/code-critic-5dae35ab613496e7c268924c/rounds/1/return.md",
+    "subject": {
+      "commit": "90d06410006a0333d7594e07bd5aa79ab8f2b03d",
+      "diffDigest": "979ff0456c0b81b829e100afb5b1a518162d1e8fcfe02cb4bdbb85820476bc3e",
+      "kind": "commit",
+      "parent": "1dab5a94ad7e595a5c281c72e0e2355cb92ab845",
+      "tree": "0ee4fbcf8c846fbab08d8d2571a8dbf77af73c4c"
+    }
+  },
+  "readDigest": "9d35b9b5eecfe0917fb63b9478b93d6a3b6f56ed6b717748c6707de3e12a8136",
+  "schemaVersion": 1,
+  "goal": "the-unit-route-runs-on-the-real-layout",
+  "unit": "U2",
+  "subject": {
+    "commit": "90d06410006a0333d7594e07bd5aa79ab8f2b03d",
+    "parent": "1dab5a94ad7e595a5c281c72e0e2355cb92ab845",
+    "tree": "0ee4fbcf8c846fbab08d8d2571a8dbf77af73c4c",
+    "patchDigest": "979ff0456c0b81b829e100afb5b1a518162d1e8fcfe02cb4bdbb85820476bc3e",
+    "unitDigest": "5562b322116e91e21645fc9c48c1126394be2b66cff05663bdc02f54fdd1f3e1"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-5dae35ab613496e7c268924c",
+    "round": 1,
+    "closureSha256": "3ca8191f05509629bb68311cb72a84ff631894f45db9ec9138ecb068251c97ee"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0ee4fbcf8c846fbab08d8d2571a8dbf77af73c4c",
+    "runId": "goal-read-gate-20261111t040149z-35ba0a5895a862ff"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1dab5a94ad7e595a5c281c72e0e2355cb92ab845",
+      "digest": "66d1e8671e3bf1793e81d6fd7764db47dc7a2f1958f686e784a062af10a1924a"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-5dae35ab613496e7c268924c"
+    }
+  ],
+  "sha256": "fdfa42cbceddd4fa09f653de77e9e501232796307cc3e73630a8442ff62ce8ef"
+}
