@@ -381,7 +381,13 @@ func TestScratchCleanupDrainIsBoundedForALiveWriter(t *testing.T) {
 		t.Fatalf("root not retained: %v", err)
 	}
 	release()
-	run.drain = scratchDrain{}
+	// The retained root is removed by the launcher's own drain once the
+	// writer has exited. Its lock is not free the instant Wait returns: on
+	// darwin under load the exited child's flock was seen held up to 45ms
+	// later (69 of 4500 single probes, 2026-11-11), so a single probe here
+	// read a live writer. This wiring proof waits on the production bound,
+	// 2s of wall time, far above that lag; the timing is asserted above.
+	run.drain = defaultScratchDrain
 	if err := run.Cleanup(nil); err != nil {
 		t.Fatalf("cleanup after the writer exited: %v", err)
 	}
