@@ -1,0 +1,128 @@
+{
+  "canonicalRead": {
+    "id": "20261110t192930-1fc0564d25-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "replies-reach-the-asking-seat-2",
+      "reviewedProjectTree": "04836492c80731815238c6e6d00714749c6379e2ee644d469ef2b0673cf9085d",
+      "diffDigest": "04836492c80731815238c6e6d00714749c6379e2ee644d469ef2b0673cf9085d"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261110t192930-1fc0564d25-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A repeat question withdraw of a recorded goal-bound question publishes to the goal every time; with the ledger unreachable it answers partial 'its goal does not show the reason yet' even when the goal already shows the marker.",
+        "evidence": "runIntentAskWithdraw repeat branch calls tellWithdrawal(before, now) first; endpoint or publish errors render untold; brief item 6d prescribes this order.",
+        "where": "metasystem/cmd/metasystem/intent_questions.go",
+        "change": "none required; optional later-list item",
+        "relation": "new; rule: a result's words state what holds"
+      },
+      {
+        "id": "20261110t192930-1fc0564d25-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The plain-withdrawn Summary and the because row carry the reason verbatim with line breaks while the marker folds it; withdrawn person-act, lane-stop and recovery questions show the reason twice (headline via ClosedBecause and the because row).",
+        "evidence": "questionView appends c.Withdrawal.Reason unfolded; second case prints ClosedBecause, default branch appends the withdrawn rows; brief test (a) and S3 prescribe both.",
+        "where": "metasystem/cmd/metasystem/intent_questions.go",
+        "change": "none required",
+        "relation": "new; rule: one fact is shown once and on one line"
+      },
+      {
+        "id": "20261110t192930-1fc0564d25-r1-s3:3",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "Machine withdrawals through channel.Withdraw (landing/plain, processchange) now keep a record, so their running waits end as withdrawn, but their goals are not told until a person repeats question withdraw.",
+        "evidence": "Withdraw delegates to WithdrawFor; only runIntentAskWithdraw calls tellWithdrawal; callers at landing/plain question.go:33, policy_question.go:356, steward.go:263, lifecycle.go:78, processchange setting.go:189, drift.go:183.",
+        "where": "metasystem/internal/channel/targeted.go",
+        "change": "none in U4; candidate for the later list"
+      },
+      {
+        "id": "20261110t192930-1fc0564d25-r1-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "WithdrawFor writes the record as a second write after closeAt; a failure of only that write leaves a closed question without record that is reported 'was not withdrawn' and never told on repeat.",
+        "evidence": "WithdrawFor: closeAt writes the closed question, then writeJSON writes the record; repeat branch finds it closed with no record and answers unchanged.",
+        "where": "metasystem/internal/channel/targeted.go",
+        "change": "none required; improbable under the threat model",
+        "relation": "new; rule: a record is written with the act it records"
+      },
+      {
+        "id": "20261110t192930-1fc0564d25-r1-s3:5",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "Production is 193 changed lines against the 136 estimate (under the 250 stop line), and run-state-audit.json changes one sink name outside the brief's file list, forced by the static gate.",
+        "evidence": "Builder report count; diff of metasystem/run-state-audit.json renames internal/channel.Withdraw to internal/channel.WithdrawFor for runIntentAskWithdraw.",
+        "where": "metasystem/run-state-audit.json",
+        "change": "none"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261110t192930-1fc0564d25-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "09a1cd91ba36da0635f74e6c86a7f9f490d2e38db7706159caa2f5eb2eefda15",
+  "schemaVersion": 1,
+  "goal": "replies-reach-the-asking-seat-2",
+  "unit": "U4",
+  "subject": {
+    "commit": "6a84c77304e4f53a737b752a7b166297d0c1021e",
+    "parent": "81e7c26dfc6872a447b5b4ea54232c5e886df7d1",
+    "tree": "f7307a85c69ef67ca5bc69ee407b1dd4d25618ce",
+    "patchDigest": "04836492c80731815238c6e6d00714749c6379e2ee644d469ef2b0673cf9085d",
+    "unitDigest": "df06b0a5cdda4ac2eb2a531b40b73633856ba35d8d9dd040d06e60f322394a21"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261110t192930-1fc0564d25-r1-s3",
+    "closureSha256": "f60068883025619d5b92a529cf6894c76d1bb357a045c1fa28759cec79b51e2c"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "f7307a85c69ef67ca5bc69ee407b1dd4d25618ce",
+    "runId": "goal-read-gate-20261110t215305z-e3b10a4e10eb0bd7"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "64d1db1d70d12889f9615337760ea9b315347181",
+      "digest": "20d8e9bfa06cacf73362ca2a933451941791602b6373e2ee189a13ba03a9d036"
+    },
+    {
+      "kind": "read",
+      "commit": "2f6a11902cc1243c93cc370e6a4f2cc661d7b70e",
+      "digest": "1e83d0bca2b46821fefd395ec3590eb6ae6ece036e724a75701903ebdd57e32f"
+    },
+    {
+      "kind": "read",
+      "commit": "81e7c26dfc6872a447b5b4ea54232c5e886df7d1",
+      "digest": "6b6c151a3b484cddd18725f274a08a43754dcee765ecd4f6b21762229792475e"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_question_replies_test.go",
+      "readerWord": "reviewed by unit read 20261110t192930-1fc0564d25-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/question_blocked_e2e_test.go",
+      "readerWord": "reviewed by unit read 20261110t192930-1fc0564d25-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/question-withdraw.json",
+      "readerWord": "reviewed by unit read 20261110t192930-1fc0564d25-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/goal/channel_authority_test.go",
+      "readerWord": "reviewed by unit read 20261110t192930-1fc0564d25-r1-s3"
+    }
+  ],
+  "sha256": "2782e325079a9e61bd1fd0755c6c83c3d7fb41a23675391eddf62ef03b49522e"
+}

@@ -1,0 +1,69 @@
+{
+  "canonicalRead": {
+    "engine": "d77d7f47c0c98a5b1b3eef46224cfbbb00b160c7",
+    "findings": [],
+    "id": "code-critic-6c622905e110e3221c8c777a",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-replies-reach-the-asking-seat-2/metasystem/artifacts/agents/code-critic-6c622905e110e3221c8c777a/rounds/1/return.md",
+    "subject": {
+      "commit": "56248b0053ffe1cdf70444765327307ced7419f6",
+      "diffDigest": "16dd5c73cfe27202c978e8f79cd19ffa6984ad5686e484dd3e74058793ade8cd",
+      "kind": "commit",
+      "parent": "5272509a4936e2c490c72764fab79cf135caf13b",
+      "tree": "0070692197b40d8f684a4a46f61b6cd0f7f41736"
+    }
+  },
+  "readDigest": "5115cf3a193b09c7a6e51f76bb93ac7090ff3ed30492c00984fa3c5581e041d6",
+  "schemaVersion": 1,
+  "goal": "replies-reach-the-asking-seat-2",
+  "unit": "withdrawal-seam",
+  "subject": {
+    "commit": "56248b0053ffe1cdf70444765327307ced7419f6",
+    "parent": "5272509a4936e2c490c72764fab79cf135caf13b",
+    "tree": "0070692197b40d8f684a4a46f61b6cd0f7f41736",
+    "patchDigest": "16dd5c73cfe27202c978e8f79cd19ffa6984ad5686e484dd3e74058793ade8cd",
+    "unitDigest": "17915d1db4f817cb09e8e9a5439793d0dfe9c0e59144cf16445148391a24d8a2"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-6c622905e110e3221c8c777a",
+    "round": 1,
+    "closureSha256": "aab1294a682750ab01172f9480d5bd0050aebc9b577ec6e750716beea23e1002"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0070692197b40d8f684a4a46f61b6cd0f7f41736",
+    "runId": "goal-read-gate-20261111t025109z-c9ece06434fa5518"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "64d1db1d70d12889f9615337760ea9b315347181",
+      "digest": "20d8e9bfa06cacf73362ca2a933451941791602b6373e2ee189a13ba03a9d036"
+    },
+    {
+      "kind": "read",
+      "commit": "2f6a11902cc1243c93cc370e6a4f2cc661d7b70e",
+      "digest": "1e83d0bca2b46821fefd395ec3590eb6ae6ece036e724a75701903ebdd57e32f"
+    },
+    {
+      "kind": "read",
+      "commit": "81e7c26dfc6872a447b5b4ea54232c5e886df7d1",
+      "digest": "6b6c151a3b484cddd18725f274a08a43754dcee765ecd4f6b21762229792475e"
+    },
+    {
+      "kind": "read",
+      "commit": "5272509a4936e2c490c72764fab79cf135caf13b",
+      "digest": "c80f550735df6417490771860a5a48fff89e697d5afe8d50d7e28d2c74073be9"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/brain_actor_seam_test.go",
+      "readerWord": "reviewed by critic root code-critic-6c622905e110e3221c8c777a"
+    }
+  ],
+  "sha256": "d9aa013fea610c63c62e14234e4973703625d72a090ad4412bd00c3aacc77a60"
+}

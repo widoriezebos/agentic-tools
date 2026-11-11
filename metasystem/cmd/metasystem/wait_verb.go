@@ -27,6 +27,7 @@ import (
 var waitCallerPID = func() int64 { return int64(os.Getppid()) }
 var waitPathStat = metarun.PathStat(os.Stat)
 var errChannelPollNotDue = errors.New("channel provider poll is not due")
+var errChannelQuestionWithdrawn = errors.New("the question was withdrawn")
 var waitOpenWorkSignature = report.OpenWorkSignature
 
 const waitRegisteredFDEnvironment = "METASYSTEM_WAIT_REGISTERED_FD"
@@ -307,6 +308,9 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		}
 		if poll != nil && observation.Pending {
 			pollErr := poll(ctx)
+			if observeErr == nil && errors.Is(pollErr, errChannelQuestionWithdrawn) {
+				return metarun.SourceObservation{ExitCode: metarun.ExitRed, Reason: pollErr.Error(), Outcome: "withdrawn", Incarnation: observation.Incarnation, LedgerTip: observation.LedgerTip}, nil
+			}
 			if !errors.Is(pollErr, errChannelPollNotDue) {
 				observation.PollAt = time.Now().UTC().Format(time.RFC3339Nano)
 				if pollErr != nil {

@@ -39,7 +39,11 @@ exit 0
       "answer": null,
       "rejected": null,
       "factsDigest": "",
-      "closedAt": "2026-09-01T10:00:00Z"
+      "closedAt": "2026-09-01T10:00:00Z",
+      "withdrawal": {
+        "reason": "decided in the review",
+        "at": "2026-09-01T10:00:00Z"
+      }
     }
   }
 }

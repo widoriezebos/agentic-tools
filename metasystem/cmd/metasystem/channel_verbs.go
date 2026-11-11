@@ -179,6 +179,7 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 // "label: consequence".
 type channelAskInput struct {
 	Act, IfNothing string
+	PersonAct      *channel.PersonAct
 	// About is what a question without a goal is about: lane or machine.
 	Goal, About, Kind, Recommendation, Wants string
 	Facts, Options                           []string
@@ -246,7 +247,7 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 	if len(in.Facts) > 0 {
 		plain = &channel.Plain{Decision: in.Facts[0], Act: in.Act, IfNothing: in.IfNothing}
 	}
-	q, existing, e := channel.AskOrFind(channel.AskRequest{Plain: plain, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
+	q, existing, e := channel.AskOrFind(channel.AskRequest{Plain: plain, PersonAct: in.PersonAct, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
 		return q, warnings, 1, e
 	}
@@ -339,6 +340,9 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 	}
 	nextPoll := time.Time{}
 	poll := func(ctx context.Context) error {
+		if current, err := channel.ReadQuestion(*root, q.ID); err == nil && current.Withdrawal != nil {
+			return errChannelQuestionWithdrawn
+		}
 		pollAt := time.Now()
 		if *pollSeconds == 0 || (!nextPoll.IsZero() && pollAt.Before(nextPoll)) {
 			return errChannelPollNotDue
@@ -368,6 +372,9 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 		waitArgs = append(waitArgs, "--timeout", (24 * time.Hour).String())
 	}
 	code := channelWaitCommand(waitArgs, poll, callerPID, stdout, stderr)
+	if code == metarun.ExitRed {
+		fmt.Fprintf(stderr, "question %s was withdrawn, so no answer will come\nrun: metasystem question show channel:%s\n", q.ID, q.ID)
+	}
 	if code == 0 {
 		answered, readErr := channel.ReadQuestion(*root, q.ID)
 		if readErr != nil || answered.Answer == nil {

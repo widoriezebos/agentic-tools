@@ -37,6 +37,9 @@ func ActCommand(q Question) string {
 	if q.UnitStop != nil {
 		return q.UnitStop.Needs
 	}
+	if q.PersonAct != nil && q.Plain != nil {
+		return q.Plain.Act
+	}
 	return LaneStopCommand(q)
 }
 
@@ -120,6 +123,26 @@ func RecordUnitStopAct(root string, act UnitStopAct) error {
 
 func ReconcileUnitStopQuestions(root string) error {
 	return withUnitStopLock(root, func() error { return reconcileUnitStopQuestions(root) })
+}
+
+// ClosePersonActs closes open questions asking for the act that started, without posting.
+func ClosePersonActs(root string, done PersonAct, at time.Time) error {
+	questions, unreadable := WalkOpenQuestions(root)
+	if len(unreadable) > 0 {
+		return fmt.Errorf("act questions could not be read: %v", unreadable)
+	}
+	matches := slices.DeleteFunc(questions, func(q Question) bool { return q.PersonAct == nil || *q.PersonAct != done })
+	if len(matches) == 0 {
+		return nil
+	}
+	return withUnitStopLock(root, func() error {
+		for _, q := range matches {
+			if err := closeAt(root, q.ID, "the act it asked for ran (metasystem "+done.Verb+")", nil, DestinationConfig{}, at); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func reconcileUnitStopQuestions(root string) error {

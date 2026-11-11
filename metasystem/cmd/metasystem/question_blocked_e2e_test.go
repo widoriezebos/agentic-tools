@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -308,5 +309,115 @@ func TestGoallessQuestionWaitReturnsTheRecordedAnswer(t *testing.T) {
 	}
 	if q, err := channel.ReadQuestion(root, id); err != nil || q.Answer == nil || q.Answer.Phase == "matched" {
 		t.Fatalf("the answer is recorded on the record: %+v %v", q, err)
+	}
+}
+
+func TestAWithdrawnQuestionEndsItsWait(t *testing.T) {
+	root, _ := blockedQuestionRoot(t)
+	owners := defaultIntentOwners()
+	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
+	// Leave delivery to the wait's own provider poll.
+	owners.processes.ask = func(root string, in channelAskInput) (channel.Question, []string, int, error) {
+		return askChannelQuestionVia(root, in, channelAskSurface{
+			identity: channelIdentity,
+			load:     func(string) (phase.Loaded, error) { return phase.Loaded{}, nil },
+			cursor:   goal.AcceptedLedgerTip,
+		})
+	}
+	run := func(args ...string) (int, intentResult) {
+		var stdout, stderr bytes.Buffer
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, root, owners)
+		var result intentResult
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+			t.Errorf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
+		}
+		return code, result
+	}
+	ask := func(question, fact string) string {
+		t.Helper()
+		code, got := run("question", "ask", "standing-validation", "--question", question, "--fact", fact,
+			"--option", "lift: land now", "--option", "keep: wait for the review")
+		id, _ := got.Data.(map[string]any)["question"].(map[string]any)["id"].(string)
+		if code != 1 || got.Outcome != intentPartial || id == "" {
+			t.Fatalf("ask without initial delivery: %d %+v", code, got)
+		}
+		if q, err := channel.ReadQuestion(root, id); err != nil || q.Thread != nil {
+			t.Fatalf("the question must wait for its poll to deliver: %+v %v", q, err)
+		}
+		return id
+	}
+	q1 := ask("Lift the review hold?", "landing refused: the review hold stands")
+	q2 := ask("Keep the batch?", "the batch is waiting for review")
+	if code, got := run("question", "withdraw", q2, "--reason", "asked twice"); code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("other withdrawal: %d %+v", code, got)
+	}
+	if q, err := channel.ReadQuestion(root, q2); err != nil || q.Withdrawal == nil {
+		t.Fatalf("the other withdrawal must stand before the wait: %+v %v", q, err)
+	}
+	type waited struct {
+		code   int
+		result intentResult
+	}
+	finished := make(chan waited, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		code, result := run("question", "wait", "channel:"+q1, "--timeout", "4m")
+		finished <- waited{code, result}
+	}()
+	// Even on a failed assertion, the bounded wait returns before its fixture is removed.
+	t.Cleanup(func() { <-done })
+	postedQuestion(t, root, q1, done)
+	select {
+	case got := <-finished:
+		t.Fatalf("another question's withdrawal ended the wait: %+v", got)
+	default:
+	}
+	testenv.Await(t, "the withdrawal to finish after the channel poll", func() bool {
+		code, got := run("question", "withdraw", q1, "--reason", "decided in the review: no lift")
+		if got.Outcome == intentInProgress && got.Summary == channel.ErrChannelBusy.Error() {
+			return false
+		}
+		if code != 0 || got.Outcome != intentConfirmed {
+			t.Fatalf("withdrawal: %d %+v", code, got)
+		}
+		return true
+	})
+	var got waited
+	testenv.Await(t, "the wait to return the withdrawal", func() bool {
+		select {
+		case got = <-finished:
+			return true
+		default:
+			return false
+		}
+	})
+	if got.code != 0 || got.result.Outcome != intentConfirmed || got.result.Summary != "channel question "+q1+" is withdrawn: decided in the review: no lift" || got.result.Next != nil || strings.Contains(got.result.Summary, "answered") {
+		t.Fatalf("withdrawn wait: %d %+v", got.code, got.result)
+	}
+	stateRoot, err := goal.ResolveStateRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := filepath.Glob(filepath.Join(metarun.WaitersDir(stateRoot), "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, path := range paths {
+		var row metarun.Waiter
+		body, err := os.ReadFile(path)
+		if err != nil || json.Unmarshal(body, &row) != nil {
+			t.Fatalf("wait record: %s %v", path, err)
+		}
+		if row.Selector.Question == q1 {
+			found = true
+			if row.Result == nil || row.Result.SourceOutcome != "withdrawn" {
+				t.Fatalf("durable wait did not end on withdrawal: %+v", row.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no durable wait for the withdrawn question")
 	}
 }

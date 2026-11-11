@@ -661,6 +661,8 @@ type intentInvocation struct {
 	// notices holds the helm and grant admission notices until the result
 	// says whether the act proceeded; nil prints them at once.
 	replySettleErr                       error
+	actCloseErr                          error
+	revisedAttempt                       int
 	notices                              *admissionNotices
 	laneException                        *lanePersonObservation
 	landingWords                         string
@@ -894,6 +896,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 	}
 	if inv.replySettleErr != nil {
 		result.Details = append(result.Details, inv.replySettleErr.Error())
+	}
+	if inv.actCloseErr != nil {
+		result.Details = append(result.Details, inv.actCloseErr.Error())
 	}
 	result = inv.observeLandingRefusal(result)
 	result = result.withClaimPreparation(inv.claimPreparation)

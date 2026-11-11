@@ -64,13 +64,28 @@ type Answer struct {
 // Decision identifies the machine state that needs a person.
 type Decision struct{ Kind, Subject, State string }
 
+// PersonAct is the act a question asks a person for; its start closes the question, a reply does not.
+type PersonAct struct {
+	Verb string `json:"verb"`
+	Goal string `json:"goal"`
+	Work string `json:"work"`
+}
+
+// Withdrawal keeps why and when a question was withdrawn, and the decision whose act withdrew it.
+type Withdrawal struct {
+	Reason   string    `json:"reason"`
+	At       time.Time `json:"at"`
+	Decision string    `json:"decision,omitempty"`
+}
+
 type Question struct {
 	// Text is the post, stored before its first attempt; every attempt posts it.
-	Text     string           `json:"text,omitempty"`
-	Plain    *Plain           `json:"plain,omitempty"`
-	Recovery *RecoverySubject `json:"recovery,omitempty"`
-	ID       string           `json:"id"`
-	Goal     string           `json:"goal"`
+	Text      string           `json:"text,omitempty"`
+	Plain     *Plain           `json:"plain,omitempty"`
+	Recovery  *RecoverySubject `json:"recovery,omitempty"`
+	PersonAct *PersonAct       `json:"personAct,omitempty"`
+	ID        string           `json:"id"`
+	Goal      string           `json:"goal"`
 	// About names what a question without a goal is about: lane or machine.
 	About   string `json:"about,omitempty"`
 	Kind    string `json:"kind"`
@@ -100,14 +115,16 @@ type Question struct {
 	Attempts       []Attempt         `json:"attempts,omitempty"`
 	// Notices are the executor's own posts in the thread; a reply to one is
 	// a reply to the question.
-	Notices  []string  `json:"notices,omitempty"`
-	ClosedAt time.Time `json:"closedAt,omitzero"`
+	Notices    []string    `json:"notices,omitempty"`
+	ClosedAt   time.Time   `json:"closedAt,omitzero"`
+	Withdrawal *Withdrawal `json:"withdrawal,omitempty"`
 }
 
 type AskRequest struct {
 	Plain                                         *Plain
 	Decision                                      *Decision
 	Recovery                                      *RecoverySubject
+	PersonAct                                     *PersonAct
 	ProcessAct                                    string
 	Context                                       context.Context
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
@@ -359,7 +376,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
+	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, PersonAct: r.PersonAct, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
@@ -404,9 +421,9 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 }
 
 // sameAsk says whether an open question carries exactly the options,
-// recommendation, wanted token and proposed budget a new request asks with.
+// recommendation, wanted token, proposed budget and act a new request asks with.
 func sameAsk(q Question, r AskRequest) bool {
-	if q.ProcessAct != r.ProcessAct || q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
+	if q.ProcessAct != r.ProcessAct || q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) || !reflect.DeepEqual(q.PersonAct, r.PersonAct) {
 		return false
 	}
 	if len(q.Options) != len(r.Options) {
@@ -478,6 +495,9 @@ func replyInstructions(q Question, codeOff bool) string {
 	}
 	if q.UnitStop != nil {
 		return "Run " + q.UnitStop.Needs + "; a successful matching act or unit closure closes this question. A text answer leaves it open."
+	}
+	if q.PersonAct != nil && q.Plain != nil {
+		return "Run " + q.Plain.Act + "; its success closes this question. A text answer leaves it open."
 	}
 	if command := LaneStopCommand(q); command != "" {
 		return q.Facts[0] + "; a later lane record closes this question."
@@ -741,7 +761,7 @@ func closeAt(repo, id, because string, p Provider, d DestinationConfig, at time.
 	if q.UnitStop != nil && len(successfulAct) > 0 {
 		q.UnitStop.ClosedBy = successfulAct[0]
 	}
-	if LaneStopCommand(q) != "" || q.Recovery != nil || q.Contract || slices.ContainsFunc(q.Facts, func(f string) bool { return strings.HasPrefix(f, "lane steward: ") }) {
+	if LaneStopCommand(q) != "" || q.Recovery != nil || q.PersonAct != nil || q.Contract || slices.ContainsFunc(q.Facts, func(f string) bool { return strings.HasPrefix(f, "lane steward: ") }) {
 		q.ClosedBecause = because
 		if q.Recovery != nil {
 			q.Facts = append(q.Facts, because)

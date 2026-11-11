@@ -185,7 +185,7 @@ func SettleReplies(ctx context.Context, root string, resolveMachine func(string)
 	if err != nil || adapter == "" {
 		return 0, err
 	}
-	machine, lineage, err := answerActor(root, resolveMachine)
+	machine, lineage, err := AnswerActor(root, resolveMachine)
 	if err != nil {
 		return 0, err
 	}
@@ -193,8 +193,8 @@ func SettleReplies(ctx context.Context, root string, resolveMachine func(string)
 	return res.Dispositions, err
 }
 
-// answerActor is the machine and lineage both channel passes record answers under.
-func answerActor(root string, resolveMachine func(string) (string, error)) (string, string, error) {
+// AnswerActor is the machine and lineage both channel passes record answers under; a withdrawal is told under it too.
+func AnswerActor(root string, resolveMachine func(string) (string, error)) (string, string, error) {
 	machine, err := resolveMachine(root)
 	if err != nil {
 		return "", "", err
@@ -222,7 +222,7 @@ func run(ctx context.Context, root string, now time.Time, resolveMachine func(st
 	if err != nil {
 		return 1, err
 	}
-	machine, lineage, err := answerActor(root, resolveMachine)
+	machine, lineage, err := AnswerActor(root, resolveMachine)
 	if err != nil {
 		return 1, err
 	}

@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	registerIdempotency("question ask", idemStateful, "the exact open question again (same goal, kind, text, options, recommendation, token and budget) is found at the channel owner and nothing is asked again; any other parameter is a new question", witnessQuestionAsk)
+	registerIdempotency("question ask", idemStateful, "the exact open question again (same goal, kind, text, options, recommendation, token, budget and act) is found at the channel owner and nothing is asked again; any other parameter is a new question", witnessQuestionAsk)
 	registerIdempotency("question retry", idemStateful, "a delivered question is not sent again", witnessQuestionRetry)
 	registerIdempotency("question withdraw", idemStateful, "a closed question is not closed, posted or written again", witnessQuestionWithdraw)
 	registerIdempotency("question answer", idemStateful, "the recorded answer again records nothing; a different answer is refused", witnessQuestionAnswer)
@@ -110,6 +110,18 @@ func witnessQuestionAsk(t *testing.T) {
 	}
 	if len(before) != 1 || !sameFiles(before, questionFiles(t, b.root())) || len(provider.posts) != 1 || b.publications() != publications {
 		t.Fatalf("a repeated ask recorded something: %d questions, %d posts, %d publications (was %d)", len(questionFiles(t, b.root())), len(provider.posts), b.publications(), publications)
+	}
+	ask = append(ask, "--act", "metasystem work build "+bedGoal+" --work U --brief brief.md")
+	if code, result := b.runJSON(owners, ask...); code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("bound ask = %d %+v", code, result)
+	}
+	before, publications = questionFiles(t, b.root()), b.publications()
+	if code, result := b.runJSON(owners, ask...); code != 0 || result.Outcome != intentUnchanged || !sameFiles(before, questionFiles(t, b.root())) || b.publications() != publications || len(provider.posts) != 2 {
+		t.Fatalf("repeated bound ask = %d %+v", code, result)
+	}
+	ask[len(ask)-1] = "metasystem work revise " + bedGoal + " --work U --brief brief.md"
+	if code, result := b.runJSON(owners, ask...); code != 0 || result.Outcome != intentConfirmed || len(questionFiles(t, b.root())) != 3 || len(provider.posts) != 3 {
+		t.Fatalf("another act = %d %+v", code, result)
 	}
 }
 

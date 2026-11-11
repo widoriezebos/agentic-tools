@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +18,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 // The one-bot bed of Decision 8: two installations (a seat and a lane) on
@@ -541,4 +545,439 @@ func TestKilledCommitterStillNoticesWhenTheOtherInstallationConfirms(t *testing.
 	if n := len(bed.inbox(t)); n != 1 {
 		t.Fatalf("inbox holds %d records", n)
 	}
+}
+
+func config(b *inboxBed, inst inboxInstallation, at time.Time) channel.PollConfig {
+	c := b.config(inst)
+	c.Now = at
+	c.HostSeats = func() ([]string, error) { return []string{b.seat.root, b.lane.root}, nil }
+	return c
+}
+func tick(t *testing.T, b *inboxBed, inst inboxInstallation, at time.Time) {
+	t.Helper()
+	c := config(b, inst, at)
+	if _, err := channel.SettleReplies(context.Background(), c, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := channel.Poll(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+}
+func unmatched(t *testing.T, b *inboxBed) []journalRow {
+	t.Helper()
+	var rows []journalRow
+	for _, row := range b.sent(t) {
+		if text, _ := row.Form["text"].(string); strings.HasPrefix(text, "I could not match") {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+func handled(t *testing.T, inst inboxInstallation, record string) bool {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(inst.root, "artifacts/agents/channel/fleet/inbox-handled.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	var paths []string
+	if err != nil || json.Unmarshal(data, &paths) != nil {
+		t.Fatalf("handled replies: %s %v", data, err)
+	}
+	return slices.Contains(paths, record)
+}
+
+func TestAReplyNoSeatTookIsToldOnce(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2026, 10, 14, 9, 13, 0, 0, time.Local)
+	waiting := func(t *testing.T, b *inboxBed) []struct{ Record string } {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(b.seat.root, "artifacts/agents/channel/fleet/notices.json"))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		var ledger struct{ Awaiting []struct{ Record string } }
+		if err != nil || json.Unmarshal(data, &ledger) != nil {
+			t.Fatalf("waiting replies: %s %v", data, err)
+		}
+		return ledger.Awaiting
+	}
+	newBed := func(t *testing.T) *inboxBed {
+		t.Helper()
+		return newInboxBed(t, inboxSetup{now: t0, conf: "channel.human.answer-code=off\n"})
+	}
+	t.Run("another seat matched it", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		q := b.ask(t, b.lane, "lane-goal", "Lane needs a decision")
+		tick(t, b, b.lane, t0.Add(-5*time.Minute))
+		q = b.question(t, b.lane, q.ID)
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.seat, t0)
+		tick(t, b, b.seat, t0.Add(time.Minute))
+		tick(t, b, b.lane, t0.Add(2*time.Minute))
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		tick(t, b, b.seat, t0.Add(40*time.Minute))
+		q = b.question(t, b.lane, q.ID)
+		if q.State != "closed" || q.Answer == nil || q.Answer.Text != "yes" || !handled(t, b.lane, b.recordFor(t, "yes").Path) || len(unmatched(t, b)) != 0 {
+			t.Fatalf("answer: %+v; notices: %+v", q, unmatched(t, b))
+		}
+	})
+	t.Run("an action request keeps it", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		stopPath := filepath.Join(plain.Dir(b.lane.root), "stops.jsonl")
+		if err := os.MkdirAll(filepath.Dir(stopPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(stopPath, []byte(`{"loop":"lane-return","subject":"lane","attempt":2,"decision":"stop","handoff":"ask lane","at":"2026-10-14T08:00:00Z","tree":"candidate","proof-attempt":"attempt"}`+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := plain.SyncPolicyQuestion(b.lane.root, func(string) (string, error) { return b.lane.machine, nil }, t0.Add(-10*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		questions, unreadable := channel.WalkOpenQuestions(b.lane.root)
+		if len(questions) != 1 || len(unreadable) != 0 || channel.LaneStopCommand(questions[0]) == "" {
+			t.Fatalf("landing request: %+v %v", questions, unreadable)
+		}
+		q := questions[0]
+		tick(t, b, b.lane, t0.Add(-5*time.Minute))
+		q = b.question(t, b.lane, q.ID)
+		snapshot := func() map[string]string {
+			files := map[string]string{}
+			if err := filepath.WalkDir(plain.Dir(b.lane.root), func(path string, entry os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !entry.IsDir() {
+					data, err := os.ReadFile(path)
+					if err != nil {
+						return err
+					}
+					files[path] = string(data)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			return files
+		}
+		before := snapshot()
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.seat, t0)
+		tick(t, b, b.lane, t0.Add(2*time.Minute))
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		q = b.question(t, b.lane, q.ID)
+		if q.State != "open" || q.Answer == nil || q.Answer.Phase != "recorded" || q.Answer.Text != "yes" || len(unmatched(t, b)) != 0 || !reflect.DeepEqual(before, snapshot()) {
+			t.Fatalf("request: %+v; notices: %+v; landing files before=%v after=%v", q, unmatched(t, b), before, snapshot())
+		}
+	})
+	t.Run("nobody matched it", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		b.ask(t, b.seat, "seat-goal", "Seat needs a decision")
+		q, err := channel.Ask(channel.AskRequest{RepoRoot: b.lane.root, About: "lane", Kind: "other", Machine: b.lane.machine, Lineage: b.lane.name, Facts: []string{"Lane needs a decision"}, Now: t0.Add(-12 * time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tick(t, b, b.seat, t0.Add(-5*time.Minute))
+		tick(t, b, b.lane, t0.Add(-5*time.Minute))
+		q = b.question(t, b.lane, q.ID)
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.seat, t0)
+		tick(t, b, b.seat, t0.Add(14*time.Minute))
+		if got := unmatched(t, b); len(got) != 0 {
+			t.Fatalf("notice before the wait: %+v", got)
+		}
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		if got := unmatched(t, b); len(got) != 1 {
+			t.Fatalf("notice was not sent in the due pass: %+v", got)
+		}
+		tick(t, b, b.seat, t0.Add(40*time.Minute))
+		got := unmatched(t, b)
+		want := "I could not match your reply 'yes' (09:13) to an open question.\nThe questions open now:\n- the landing lane, asked 09:01\n- goal seat goal, asked 09:03\nTo answer one, reply in its own thread."
+		if len(got) != 1 || got[0].Listener != "seat" || replyParent(got[0]) != q.Thread.ID || got[0].Form["text"] != want {
+			t.Fatalf("notice: %+v; want %q", got, want)
+		}
+		for _, word := range []string{"m1e", "on landing", "unmatched", "verified", "inbox", "plans/"} {
+			if strings.Contains(got[0].Form["text"].(string), word) {
+				t.Fatalf("notice contains %q", word)
+			}
+		}
+	})
+	t.Run("an older reply is never told", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		q := b.ask(t, b.lane, "lane-goal", "Lane needs a decision")
+		tick(t, b, b.lane, t0.Add(-65*time.Minute))
+		q = b.question(t, b.lane, q.ID)
+		ulid, err := goal.NewOperationULID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		opid, step := goal.Opid(ulid, "m1e", "steward"), int64(42)
+		in := &goal.ChannelInbound{Provider: "telegram", Destination: "fleet", MessageID: "old-reply", ReplyTo: &q.Thread.ID, UserID: inboxHuman, SentAt: t0.Add(-time.Hour).UTC().Format(time.RFC3339), Text: "yes", Step: &step, Outcome: "verified", Question: "unmatched", Opid: opid, ReceivedBy: "m1e", ReceivedAt: t0.Add(-time.Hour).UTC().Format(time.RFC3339)}
+		data, err := goal.RenderChannelInbound(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ep, err := project.PublicationEndpoint(b.seat.root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := goal.Publish(ep, goal.PublishRequest{Opid: opid, Machine: "m1e", Lineage: "steward", Intent: goal.Intent{Verb: "inbox"}, Message: "channel inbox telegram-old-reply", Mutate: func(string) ([]goal.Change, error) {
+			return []goal.Change{{Path: goal.ChannelInboxPath("fleet", in), Content: data}}, nil
+		}})
+		if err != nil || result.Outcome != goal.OutcomeConfirmed {
+			t.Fatalf("old reply: %+v %v", result, err)
+		}
+		q.State, q.ClosedAt = "closed", t0.Add(-time.Hour)
+		q.Answer = &channel.Answer{Text: "yes", Phase: "closed", At: t0.Add(-time.Hour), Ref: channel.MessageRef{ID: in.MessageID, ThreadID: q.Thread.ID}}
+		data, err = json.Marshal(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(b.lane.root, "artifacts/agents/channel/questions", q.ID+".json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, at := range []time.Time{t0, t0.Add(16 * time.Minute), t0.Add(2 * time.Hour)} {
+			tick(t, b, b.seat, at)
+		}
+		if len(unmatched(t, b)) != 0 || len(waiting(t, b)) != 0 || handled(t, b.lane, goal.ChannelInboxPath("fleet", in)) || handled(t, b.seat, goal.ChannelInboxPath("fleet", in)) {
+			t.Fatalf("old reply was noticed or marked: %+v %+v", unmatched(t, b), waiting(t, b))
+		}
+	})
+	t.Run("a status owner at the helm keeps its reply", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		ref, err := b.lane.provider.Post(context.Background(), b.lane.dest, "Lane status", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := channel.SaveStatusState(b.lane.root, channel.StatusState{LastPost: t0.Add(-10 * time.Minute), Ref: ref, GoalID: "lane-goal"}); err != nil {
+			t.Fatal(err)
+		}
+		b.reply(t, ref.ID, "yes", t0)
+		tick(t, b, b.seat, t0)
+		for _, minute := range []int{2, 12, 16, 22, 32, 40} {
+			at := t0.Add(time.Duration(minute) * time.Minute)
+			if minute == 16 || minute == 40 {
+				tick(t, b, b.seat, at)
+			} else if _, err := channel.SettleReplies(context.Background(), config(b, b.lane, at), nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		record := b.recordFor(t, "yes").Path
+		if got := waiting(t, b); len(got) != 1 || got[0].Record != record || handled(t, b.lane, record) || len(unmatched(t, b)) != 0 {
+			t.Fatalf("reply while owner at helm: waiting=%+v notices=%+v", got, unmatched(t, b))
+		}
+		tick(t, b, b.lane, t0.Add(41*time.Minute))
+		if !handled(t, b.lane, record) {
+			t.Fatal("status reply was not marked handled")
+		}
+		posts := b.sent(t)
+		if len(posts) != 2 || posts[1].Listener != "lane" || replyParent(posts[1]) != ref.ID {
+			t.Fatalf("status reply was not answered in its thread: %+v", posts)
+		}
+		tick(t, b, b.seat, t0.Add(56*time.Minute))
+		if len(unmatched(t, b)) != 0 || len(waiting(t, b)) != 0 {
+			t.Fatalf("handled status reply: waiting=%+v notices=%+v", waiting(t, b), unmatched(t, b))
+		}
+	})
+}
+
+// threadReadingProvider receives only replies in the threads the caller supplies.
+type threadReadingProvider struct{ channel.Provider }
+
+func (p threadReadingProvider) Receive(ctx context.Context, d channel.DestinationConfig, threads []channel.MessageRef, cursor channel.Cursor) ([]channel.Inbound, channel.Cursor, error) {
+	rows, next, err := p.Provider.Receive(ctx, d, threads, cursor)
+	return slices.DeleteFunc(rows, func(in channel.Inbound) bool {
+		return !slices.ContainsFunc(threads, func(ref channel.MessageRef) bool { return in.ThreadID == ref.ID || in.ThreadID == ref.ThreadID })
+	}), next, err
+}
+
+func TestAReplyToAClosedQuestionIsToldOnce(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2026, 10, 14, 9, 13, 0, 0, time.Local)
+	newBed := func(t *testing.T) *inboxBed {
+		t.Helper()
+		return newInboxBed(t, inboxSetup{now: t0, conf: "channel.human.answer-code=off\n"})
+	}
+	act := channel.PersonAct{Verb: "work build", Goal: "seat-goal", Work: "U"}
+	const command = "metasystem work build seat-goal --work U --brief brief.md"
+	bound := func(t *testing.T, b *inboxBed) channel.Question {
+		t.Helper()
+		q, err := channel.Ask(channel.AskRequest{RepoRoot: b.seat.root, Goal: "seat-goal", Kind: "other", Machine: b.seat.machine, Lineage: b.seat.name, Facts: []string{"Start the build?"}, Plain: &channel.Plain{Decision: "Start the build?", Act: command}, PersonAct: &act, Now: t0.Add(-10 * time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	settled := func(t *testing.T, b *inboxBed) []journalRow {
+		t.Helper()
+		var rows []journalRow
+		for _, row := range b.sent(t) {
+			if text, _ := row.Form["text"].(string); strings.HasPrefix(text, "This was settled") {
+				rows = append(rows, row)
+			}
+		}
+		return rows
+	}
+	wantSettled := func(t *testing.T, b *inboxBed, q channel.Question, text string) {
+		t.Helper()
+		rows := settled(t, b)
+		if len(rows) != 1 || rows[0].Form["text"] != text || replyParent(rows[0]) != q.Thread.ID || len(unmatched(t, b)) != 0 {
+			t.Fatalf("settled=%+v unmatched=%+v; want %q", rows, unmatched(t, b), text)
+		}
+		if !handled(t, b.seat, b.recordFor(t, "yes").Path) {
+			t.Fatal("settled reply was not marked handled")
+		}
+	}
+	t.Run("a reply leaves a bound question open", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		q := bound(t, b)
+		tick(t, b, b.seat, t0.Add(-5*time.Minute))
+		q = b.question(t, b.seat, q.ID)
+		if got := channel.ReplyInstructions(q); got != "Run "+command+"; its success closes this question. A text answer leaves it open." {
+			t.Fatal(got)
+		}
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.seat, t0)
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		q = b.question(t, b.seat, q.ID)
+		if q.State != "open" || q.Answer == nil || q.Answer.Text != "yes" || q.Answer.Phase != "recorded" || channel.AnswerSummary(q) != "replied 'yes' at 09:13; the act is still needed: "+command || !handled(t, b.seat, b.recordFor(t, "yes").Path) || len(settled(t, b)) != 0 || len(unmatched(t, b)) != 0 {
+			t.Fatalf("question=%+v answer=%+v", q, q.Answer)
+		}
+	})
+	t.Run("the act closed it before the match", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		q := bound(t, b)
+		tick(t, b, b.seat, t0.Add(-5*time.Minute))
+		q = b.question(t, b.seat, q.ID)
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.lane, t0)
+		if err := channel.ClosePersonActs(b.seat.root, act, t0.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		tick(t, b, b.seat, t0.Add(2*time.Minute))
+		wantSettled(t, b, q, "This was settled at 09:14: the act it asked for ran (metasystem work build).")
+		if got := b.question(t, b.seat, q.ID); got.Answer != nil {
+			t.Fatalf("closed reply applied: %+v", got)
+		}
+		tick(t, b, b.lane, t0.Add(16*time.Minute))
+		tick(t, b, b.seat, t0.Add(20*time.Minute))
+		wantSettled(t, b, q, "This was settled at 09:14: the act it asked for ran (metasystem work build).")
+		data, err := os.ReadFile(filepath.Join(b.lane.root, "artifacts/agents/channel/fleet/notices.json"))
+		var ledger struct{ Awaiting []any }
+		if err != nil || json.Unmarshal(data, &ledger) != nil || len(ledger.Awaiting) != 0 {
+			t.Fatalf("waiting: %s %v", data, err)
+		}
+	})
+	t.Run("a later reply to an answered question", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		q := b.ask(t, b.seat, "seat-goal", "Choose the next step")
+		tick(t, b, b.seat, t0.Add(-5*time.Minute))
+		q = b.question(t, b.seat, q.ID)
+		b.reply(t, q.Thread.ID, "yes", t0.Add(-3*time.Minute))
+		tick(t, b, b.seat, t0.Add(-2*time.Minute))
+		b.reply(t, q.Thread.ID, "no", t0)
+		tick(t, b, b.seat, t0.Add(time.Minute))
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		wantSettled(t, b, q, "This was settled at 09:11.")
+		if got := b.question(t, b.seat, q.ID); got.Answer == nil || got.Answer.Text != "yes" || !handled(t, b.seat, b.recordFor(t, "no").Path) {
+			t.Fatalf("answer changed: %+v", got)
+		}
+	})
+	t.Run("an older reply is never told", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		var records []string
+		for index, age := range []time.Duration{10 * time.Minute, 25 * time.Hour} {
+			q, err := channel.Ask(channel.AskRequest{RepoRoot: b.seat.root, Goal: "seat-goal", Kind: "other", Machine: b.seat.machine, Lineage: b.seat.name, Facts: []string{fmt.Sprintf("Decision %d", index)}, Now: t0.Add(-27 * time.Hour)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tick(t, b, b.seat, t0.Add(-26*time.Hour))
+			q = b.question(t, b.seat, q.ID)
+			if _, err := channel.Withdraw(b.seat.root, q.ID, "done", nil, channel.DestinationConfig{}, t0.Add(-age)); err != nil {
+				t.Fatal(err)
+			}
+			at := t0.Add(-30 * time.Minute)
+			if index == 1 {
+				at = t0.Add(-time.Hour)
+			}
+			ulid, err := goal.NewOperationULID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			opid, step := goal.Opid(ulid, "m1e", "steward"), int64(42+index)
+			in := &goal.ChannelInbound{Provider: "telegram", Destination: "fleet", MessageID: fmt.Sprintf("old-%d", index), ReplyTo: &q.Thread.ID, UserID: inboxHuman, SentAt: at.UTC().Format(time.RFC3339), Text: "yes", Step: &step, Outcome: "verified", Question: "unmatched", Opid: opid, ReceivedBy: "m1e", ReceivedAt: at.UTC().Format(time.RFC3339)}
+			data, err := goal.RenderChannelInbound(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ep, err := project.PublicationEndpoint(b.seat.root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := goal.ChannelInboxPath("fleet", in)
+			result, err := goal.Publish(ep, goal.PublishRequest{Opid: opid, Machine: "m1e", Lineage: "steward", Intent: goal.Intent{Verb: "inbox"}, Message: "channel inbox " + in.MessageID, Mutate: func(string) ([]goal.Change, error) { return []goal.Change{{Path: path, Content: data}}, nil }})
+			if err != nil || result.Outcome != goal.OutcomeConfirmed {
+				t.Fatalf("old reply: %+v %v", result, err)
+			}
+			records = append(records, path)
+		}
+		tick(t, b, b.seat, t0)
+		tick(t, b, b.seat, t0.Add(20*time.Minute))
+		if len(settled(t, b)) != 0 {
+			t.Fatal(settled(t, b))
+		}
+		for _, path := range records {
+			if handled(t, b.seat, path) {
+				t.Fatal("old reply marked handled", path)
+			}
+		}
+	})
+	t.Run("a provider reads only the supplied threads", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		b.seat.provider = threadReadingProvider{b.seat.provider}
+		q := bound(t, b)
+		tick(t, b, b.seat, t0.Add(-5*time.Minute))
+		q = b.question(t, b.seat, q.ID)
+		if err := channel.ClosePersonActs(b.seat.root, act, t0.Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.seat, t0.Add(time.Minute))
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		wantSettled(t, b, q, "This was settled at 09:12: the act it asked for ran (metasystem work build).")
+		if len(b.inbox(t)) != 1 {
+			t.Fatal("reply not committed")
+		}
+	})
+	t.Run("another closer's reason is not shown", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		q, err := channel.Ask(channel.AskRequest{RepoRoot: b.seat.root, About: "machine", Kind: "other", Machine: b.seat.machine, Lineage: b.seat.name, Facts: []string{"Recover the seat"}, Recovery: &channel.RecoverySubject{Seat: "m1e", Launch: "failed-seat"}, Wants: "metasystem machine revive m1e", Now: t0.Add(-10 * time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tick(t, b, b.seat, t0.Add(-5*time.Minute))
+		q = b.question(t, b.seat, q.ID)
+		if _, err := channel.Withdraw(b.seat.root, q.ID, "matching recovery launch launch-7f3", nil, channel.DestinationConfig{}, t0.Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		b.reply(t, q.Thread.ID, "yes", t0)
+		tick(t, b, b.seat, t0.Add(time.Minute))
+		tick(t, b, b.seat, t0.Add(16*time.Minute))
+		wantSettled(t, b, q, "This was settled at 09:12.")
+		for _, row := range b.sent(t) {
+			if text, _ := row.Form["text"].(string); strings.Contains(text, "launch") {
+				t.Fatal(text)
+			}
+		}
+	})
 }

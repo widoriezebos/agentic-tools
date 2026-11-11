@@ -29,6 +29,8 @@ type PollConfig struct {
 	FailurePoint                                                                   func(string) error
 	// RunAct runs a chosen option's act in the repository; nil runs the engine.
 	RunAct func(ctx context.Context, dir string, argv []string) ([]byte, error)
+	// HostSeats returns the installation roots of this host's seats; nil reads the host registry.
+	HostSeats func() ([]string, error)
 	// answerCodeOff is channel.human.answer-code=off, read once per poll.
 	answerCodeOff bool
 	// validateInbox replaces the inbox commit validation in tests.
@@ -49,6 +51,9 @@ type PollResult struct {
 }
 
 const channelPollInterval = 2 * time.Minute
+
+// One steward cycle, ten minutes by default, and five minutes for a slow tick.
+const unmatchedReplyWait = 15 * time.Minute
 
 type pollEndpointResolver func(string) (goal.Endpoint, error)
 
@@ -146,7 +151,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		threads = append(threads, MessageRef{ID: status.Ref.ID, ThreadID: statusRoot})
 	}
 	for _, q := range questions {
-		if (q.State == "open" || recentlyActed(q, c.Now)) && q.Thread != nil {
+		if (q.State == "open" || recentlyActed(q, c.Now) || recentlyClosed(q, c.Now)) && q.Thread != nil {
 			threads = append(threads, MessageRef{ID: q.Thread.ID, ThreadID: threadRoot(*q.Thread)})
 		}
 	}
@@ -166,6 +171,9 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		receiveErr = receiveToInbox(ctx, c, threads, endpoint, &result)
 	}
 	err = matchInbox(ctx, c, status, statusRoot, endpoint, resolveEndpoint, &result)
+	if receive && c.receiveConfigured() {
+		err = errors.Join(err, tellUnmatchedReplies(ctx, c, &result))
+	}
 	return result, errors.Join(publicationErrors, receiveErr, err)
 }
 
@@ -296,7 +304,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 			}
 			return settleChoice(ctx, c, q)
 		}
-		if q.UnitStop != nil || LaneStopCommand(*q) != "" {
+		if q.UnitStop != nil || q.PersonAct != nil || LaneStopCommand(*q) != "" {
 			return nil
 		}
 		a.Phase = "closed"
@@ -424,6 +432,6 @@ func unfinishedAnswer(q Question) bool {
 		return q.Answer.Phase == "matched" || q.Answer.Phase == "recorded"
 	}
 	return q.Answer != nil && q.Answer.Phase != "closed" &&
-		!((q.Answer.Phase == "recorded" || q.Answer.Phase == "receipted") && (q.UnitStop != nil || LaneStopCommand(q) != "")) &&
+		!((q.Answer.Phase == "recorded" || q.Answer.Phase == "receipted") && (q.UnitStop != nil || q.PersonAct != nil || LaneStopCommand(q) != "")) &&
 		q.ProcessAct == "" && q.Recovery == nil
 }

@@ -97,6 +97,7 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 
 // The incident writer uses the lane machine and agent lineage, with no human authority.
 // intent_planning.go uses only the machine and claim lineage to check area admission.
+// intent_questions.go tells a withdrawn question's goal with the answer actor (machine and seat lineage), with no human authority.
 // landing_plain.go uses an empty actor for area admission, so it cannot inherit a claimant's arc exemption or human authority.
 // The publication fixture supplies only a test machine and session, with no human authority.
 // Claim preparation uses brainHumanWordClassificationWithFacts, the ledger command's classification owner,
@@ -117,6 +118,7 @@ cmd/metasystem/intent_landing_flake.go:		result, err := goal.RecordFlake(goal.Ve
 cmd/metasystem/intent_landing_flake.go:		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
 cmd/metasystem/intent_landing_incident.go:	return goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()}, err
 cmd/metasystem/intent_planning.go:			_, refusal := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, candidate, snapshot, readers, goal.Actor{Machine: machine, Lineage: inv.claimLineage()})
+cmd/metasystem/intent_questions.go:	published, err := goal.Withdrawn(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Ulid: ulid, Now: now}, q.Goal, q.ID, q.Withdrawal.Reason)
 cmd/metasystem/landing_plain.go:			warnings, err := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, goalID, line.AreaSnapshot, readers, goal.Actor{})
 cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {

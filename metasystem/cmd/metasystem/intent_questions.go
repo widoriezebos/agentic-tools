@@ -10,11 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -138,6 +141,64 @@ func questionDetails(page *textui.Page, c channel.Question) {
 	}
 }
 
+// tellWithdrawal tells a question's goal why it was withdrawn, once, as an answer is told.
+func (inv *intentInvocation) tellWithdrawal(q channel.Question, now time.Time) (bool, error) {
+	if q.Withdrawal == nil || q.Goal == "" || q.ProcessAct != "" || q.Recovery != nil {
+		return false, nil
+	}
+	machine, lineage, err := phase.AnswerActor(inv.stateRoot, inv.owners.dependencies.machine)
+	if err != nil {
+		return false, err
+	}
+	ep, err := inv.owners.dependencies.endpoint(inv.layout.InstallationRoot.Path())
+	if err != nil {
+		return false, err
+	}
+	ulid, err := goal.NewOperationULID()
+	if err != nil {
+		return false, err
+	}
+	published, err := goal.Withdrawn(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Ulid: ulid, Now: now}, q.Goal, q.ID, q.Withdrawal.Reason)
+	if err != nil {
+		return false, err
+	}
+	if published.Outcome != goal.OutcomeConfirmed && !published.Unchanged {
+		return false, fmt.Errorf("the goal was not told: %s", published.Detail)
+	}
+	return published.Outcome == goal.OutcomeConfirmed && !published.Unchanged, nil
+}
+
+// withdrawalDecision finds the handled decision whose recorded act withdrew this question.
+func (inv *intentInvocation) withdrawalDecision(c channel.Question) (humanauthority.Decision, bool) {
+	if c.Withdrawal == nil || c.Withdrawal.Decision == "" {
+		return humanauthority.Decision{}, false
+	}
+	home := inv.owners.decisions.home
+	if home == nil {
+		home = board.Home
+	}
+	dir, err := home()
+	if err != nil {
+		return humanauthority.Decision{}, false
+	}
+	log, _, err := humanauthority.ReadDecisions(dir)
+	if err == nil {
+		for _, d := range log {
+			var effect struct {
+				Targets []intentTarget `json:"targets"`
+			}
+			if d.ID == c.Withdrawal.Decision && humanauthority.ActHandled(d.Outcome) && json.Unmarshal(d.Effect, &effect) == nil {
+				for _, target := range effect.Targets {
+					if target.Kind == "question" && target.ID == c.ID {
+						return d, true
+					}
+				}
+			}
+		}
+	}
+	return humanauthority.Decision{}, false
+}
+
 // questionView is one question's public state and how it is answered.
 func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	targets := []intentTarget{{Kind: "question", ID: q.publicName()}}
@@ -153,11 +214,19 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, c)}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
+		decided, found := inv.withdrawalDecision(c)
+		var withdrawn []textui.KV
+		if c.Withdrawal != nil {
+			withdrawn = append(withdrawn, textui.KV{Key: "because", Value: []textui.Span{textui.Plain(c.Withdrawal.Reason)}})
+		}
+		if found {
+			withdrawn = append(withdrawn, textui.KV{Key: "decided", Value: []textui.Span{textui.Plain("by " + decided.By + " in decision " + decided.ID)}})
+		}
 		switch {
 		case c.Answer != nil && (c.State != "closed" || c.ClosedBecause == "" || c.Contract && (c.Answer.Phase == "accepted" || c.Answer.Phase == "acted")):
 			result.Summary = "question " + c.ID + " " + channel.AnswerSummary(c)
 			headline = result.Summary
-		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil) && c.ClosedBecause != "":
+		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil || c.PersonAct != nil) && c.ClosedBecause != "":
 			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
 			headline = result.Summary
 		case c.State == "closed" && c.Contract && c.UnitStop != nil && c.UnitStop.ClosedBy != "" && !c.ClosedAt.IsZero():
@@ -166,6 +235,9 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			headline = result.Summary
 		case c.State == "closed":
 			result.Summary = fmt.Sprintf("channel question %s is withdrawn", c.ID)
+			if c.Withdrawal != nil {
+				result.Summary += ": " + c.Withdrawal.Reason
+			}
 			headline = "Channel question " + c.ID + " is withdrawn"
 		case c.Answer != nil:
 			result.Summary = fmt.Sprintf("channel question %s is answered through its channel", c.ID)
@@ -178,6 +250,10 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			result.Summary = fmt.Sprintf("channel question %s waits for the person's reply in its channel thread", c.ID)
 			result.text = []string{channel.ReplyInstructionsAt(inv.stateRoot, c)}
 			headline = "Channel question " + c.ID + " waits for the person's reply in its channel thread"
+		}
+		if found {
+			data["withdrawalDecision"] = decided.ID
+			result.next, result.nextReason = inv.publicArgv("decision", "show", decided.ID), "shows the decision, the alternative it rejected and how to undo it"
 		}
 		act := channel.ActCommand(c)
 		if channel.LaneStopCommand(c) != "" {
@@ -206,6 +282,9 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 					// The headline carries the lane's first fact; its stop record stays out once it is answered.
 					answered.Facts = nil
 				}
+				if len(withdrawn) > 0 {
+					page.Facts(withdrawn...)
+				}
 				questionDetails(page, answered)
 				return
 			}
@@ -216,6 +295,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			if len(c.Facts) > 0 {
 				rows = append(rows, textui.KV{Key: "asks", Value: []textui.Span{textui.Plain(strings.Join(c.Facts, " "))}})
 			}
+			rows = append(rows, withdrawn...)
 			page.Facts(rows...)
 			questionDetails(page, c)
 			if c.Thread != nil && c.Answer == nil && c.State != "closed" {
@@ -339,6 +419,10 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	})
 	result := ownerViewed(ownerVerbResult(ran, []intentTarget{{Kind: "question", ID: q.id}}, "channel question "+q.id+" is answered", nil))
 	if result.Outcome != intentConfirmed {
+		if current, err := inv.owners.processes.question(inv.layout.InstallationRoot.Path(), q.id); err == nil && current.State == "closed" && current.Answer == nil {
+			q.channel = current
+			return inv.questionView(q)
+		}
 		result.Outcome = intentInProgress
 		result.next, result.nextReason = inv.publicArgv("question", "wait", "channel:"+q.id), "the same wait continues; delivery or the answer is still pending"
 		if view := inv.questionView(q); view.Next != nil || len(view.next) > 0 {
@@ -435,7 +519,27 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 	if err != nil {
 		return inv.render(*inv.noChannelQuestion(targets, id, err))
 	}
+	now := inv.unitStopNow()
+	lookup := inv.owners.lookupEnv
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	decision, _ := lookup("METASYSTEM_DECISION_ID")
+	untold := func(q channel.Question, err error) int {
+		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: map[string]any{"question": q}, Details: []string{err.Error()}, Summary: "question " + id + " is withdrawn; its goal does not show the reason yet",
+			next: inv.sameCommand(), nextReason: "the same withdrawal tells the goal once the cause is fixed"})
+	}
 	if before.State == "closed" {
+		told, err := inv.tellWithdrawal(before, now)
+		if err != nil {
+			return untold(before, err)
+		}
+		if told {
+			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: map[string]any{"question": before}, Summary: "question " + id + " was already withdrawn; its goal now shows the reason",
+				view: func(page *textui.Page) {
+					page.Done(joinFacts(page, "Question "+id+" was already withdrawn", "its goal now shows the reason"))
+				}})
+		}
 		// Already closed (R-129-ui): success, and nothing is posted or
 		// written again; the channel owner's Close makes the same no-op.
 		summary := "question " + id + " is already withdrawn; nothing was changed"
@@ -448,13 +552,16 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 			view: func(page *textui.Page) { page.Done(joinFacts(page, headline...)) }})
 	}
 	provider, destination := inv.owners.processes.channelLink(inv.stateRoot)
-	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination, inv.unitStopNow())
+	q, err := channel.WithdrawFor(inv.stateRoot, id, channel.Withdrawal{Reason: reason, Decision: decision}, provider, destination, now)
 	switch {
 	case errors.Is(err, channel.ErrChannelBusy):
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: err.Error(), next: inv.sameCommand(), nextReason: "the same withdrawal runs once the poll finishes"})
 	case err != nil:
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "question " + id + " was not withdrawn: " + err.Error(),
 			next: inv.sameCommand(), nextReason: "once the cause is fixed"})
+	}
+	if _, err := inv.tellWithdrawal(q, now); err != nil {
+		return untold(q, err)
 	}
 	summary := "question " + id + " is withdrawn"
 	headline := []string{"Question " + id + " is withdrawn"}

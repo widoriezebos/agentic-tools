@@ -988,6 +988,7 @@ func runIntentRevise(inv *intentInvocation) int {
 	}
 	runner := inv.unitRunner()
 	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions, Person: person, Reason: reason, Impact: impact})
+	inv.revisedAttempt = revised.Revision.Attempt
 	if person != "" && revised.Revision.Attempt > 0 {
 		findings := revised.Revision.Findings
 		if len(findings) > 0 {
