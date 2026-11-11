@@ -42,8 +42,8 @@ func TestFollowDeployedEngineAtBoundary(t *testing.T) {
 	t.Parallel()
 	var acts []string
 	f := followTestSeams(t, &acts)
-	if replaced, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || !replaced {
-		t.Fatalf("follow: replaced=%v err=%v", replaced, err)
+	if replaced, refusal, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || !replaced || refusal != nil {
+		t.Fatalf("follow: replaced=%v refusal=%+v err=%v", replaced, refusal, err)
 	}
 	want := []string{"landed", "ready", "lock", "ready", "forward", "install", "start", "unlock"}
 	if !reflect.DeepEqual(acts, want) {
@@ -58,11 +58,15 @@ func TestFollowDeployedEngineRechecksReadyUnderLock(t *testing.T) {
 	locked := false
 	f.Ready = func() (bool, string) { return !locked, "a job arrived under the lock" }
 	f.Lock = func() (func(), error) { locked = true; return func() { locked = false }, nil }
-	if replaced, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || replaced {
-		t.Fatalf("follow=%v err=%v", replaced, err)
+	if replaced, refusal, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || replaced || refusal == nil || refusal.Waiting {
+		t.Fatalf("follow=%v refusal=%+v err=%v", replaced, refusal, err)
 	}
 	if locked || !reflect.DeepEqual(acts, []string{"landed"}) {
 		t.Fatalf("mutated after readiness changed: locked=%v acts=%v", locked, acts)
+	}
+	f.Ready = func() (bool, string) { return !locked, followWaitingForBoundary }
+	if _, refusal, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || refusal == nil || !refusal.Waiting {
+		t.Fatalf("waiting under lock: refusal=%+v err=%v", refusal, err)
 	}
 }
 
@@ -71,14 +75,14 @@ func TestFollowDeployedEngineEqualDigestStopsBeforeGuards(t *testing.T) {
 	var acts []string
 	f := followTestSeams(t, &acts)
 	f.EnrolledDigest = func() (string, error) { return "new", nil }
-	if replaced, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || replaced || len(acts) != 0 {
+	if replaced, refusal, err := FollowDeployedEngineAtBoundary(t.TempDir(), f); err != nil || replaced || refusal != nil || len(acts) != 0 {
 		t.Fatalf("equal: replaced=%v err=%v acts=%v", replaced, err, acts)
 	}
 }
 
 func TestFollowDeployedEngineFailuresLogOnce(t *testing.T) {
 	t.Parallel()
-	for _, stage := range []string{"deployed", "enrolled", "landed", "lock", "forward", "install", "start"} {
+	for _, stage := range []string{"deployed", "no active line", "unreadable record", "no contract", "commit missing", "artifact missing", "enrolled", "landed", "lock", "forward", "install", "start"} {
 		t.Run(stage, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
@@ -86,8 +90,17 @@ func TestFollowDeployedEngineFailuresLogOnce(t *testing.T) {
 			f := followTestSeams(t, &acts)
 			fail := func() error { return errors.New("fixture refusal") }
 			switch stage {
-			case "deployed":
+			case "deployed", "no active line", "unreadable record", "no contract":
 				f.Deployed = func() (steward.DeployedEngine, error) { return steward.DeployedEngine{}, fail() }
+				if stage != "deployed" {
+					fail = func() error { return errors.New("fixture refusal: " + stage) }
+				}
+			case "commit missing":
+				f.Deployed = func() (steward.DeployedEngine, error) {
+					return steward.DeployedEngine{Artifact: "/fixture/engine"}, fail()
+				}
+			case "artifact missing":
+				f.Deployed = func() (steward.DeployedEngine, error) { return steward.DeployedEngine{Commit: "deployed"}, fail() }
 			case "enrolled":
 				f.EnrolledDigest = func() (string, error) { return "", fail() }
 			case "landed":
@@ -105,15 +118,23 @@ func TestFollowDeployedEngineFailuresLogOnce(t *testing.T) {
 			for pass := 0; pass < 10; pass++ {
 				now := initialNow.Add(time.Duration(pass) * time.Minute)
 				f.Now = func() time.Time { return now }
-				if replaced, err := FollowDeployedEngineAtBoundary(root, f); replaced || err != nil {
-					t.Fatalf("refusal=%v err=%v", replaced, err)
+				replaced, refusal, err := FollowDeployedEngineAtBoundary(root, f)
+				if replaced || err != nil || refusal == nil || refusal.Waiting || refusal.Reason != fail().Error() {
+					t.Fatalf("replaced=%v refusal=%+v err=%v", replaced, refusal, err)
+				}
+				wantCommit, wantCommand := "deployed", "cd "+root+" && cp -p /fixture/engine bin/.metasystem.hand && mv bin/.metasystem.hand bin/metasystem && bin/metasystem system restart"
+				if stage == "deployed" || strings.Contains(stage, " ") {
+					wantCommit, wantCommand = steward.FollowDeploymentUnavailable, "cd "+root+" && bin/metasystem deploy status"
+				}
+				if refusal.Commit != wantCommit || refusal.Command != wantCommand {
+					t.Fatalf("refusal=%+v", refusal)
 				}
 			}
 			log := followTestLog(t, root)
 			if strings.Count(log, "engine follow:") != 1 || !strings.Contains(log, "fixture refusal") {
 				t.Fatalf("log=%s", log)
 			}
-			if stage == "deployed" && !strings.Contains(log, "read metasystem deploy status, copy its artifact into "+filepath.Join(root, "bin", "metasystem")+", then metasystem system restart") {
+			if stage == "deployed" && !strings.Contains(log, "cd "+root+" && bin/metasystem deploy status") {
 				t.Fatalf("unavailable hand route=%s", log)
 			}
 			for _, act := range acts {
@@ -165,6 +186,9 @@ func TestDeployedFollowReadyHoldsEveryLiveRecord(t *testing.T) {
 				prober.live.StartTicks, prober.live.BootID = 0, ""
 			}
 			boundary := func() (bool, error) {
+				if row != "held-unit" {
+					return true, nil
+				}
 				return steward.SeatAtUnitBoundary(root, home, clock.Now(), prober, goal.ClaimableBudgetedWork{Claimed: []string{"held"}})
 			}
 			switch row {
@@ -212,8 +236,8 @@ func TestDeployedFollowReadyHoldsEveryLiveRecord(t *testing.T) {
 			f.Forward = func(string) error { return nil }
 			f.Start = func() error { starts++; return nil }
 			for range 10 {
-				if replaced, err := FollowDeployedEngineAtBoundary(root, f); replaced || err != nil {
-					t.Fatalf("busy follow=%v err=%v", replaced, err)
+				if replaced, refusal, err := FollowDeployedEngineAtBoundary(root, f); replaced || err != nil || refusal == nil || refusal.Waiting != (row == "held-unit") || refusal.Commit != "deployed" {
+					t.Fatalf("busy follow=%v refusal=%+v err=%v", replaced, refusal, err)
 				}
 				clock.advance(time.Minute)
 			}

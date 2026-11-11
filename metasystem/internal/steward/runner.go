@@ -316,6 +316,15 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	bridgeLine := ""
 	keeping := &laneKeeping{step: cfg.KeepLandingLane}
+	channelDuty := func() {
+		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
+		undelivered, channelErr := deps.Channel(channelContext, top)
+		if channelErr != nil {
+			channelErr = fmt.Errorf("%d undelivered: %w", undelivered, channelErr)
+		}
+		recordDuty(top, "channel-pending", channelErr, deps.Now())
+		cancelChannel()
+	}
 	var started time.Time
 	var result TickResult
 	var paged time.Duration
@@ -383,10 +392,12 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if cfg.FollowDeployedEngine != nil {
-			if replaced, _, followErr := cfg.FollowDeployedEngine(); followErr != nil {
+			if replaced, refused, followErr := cfg.FollowDeployedEngine(); followErr != nil {
 				_ = NoteRearmFailure(top, followErr, deps.Now())
 			} else if replaced {
 				return nil
+			} else if refused && helm.Active(top).Active {
+				channelDuty()
 			}
 		}
 		if helm.Active(top).Active {
@@ -459,13 +470,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// leaves only silent history.
 		_, deliverErr := deps.DeliverPending(top)
 		recordDuty(top, "notifications-pending", deliverErr, deps.Now())
-		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
-		undelivered, channelErr := deps.Channel(channelContext, top)
-		if channelErr != nil {
-			channelErr = fmt.Errorf("%d undelivered: %w", undelivered, channelErr)
-		}
-		recordDuty(top, "channel-pending", channelErr, deps.Now())
-		cancelChannel()
+		channelDuty()
 		// The machine caches are trimmed last, after the tick released
 		// arbitration; the trim holds only its own per-cache flock, runs
 		// under its budget and ends at the stop file.

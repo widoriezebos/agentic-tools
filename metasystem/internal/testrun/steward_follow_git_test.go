@@ -150,7 +150,7 @@ func TestDeployedFollowLandedFetchGitAdapter(t *testing.T) {
 				}
 				return nil
 			}
-			replaced, err := FollowDeployedEngineAtBoundary(b.root, f)
+			replaced, _, err := FollowDeployedEngineAtBoundary(b.root, f)
 			want := row == "missing-fetches" || row == "stale-ref-fetches"
 			if err != nil || replaced != want || installs != boolCount(want) || starts != boolCount(want) || launches != boolCount(want) {
 				if !replaced {
@@ -211,7 +211,7 @@ func TestDeployedFollowForwardGitAdapter(t *testing.T) {
 			f.EnrolledDigest = func() (string, error) { return "old", nil }
 			f.Install = func(steward.DeployedEngine) error { installs++; return nil }
 			f.Start = func() error { starts++; return nil }
-			replaced, err := FollowDeployedEngineAtBoundary(b.root, f)
+			replaced, _, err := FollowDeployedEngineAtBoundary(b.root, f)
 			blocked := row == "tracked-change" || row == "diverged"
 			after := followGit(t, b.root, "rev-parse", "HEAD")
 			wantHead := b.commit
