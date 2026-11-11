@@ -36,6 +36,7 @@ type witnessDigestCache struct {
 // Each rearm resolution carries its own repository answers. The default
 // binds the existing Git commands; callers may supply isolated answers.
 type rearmResolverDeps struct {
+	deployed             func() (DeployedEngine, bool, error)
 	resolveSeconds       func(string) int
 	localLandingRef      func(string) (string, error)
 	resolvingRef         func(string, string) (string, error)
@@ -794,7 +795,7 @@ func (b *EnrolledBinary) verifySourceAtDestinationWithDeps(deps rearmResolverDep
 			return err
 		}
 	}
-	if b.Install.MintedBy == "machine-rebuild" && (b.Install.LandedCommit == "" || b.Install.LandingRef == "") {
+	if machineMintedLandedBytes(b.Install.MintedBy) && (b.Install.LandedCommit == "" || b.Install.LandingRef == "") {
 		return fmt.Errorf("machine enrollment is missing its landed source or landing ref")
 	}
 	if b.Install.LandedCommit == "" && b.Install.LandingRef != "" {

@@ -724,6 +724,18 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 // DeployedEngine names the bytes the project's active deployment authorizes.
 type DeployedEngine struct{ Commit, Artifact, Digest string }
 
+// ReArmDeployedEngine admits matching deployed bytes even when checkout HEAD has advanced.
+func ReArmDeployedEngine(deployed func() (DeployedEngine, bool, error), operations ...RearmOperations) func(string, string, string) (ReArmOutcome, error) {
+	deps := defaultRearmResolverDeps()
+	if len(operations) > 0 {
+		deps = operations[0].dependencies()
+	}
+	deps.deployed = deployed
+	return func(repo, installation, binary string) (ReArmOutcome, error) {
+		return reArmRebuiltEngineWithDeps(deps, repo, installation, binary)
+	}
+}
+
 func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRoot, invokingBinary string, clocks ...func() time.Time) (ReArmOutcome, error) {
 	now := time.Now
 	if deps.clock != nil {
@@ -760,6 +772,26 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 			}
 			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %w", ErrEnrollmentDrift, prior.InstallPath, err)
 		}
+		witnessed, witnessedAt := prior.HumanWitnessedGeneration, prior.HumanWitnessedAt
+		if prior.MintedBy == "" {
+			witnessed, witnessedAt = 0, ""
+		}
+		plan := mintPlan{
+			MintedBy: "machine-rebuild", Word: prior.TemporaryHumanWord, ReviewBy: prior.ReviewBy,
+			Witnessed: witnessed, WitnessedAt: witnessedAt, EngineBuild: bytes.Stamp,
+			LandedCommit: sourceCommit, LandingRef: landingRef, Enrollment: prior.Enrollment, Session: prior.Session,
+		}
+
+		if deps.deployed != nil {
+			d, ok, err := deps.deployed()
+			if err != nil {
+				return mintPlan{}, fmt.Errorf("%w: deployed engine: %v", ErrEnrollmentDrift, err)
+			}
+			if ok && d.Digest == bytes.Digest && d.Commit == sourceCommit {
+				plan.MintedBy = "deployed-engine"
+				return plan, ClearDeferredRearm(repoRoot)
+			}
+		}
 		landedCommit, err := deps.checkoutHead(installationRoot)
 		if err != nil {
 			if gitSaidNo(err) {
@@ -779,15 +811,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 		if err := ClearDeferredRearm(repoRoot); err != nil {
 			return mintPlan{}, err
 		}
-		witnessed, witnessedAt := prior.HumanWitnessedGeneration, prior.HumanWitnessedAt
-		if prior.MintedBy == "" {
-			witnessed, witnessedAt = 0, ""
-		}
-		return mintPlan{
-			MintedBy: "machine-rebuild", Word: prior.TemporaryHumanWord, ReviewBy: prior.ReviewBy,
-			Witnessed: witnessed, WitnessedAt: witnessedAt, EngineBuild: bytes.Stamp,
-			LandedCommit: landedCommit, LandingRef: landingRef, Enrollment: prior.Enrollment, Session: prior.Session,
-		}, nil
+		return plan, nil
 	}
 	outcome, err := armWithRearmDeps(repoRoot, invokingBinary, true, true, false, "", decision, deps)
 	return outcome.ReArmOutcome, err
@@ -1168,7 +1192,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 			if !humanTerminalBytesChanged {
 				outcome.RunnerPid = rec.Pid
 				outcome.Message = fmt.Sprintf("already armed (runner pid %d); %s", rec.Pid, EnrollmentProvenance(prior))
-				if prior.MintedBy == "" || prior.MintedBy == "machine-rebuild" {
+				if prior.MintedBy == "" || machineMintedLandedBytes(prior.MintedBy) {
 					outcome.Message += " — run steward restart at the terminal to witness it"
 				}
 				return outcome, nil
@@ -1189,7 +1213,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	}
 	mintedAt := now().UTC().Format(time.RFC3339)
 	witnessed, witnessedAt := plan.Witnessed, plan.WitnessedAt
-	if plan.MintedBy != "machine-rebuild" {
+	if !machineMintedLandedBytes(plan.MintedBy) {
 		witnessed, witnessedAt = generation, mintedAt
 	}
 	durable, err := publishIdentity(identityPath, InstallIdentity{
@@ -1357,16 +1381,24 @@ func shortCommit(commit string) string {
 	return commit
 }
 
+func machineMintedLandedBytes(mintedBy string) bool {
+	return mintedBy == "machine-rebuild" || mintedBy == "deployed-engine"
+}
+
 // EnrollmentProvenance renders the one standing explanation of who minted an
-// enrollment and, for a machine rebuild, which landed bytes it consumed.
+// enrollment and, for a machine mint, which landed bytes it consumed.
 func EnrollmentProvenance(id InstallIdentity) string {
 	var result string
 	switch id.MintedBy {
 	case "human-terminal", "human-word", "human-session":
 		result = fmt.Sprintf("enrollment generation %d human-witnessed (engine %s)", id.Generation, id.EngineBuild)
-	case "machine-rebuild":
-		result = fmt.Sprintf("enrollment generation %d machine-minted (rebuild, engine %s, landed %s on %s)",
-			id.Generation, id.EngineBuild, shortCommit(id.LandedCommit), id.LandingRef)
+	case "machine-rebuild", "deployed-engine":
+		kind := "rebuild"
+		if id.MintedBy == "deployed-engine" {
+			kind = "deployed engine"
+		}
+		result = fmt.Sprintf("enrollment generation %d machine-minted (%s, engine %s, landed %s on %s)",
+			id.Generation, kind, id.EngineBuild, shortCommit(id.LandedCommit), id.LandingRef)
 		if id.HumanWitnessedGeneration > 0 {
 			result += fmt.Sprintf(" above human-witnessed generation %d of %s", id.HumanWitnessedGeneration, id.HumanWitnessedAt)
 		} else {

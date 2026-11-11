@@ -624,6 +624,9 @@ func (o hookOwners) Git(args ...string) (string, error) {
 // engine no longer owns the ENGINE projection at the checkout's HEAD, the
 // checkout is clean in engine inputs, and no proof attempt is live.
 func (o hookOwners) EngineBehind(enrolled stateroot.Installation, repo string) (bool, error) {
+	if followsDeployedEngine(enrolled.Path()) {
+		return false, nil
+	}
 	installation := enrolled.Path()
 	pinned, err := steward.OpenEnrolledBinary(installation)
 	if err != nil {

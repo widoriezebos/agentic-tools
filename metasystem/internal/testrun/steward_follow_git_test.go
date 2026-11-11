@@ -2,15 +2,20 @@ package testrun
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type deployedGitBed struct {
@@ -101,19 +106,57 @@ func TestDeployedFollowLandedFetchGitAdapter(t *testing.T) {
 				followGit(t, b.writer, "push", "--force", "origin", b.old+":main")
 			}
 			f := b.follow(t)
-			f.EnrolledDigest = func() (string, error) { return "old", nil }
-			installs, starts := 0, 0
-			f.Install = func(steward.DeployedEngine) error { installs++; return nil }
-			// Landing ancestry is independent of checkout movement.
+			binary := filepath.Join(b.root, "bin", "metasystem")
+			writeTestingFixtureFile(t, binary, []byte(enginebuild.StampRecord(b.old)), 0o755)
+			oldBytes, err := os.ReadFile(binary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := steward.MintIdentity(steward.RepoIdentityPath(b.root), steward.InstallIdentity{RepoIdentity: b.root, InstallPath: binary, InstallDigest: fmt.Sprintf("sha256:%x", sha256.Sum256(oldBytes)), Generation: 1, MintedAt: b.clock.Now().Format(time.RFC3339), MintedBy: "human-terminal", EngineBuild: b.old}); err != nil {
+				t.Fatal(err)
+			}
+			artifact := filepath.Join(t.TempDir(), "artifact")
+			data := []byte(enginebuild.StampRecord(b.commit))
+			writeTestingFixtureFile(t, artifact, data, 0o755)
+			deployed := steward.DeployedEngine{Commit: b.commit, Artifact: artifact, Digest: fmt.Sprintf("sha256:%x", sha256.Sum256(data))}
+			f.Deployed = func() (steward.DeployedEngine, error) { return deployed, nil }
+			installs, starts, launches := 0, 0, 0
+			f.Install = func(steward.DeployedEngine) error { installs++; return testexec.WriteFile(binary, data, 0o755) }
+			// This row isolates landing ancestry from checkout movement; the public
+			// re-arm must accept the deployed stamp while HEAD remains behind it.
 			f.Forward = func(string) error { return nil }
-			f.Start = func() error { starts++; return nil }
+			f.Start = func() error {
+				starts++
+				git := func(ctx context.Context, root string, args ...string) ([]byte, error) {
+					if strings.Join(args, " ") == "config --get metasystem.steward.notify-command" {
+						return []byte("fixture-notify"), nil
+					}
+					return followGitOutput(ctx, root, args...)
+				}
+				rearm := steward.ReArmDeployedEngine(func() (steward.DeployedEngine, bool, error) { return deployed, true, nil }, steward.RearmOperations{Clock: b.clock, Git: git, Prober: followTestProber{}, LaunchRunner: func(string, *steward.EnrolledBinary, string) (steward.RunnerRecord, error) {
+					launches++
+					return steward.RunnerRecord{Pid: 99}, nil
+				}})
+				out, err := rearm(b.root, b.root, binary)
+				if err != nil {
+					return err
+				}
+				enrolled, err := steward.VerifyIdentity(steward.RepoIdentityPath(b.root), b.root)
+				if err != nil {
+					return err
+				}
+				if out.Generation != 2 || enrolled.MintedBy != "deployed-engine" || enrolled.LandedCommit != b.commit {
+					t.Fatalf("out=%+v enrolled=%+v", out, enrolled)
+				}
+				return nil
+			}
 			replaced, err := FollowDeployedEngineAtBoundary(b.root, f)
 			want := row == "missing-fetches" || row == "stale-ref-fetches"
-			if err != nil || replaced != want || installs != boolCount(want) || starts != boolCount(want) {
+			if err != nil || replaced != want || installs != boolCount(want) || starts != boolCount(want) || launches != boolCount(want) {
 				if !replaced {
 					t.Log(followTestLog(t, b.root))
 				}
-				t.Fatalf("row=%s replaced=%v err=%v installs=%d starts=%d", row, replaced, err, installs, starts)
+				t.Fatalf("row=%s replaced=%v err=%v installs=%d starts=%d launches=%d", row, replaced, err, installs, starts, launches)
 			}
 			if !want {
 				log := followTestLog(t, b.root)

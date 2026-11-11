@@ -46,7 +46,7 @@ func AuthorizeDispatch(repo, nonce string) (DispatchAuthorization, error) {
 	if it.HumanWitnessedGeneration != 0 || it.HumanWitnessedAt != "" {
 		sameAuthority = it.HumanWitnessedGeneration > 0 && it.HumanWitnessedAt != "" &&
 			it.HumanWitnessedGeneration == installed.HumanWitnessedGeneration && it.HumanWitnessedAt == installed.HumanWitnessedAt &&
-			(it.InstallGen == installed.Generation || installed.Generation > it.InstallGen && installed.MintedBy == "machine-rebuild")
+			(it.InstallGen == installed.Generation || installed.Generation > it.InstallGen && machineMintedLandedBytes(installed.MintedBy))
 	}
 	if it.RepoIdentity != installed.RepoIdentity || !sameAuthority {
 		return DispatchAuthorization{}, fmt.Errorf("nothing was launched: the engine was reinstalled since this was approved\n(install %d of %q, now %d of %q)",
