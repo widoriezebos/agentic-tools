@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build D2-U1..U4 (115/100/140/70 production lines; U4 --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D2). After the-unit-check-runs-what-publication-requires lands. Analysis /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-unplanned-struggle-2026-11-11.md.
 - OpenedAt: 2026-11-11T17:58:42Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=16 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=331JZN34YB7TNCRVJZBMWJJWT3-m1e-8792c7ee minutes=3600 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-11T17:58:42Z CV0MTEZMRDE6RY2GZKFGNZE75T-m1e-8792c7ee open actor=human:Wido targets=a-publication-consumes-the-units-check
 - 2026-11-11T18:01:52Z 331JZN34YB7TNCRVJZBMWJJWT3-m1e-8792c7ee approve actor=human:Wido targets=a-publication-consumes-the-units-check
-Integrity: sha256=cd94a456f020c1cd0b3a1b0e1d586a13471b60b6d912d9a9be5681acb2bd9f22
+- 2026-11-11T18:04:08Z 3E8KKEBJ7YKSVT5JAKRYWDVTMX-m1e-8792c7ee set-pin actor=human:Wido targets=a-publication-consumes-the-units-check
+Integrity: sha256=22d8bbdead9388243a7388ac51538fc2d5f8dd56f015201d212fe6ca6b2454a8
