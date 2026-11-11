@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build D4-U1 (175) then D4-U2 (85, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D4).
 - OpenedAt: 2026-11-11T18:06:56Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=W8WX8AA51M4A4CGBWPVBM314FB-m1e-8792c7ee minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-11T18:06:56Z TQ9Y47FDZDPX002SWANQ52V0A4-m1e-8792c7ee open actor=human:Wido targets=the-ratchet-counts-what-a-change-adds
 - 2026-11-11T18:08:53Z W8WX8AA51M4A4CGBWPVBM314FB-m1e-8792c7ee approve actor=human:Wido targets=the-ratchet-counts-what-a-change-adds
-Integrity: sha256=0bf1b351f789c3687247f8ad9478bb9151aca2b605bec868c951850166c2b0d6
+- 2026-11-11T18:10:36Z EAVECWRYYESTMHT06XNWWHNJEM-m1e-8792c7ee set-pin actor=human:Wido targets=the-ratchet-counts-what-a-change-adds
+Integrity: sha256=0ac04b45a95623d0485df204395732e422a48dedefd381479b81745db80e9c69
