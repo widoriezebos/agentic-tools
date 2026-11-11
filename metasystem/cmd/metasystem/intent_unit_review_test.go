@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -77,6 +78,7 @@ type connectionBed struct {
 func connectionGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Env = gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
@@ -95,10 +97,6 @@ func newConnectionBed(t *testing.T) *connectionBed {
 // amend.
 func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionBed {
 	t.Helper()
-	empty := filepath.Join(t.TempDir(), "gitconfig")
-	os.WriteFile(empty, nil, 0o600)
-	t.Setenv("GIT_CONFIG_GLOBAL", empty)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{}}
 	root := c.root()
 	connectionGit(t, root, "init", "-q", "-b", "main")

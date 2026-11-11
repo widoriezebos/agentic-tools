@@ -680,3 +680,31 @@ func TestCancelledNamedWorkIsNotRunning(t *testing.T) {
 		t.Fatalf("cancelled run is still active: %+v", work)
 	}
 }
+
+func TestCancelledNameReleaseSurvivesPreparationFailure(t *testing.T) {
+	t.Parallel()
+	f := newUnitFixture(t, "", "branch", "branch", "round")
+	first, err := f.runner.AdvanceNamed(f.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.runner.CancelRun(first.Record.ID); err != nil {
+		t.Fatal(err)
+	}
+	failed := errors.New("preparation interrupted")
+	for range 2 {
+		_, err := f.runner.AdvancePrepared(f.worktree, "goal", "U", []byte("new request"), UnitOptions{}, func(string) (string, error) { return "", failed })
+		if !errors.Is(err, failed) {
+			t.Fatalf("release did not resume preparation: %v", err)
+		}
+	}
+	plan, _ := ReadUnitPlan(f.plan)
+	_, key, _ := namedUnitIdentity(plan)
+	entry, found, err := f.runner.readNamed(key)
+	if err != nil || !found || entry.State != namedReleased || entry.Run != first.Record.ID || len(unitRunDirectories(t, f.runner.Root)) != 1 {
+		t.Fatalf("release lost its stopped run: %+v %v", entry, err)
+	}
+	if _, err := os.Stat(filepath.Join(f.runner.runDir(first.Record.ID), "released-named.json")); err != nil {
+		t.Fatal(err)
+	}
+}

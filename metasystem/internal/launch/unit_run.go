@@ -66,6 +66,8 @@ type UnitRunRecord struct {
 	// subjects; ReviewSubject is its only writer.
 	Subjects []UnitSubject `json:"subjects,omitempty"`
 	Notes    []string      `json:"notes,omitempty"`
+
+	StoppedRun string `json:"stoppedRun,omitempty"`
 	// Revisions are the retained correction requests; Revise is their only
 	// writer.
 	Revisions []UnitRevision `json:"revisions,omitempty"`
@@ -80,6 +82,8 @@ type RefMove struct {
 }
 
 type UnitRound struct {
+	StartingResult string `json:"startingResult,omitempty"`
+
 	ExcludedDropped  []string           `json:"excludedDropped,omitempty"`
 	ExcludedRestored bool               `json:"excludedRestored,omitempty"`
 	ExcludedStop     bool               `json:"excludedStop,omitempty"`
@@ -563,7 +567,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
 	if round.Steps[0].LaunchID == "" {
-		if err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(round.Directory, "build-before", "worktree.diff")); err != nil {
+		if err := runner.buildBefore(record, round, plan); err != nil {
 			return UnitResult{}, err
 		}
 	}
