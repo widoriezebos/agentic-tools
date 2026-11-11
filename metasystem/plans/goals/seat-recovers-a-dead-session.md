@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Struggle program item 6 (2026-11-10, /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/struggle-program-2026-11-10.md): a person-confirmed transfer of an idle checkout and its goal holds to an exact live session (finding 589, the /model switch). U2a (120-180): pending-transfer state fencing both writer gates, full lease identity change, interrupted-sweep behaviour (internal/lease/claim.go:110,311; verbs.go:475,567). U2b (150-220): metasystem session takeover --by NAME as a fresh enrolled-terminal person act, exact requester binding, idleness proven under the admission and mutation guards, goal holds moved with budget and stop fences kept. No inference from ancestry; isolation bootstrap deferred.
 - OpenedAt: 2026-10-09T16:05:29Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=9NHYV7TJCEN2RPFT92GK1ZG7K3-m1e-b89f1157 minutes=2400 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-09T16:05:29Z SQS4JEEG9SFMNXSEW4QFHP54PR-m1e-718ba0eb open actor=human:Wido targets=seat-recovers-a-dead-session
 - 2026-11-10T09:38:43Z R0WSHYH7ZZWPMK3T6P16436QRE-m1e-8a741cac edit actor=human:Wido targets=seat-recovers-a-dead-session
 - 2026-11-11T10:33:24Z 9NHYV7TJCEN2RPFT92GK1ZG7K3-m1e-b89f1157 approve actor=human:Wido targets=seat-recovers-a-dead-session
-Integrity: sha256=4a97be68a8d0d8abffd65673d82b553f2d72f2969daf6a7455c7c9a025316bf9
+- 2026-11-11T10:34:38Z M4PWMH4DZ0HPHH83DGXEK6QWRA-m1e-b89f1157 set-pin actor=human:Wido targets=seat-recovers-a-dead-session
+Integrity: sha256=0bd8130d51328adc63a47321f224c8a058582de8862b12cde534753541db84fc
