@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: One unit U-files (--last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/required-test-file-selectors-are-understood-U-files-brief.md: schema, protection, expansion, consumer compatibility, cheap-path integration; no mappings in testing.json. After it lands: deploy, re-arm the lane keeper, refresh the seat engines (entry gate of a-unit-check-runs-the-importers-too). Struggle program item 3; Astra rounds 1-2 on the briefs.
 - OpenedAt: 2026-11-11T16:01:16Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=TK800HF01KRFNQEG8BR6VF5M4V-m1e-8527773c minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-11T16:01:16Z N3B8YPM5Z6J1P2H09BDD4X47FA-m1e-8527773c open actor=human:Wido targets=required-test-file-selectors-are-understood
 - 2026-11-11T16:02:44Z TK800HF01KRFNQEG8BR6VF5M4V-m1e-8527773c approve actor=human:Wido targets=required-test-file-selectors-are-understood
-Integrity: sha256=1ab3b45e33f309c718df0ce371cf56f3161e32544421f53a0b5c1512857d1fe8
+- 2026-11-11T16:03:43Z J8BKX4TT9G9Y48PNPKMCVCMGJ6-m1e-8527773c set-pin actor=human:Wido targets=required-test-file-selectors-are-understood
+Integrity: sha256=023a16fdfd2a8a7b172fbaf1a13bdd11719b3c54eb3b3078afd04fe582a37fa7
