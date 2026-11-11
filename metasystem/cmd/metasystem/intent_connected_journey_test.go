@@ -412,4 +412,17 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if len(c.delegates) != 5 || criticB == criticC2 || criticC == criticC2 {
 		t.Fatalf("exactly five committed critics, none for the carried B: %v", c.delegates)
 	}
+	// Reading the replayed C adds evidence but leaves A's reviewed bytes intact.
+	repeatedReads, repeatedPublications := c.commitReads, c.publications
+	for _, args := range [][]string{
+		{"work", "review", "run:" + runA},
+		{"work", "review", "--commit", commitA2, "--goal", c.id},
+	} {
+		if code, result := do(args...); code != 0 || result.Outcome != intentUnchanged {
+			t.Fatalf("rejoin amended A after C's read: code=%d %+v", code, result)
+		}
+	}
+	if c.commitReads != repeatedReads || c.publications != repeatedPublications || len(c.delegates) != 5 {
+		t.Fatal("rejoining amended A repeated its read or publication")
+	}
 }

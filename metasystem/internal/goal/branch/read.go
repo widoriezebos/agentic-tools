@@ -648,6 +648,17 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if record.Goal != "" && (record.Goal != request.GoalID || record.UnitCommit != request.UnitCommit || record.Tree != subject.Tree) {
 		return result, fmt.Errorf("goal branch read record does not match the requested unit")
 	}
+	if request.Repository == nil && record.AttestationCommit == "" {
+		record, err = reconcileCarriedRead(request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, record)
+		if err != nil {
+			return result, err
+		}
+		if record.AttestationCommit != "" {
+			if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+				return result, err
+			}
+		}
+	}
 	coverageChanged := false
 	if len(request.Units) > 0 {
 		units, namesErr := requestUnits(CommitRequest{Units: request.Units})
@@ -1089,9 +1100,57 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 	return result, nil
 }
 
-// InspectBranchRead reads one unit commit's read record without locking or
-// writing: its critic root and, once collected, its attestation. A unit with
-// no record yet has neither.
+// reconcileCarriedRead restores the rebased subject's journal from its validated
+// branch evidence. A pending critic keeps its own collection identity.
+func reconcileCarriedRead(repo, endpoint, goalID, unit string, record branchReadRecord) (branchReadRecord, error) {
+	if record.AttestationCommit != "" || record.RootJob != "" {
+		return record, nil
+	}
+	tip, present, err := localBranchTip(repo, goalBranchRef(goalID))
+	if err != nil || !present {
+		return record, err
+	}
+	entry, err := gitOutput(repo, "ls-tree", "--full-tree", "-z", tip, "--", attestationPath(goalID, unit))
+	if err != nil || len(entry) == 0 {
+		return record, err
+	}
+	prior, err := readAttestationAt(gitAttestationReads{}, repo, tip, goalID, unit)
+	if err != nil || prior.Carry == nil {
+		return record, err
+	}
+	commits, err := ValidateRange(repo, endpoint, tip, goalID)
+	if err != nil {
+		return record, err
+	}
+	for i := len(commits) - 1; i >= 0; i-- {
+		commit := commits[i]
+		if commit.Kind != Read {
+			continue
+		}
+		kind, err := KindOf(repo, commit.ID, goalID)
+		if err != nil {
+			return record, err
+		}
+		if kind.CommitID != unit {
+			continue
+		}
+		att, err := ValidateAttestationAt(repo, tip, endpoint, goalID, unitList(commit.Units), unit)
+		if err != nil {
+			return record, err
+		}
+		if att.Carry == nil {
+			return record, nil
+		}
+		record.Goal, record.UnitCommit, record.Tree = goalID, unit, att.Subject.Tree
+		record.AttestationCommit, record.GateRunID = commit.ID, att.Gate.RunID
+		record.CoveredUnits = att.CoveredUnits
+		return record, nil
+	}
+	return record, nil
+}
+
+// InspectBranchRead reads one unit's journal and any carried branch attestation
+// without locking or writing. Collection retains a recovered journal.
 func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error) {
 	if info, err := KindOf(repo, unitCommit, goalID); err == nil && info.Kind == Drop {
 		tip, _, err := localBranchTip(repo, goalBranchRef(goalID))
@@ -1109,6 +1168,10 @@ func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error
 		return BranchReadResult{}, err
 	}
 	record, err := loadBranchReadRecord(recordPath)
+	if err != nil {
+		return BranchReadResult{}, err
+	}
+	record, err = reconcileCarriedRead(repo, goal.AcceptedRef, goalID, unitCommit, record)
 	if err != nil {
 		return BranchReadResult{}, err
 	}

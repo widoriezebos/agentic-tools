@@ -512,7 +512,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	targets = append(targets, intentTarget{Kind: "commit", ID: subject.Commit})
 	if subject.Published == "" {
 		base, err := tip()
-		if err == nil && subject.Amends != "" {
+		if err == nil {
 			var carried branch.CarryResult
 			err = conn.commitToken(install, func() error {
 				var carryErr error
@@ -629,6 +629,11 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		head, current, err := runner.WorktreeResult(worktree)
 		if err != nil {
 			return err
+		}
+		if current == "" && read.AttestationCommit != "" && head != subject.Tip && head != read.AttestationCommit {
+			if unchanged, err := reviewedContentUnchanged(git, install, subject.Commit, read.AttestationCommit, head); err != nil || unchanged {
+				return err
+			}
 		}
 		if current == "" && head != subject.Tip && read.AttestationCommit == "" && read.RootJob != "" {
 			// A collected attestation can outlive a failed read-record save.
@@ -927,6 +932,29 @@ func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*int
 	return &closer, nil
 }
 
+// reviewedContentUnchanged admits later commits only when the reviewed paths
+// still hold the examined bytes and the reviewed unit remains on the branch.
+func reviewedContentUnchanged(git func(string, ...string) ([]byte, error), root, unit, reviewedTip, tip string) (bool, error) {
+	base, err := git(root, "merge-base", unit, tip)
+	if err != nil || strings.TrimSpace(string(base)) != unit {
+		return false, err
+	}
+	paths, err := git(root, "diff-tree", "-r", "-z", "--no-commit-id", "--no-relative", "--no-renames", "--name-only", unit+"^", unit)
+	if err != nil {
+		return false, err
+	}
+	differs, err := git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-relative", "--no-renames", "--name-only", "-z", reviewedTip)
+	if err != nil {
+		return false, err
+	}
+	for _, path := range splitNUL(differs) {
+		if slices.Contains(splitNUL(paths), path) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // commitReview requests, collects and publishes the committed read of one
 // Goal-Unit commit through the branch read owner and the collected-read
 // publication owner, with its records in root. A terminal critic whose
@@ -947,6 +975,11 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				head, dirty, err := runner.WorktreeResult(root)
 				if err != nil {
 					return err
+				}
+				if dirty == "" && read.AttestationCommit != "" && head != review.Subject.Tip && head != read.AttestationCommit {
+					if unchanged, err := reviewedContentUnchanged(inv.work().git, root, unit, read.AttestationCommit, head); err != nil || unchanged {
+						return err
+					}
 				}
 				if dirty != "" || head != review.Subject.Tip && head != read.AttestationCommit {
 					return fmt.Errorf("the read's worktree changed; restore its result or revise this work before publishing")
@@ -990,7 +1023,19 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 			next:    inv.publicArgv("work", "review", "--commit", newVersion, "--goal", goalID), nextReason: "starts a new read of the changed version; commit any uncommitted changes first and use their new commit"}
 	}
 	if alreadyPublished {
-		check, wait = nil, nil
+		// A built subject's check knows the publication tip, including any
+		// later units replayed after an amendment. Keep that comparison when
+		// rejoining its read; the unit commit alone omits those replayed bytes.
+		if check == nil {
+			unchanged, err := reviewedContentUnchanged(inv.work().git, root, unit, installed.AttestationCommit, "HEAD")
+			if err != nil {
+				return inv.treeFailure(err)
+			}
+			if !unchanged {
+				return changedResult()
+			}
+		}
+		wait = nil
 		branchRead = func([]string) (branch.BranchReadResult, int, error) {
 			installed.State = "already-collected"
 			return installed, 0, nil

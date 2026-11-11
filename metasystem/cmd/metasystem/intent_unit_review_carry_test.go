@@ -124,15 +124,17 @@ func TestUnitReviewAmendCarriesReviews(t *testing.T) {
 	}
 }
 
-func TestUnitReviewFirstUnitDoesNotCarryReviews(t *testing.T) {
+func TestUnitReviewAppendCarriesReviews(t *testing.T) {
 	t.Parallel()
 	b, owners, run, _ := unitCarryIntentBed(t, false)
+	announceFixtureHolder(t, b.worktree, "m1")
+	carried := 0
 	owners.connection.carry = func(branch.CarryRequest) (branch.CarryResult, error) {
-		t.Fatal("a first unit carried reviews")
+		carried++
 		return branch.CarryResult{}, nil
 	}
 	code, result := b.runJSON(owners, "work", "review", "run:"+run)
-	if code != 0 || result.Outcome != intentConfirmed {
+	if code != 0 || result.Outcome != intentConfirmed || carried != 1 {
 		t.Fatalf("first review = %+v, code = %d", result, code)
 	}
 }

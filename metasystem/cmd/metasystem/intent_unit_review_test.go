@@ -1047,8 +1047,8 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	if status.Prefix != 1 || status.Units[0].Commit != second {
 		t.Fatalf("landing admission must see exactly the current subject first: %+v", status)
 	}
-	if c.tokens != 4 || c.commits != 3 {
-		t.Fatalf("each subject and the amended review carry use the commit token: tokens=%d commits=%d", c.tokens, c.commits)
+	if c.tokens != 7 || c.commits != 3 {
+		t.Fatalf("each subject and each publication's review carry use the commit token: tokens=%d commits=%d", c.tokens, c.commits)
 	}
 
 	// A failed preliminary read with a passed proof may still request the
