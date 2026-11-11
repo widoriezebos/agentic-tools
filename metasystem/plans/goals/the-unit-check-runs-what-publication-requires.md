@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build D1-U1 (105 production lines, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D1; includes disabling the early repair-check.json reuse and the legacy-cache fixture). Analysis /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-unplanned-struggle-2026-11-11.md.
 - OpenedAt: 2026-11-11T17:49:47Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=4TE3JZNTC872TWW3D4D83VFKDQ-m1e-8792c7ee minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-11T17:49:47Z QP3532ZF1SFMXGW7WQ00AAKS03-m1e-8792c7ee open actor=human:Wido targets=the-unit-check-runs-what-publication-requires
 - 2026-11-11T17:52:09Z 4TE3JZNTC872TWW3D4D83VFKDQ-m1e-8792c7ee approve actor=human:Wido targets=the-unit-check-runs-what-publication-requires
-Integrity: sha256=5decf68fb19188fef82eb932f0fba0a795d55cdc82c94b8abf249ab46837a963
+- 2026-11-11T17:55:07Z HPZCSJFRPMZEA659C3YGNH89AF-m1e-8792c7ee set-pin actor=human:Wido targets=the-unit-check-runs-what-publication-requires
+Integrity: sha256=ec1c9e35bb8048e291b551b602bce87d00fa55dfd7ed4957d811d64354ad7292
