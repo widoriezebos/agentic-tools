@@ -248,6 +248,19 @@ func TestCentralFollowRejectsArtifactMismatch(t *testing.T) {
 				if err != nil || strings.Count(string(log), "engine follow:") != 1 || !strings.Contains(string(log), "to follow by hand:") {
 					t.Fatalf("log=%s err=%v", log, err)
 				}
+				paths, err := filepath.Glob(filepath.Join(b.root, "artifacts", "agents", "channel", "questions", "*.json"))
+				if err != nil || len(paths) != 1 {
+					t.Fatalf("follow questions=%v err=%v", paths, err)
+				}
+				var q struct {
+					Wants     string
+					RetiredAt time.Time
+					Decision  *struct{ Kind, State string }
+				}
+				data, err := os.ReadFile(paths[0])
+				if err != nil || json.Unmarshal(data, &q) != nil || q.Decision == nil || q.Decision.Kind != "engine-follow" || q.Decision.State != commit || !q.RetiredAt.IsZero() || !strings.HasPrefix(q.Wants, "cd "+b.root+" && cp -p "+b.artifact+" bin/.metasystem.hand") {
+					t.Fatalf("follow question=%s err=%v", data, err)
+				}
 			}
 			after, _ := os.ReadFile(b.binary)
 			staged, _ := filepath.Glob(filepath.Join(b.root, "bin", ".metasystem.follow-*"))

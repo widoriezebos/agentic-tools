@@ -3,7 +3,6 @@ package testrun
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -28,52 +27,54 @@ type DeployedFollow struct {
 	Start          func() error
 }
 
-func FollowDeployedEngineAtBoundary(projectRoot string, follow DeployedFollow) (replaced bool, err error) {
+const followWaitingForBoundary = "the seat is not at its unit boundary"
+
+func FollowDeployedEngineAtBoundary(projectRoot string, follow DeployedFollow) (replaced bool, refusal *steward.FollowRefusal, err error) {
 	engine, err := follow.Deployed()
+	waiting := false
 	defer func() {
 		if err != nil {
-			artifact := engine.Artifact
-			if artifact == "" {
-				artifact = "its artifact"
+			refusal = &steward.FollowRefusal{Commit: engine.Commit, Reason: err.Error(), Waiting: waiting,
+				Command: fmt.Sprintf("cd %s && cp -p %s bin/.metasystem.hand && mv bin/.metasystem.hand bin/metasystem && bin/metasystem system restart", projectRoot, engine.Artifact)}
+			if engine.Commit == "" || engine.Artifact == "" {
+				refusal.Commit = steward.FollowDeploymentUnavailable
+				refusal.Command = "cd " + projectRoot + " && bin/metasystem deploy status"
 			}
-			command := fmt.Sprintf("copy %s into %s, then metasystem system restart", artifact, filepath.Join(projectRoot, "bin", "metasystem"))
-			if engine.Artifact == "" {
-				command = "read metasystem deploy status, " + command
-			}
-			_ = steward.NoteFollowFailure(projectRoot, engine.Commit, err.Error(), command, follow.Now())
+			_ = steward.NoteFollowFailure(projectRoot, engine.Commit, err.Error(), refusal.Command, follow.Now())
 			replaced, err = false, nil
 		}
 	}()
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	digest, err := follow.EnrolledDigest()
 	if err != nil || digest == engine.Digest {
-		return false, err
+		return false, nil, err
 	}
 	if err := follow.Landed(engine.Commit); err != nil {
-		return false, err
+		return false, nil, err
 	}
 	ready := func() error {
 		if ok, reason := follow.Ready(); !ok {
+			waiting = reason == followWaitingForBoundary
 			return fmt.Errorf("%s", reason)
 		}
 		return nil
 	}
 	if err := ready(); err != nil {
-		return false, err
+		return false, nil, err
 	}
 	unlock, err := follow.Lock()
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	defer unlock()
 	for _, step := range []func() error{ready, func() error { return follow.Forward(engine.Commit) }, func() error { return follow.Install(engine) }, follow.Start} {
 		if err := step(); err != nil {
-			return false, err
+			return false, nil, err
 		}
 	}
-	return true, nil
+	return true, nil, nil
 }
 
 // DeployedFollowDependencies binds the boundary path's bounded Git operations without rebuilding.
@@ -127,7 +128,7 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 			if ok, err := boundary(); err != nil {
 				return false, "the unit boundary cannot be read: " + err.Error()
 			} else if !ok {
-				return false, "the seat is not at its unit boundary"
+				return false, followWaitingForBoundary
 			}
 			if job, open := steward.OpenJob(root); open {
 				return false, "job " + job + " is still open"

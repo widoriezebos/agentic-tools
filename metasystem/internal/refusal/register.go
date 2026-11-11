@@ -471,6 +471,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "recorded-identity-unreadable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 	{Pattern: "registry-unreadable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 	{Pattern: "tag-position-proof-unavailable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
+	{Pattern: "deployment-unavailable", Reason: "the engine-follow question's decision state when the deployment cannot be read (internal/steward/engine_follow_ask.go), not a refusal"},
 }
 
 var ProseRows = []Prose{

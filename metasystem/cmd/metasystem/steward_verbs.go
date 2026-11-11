@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -443,8 +444,16 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 			follow.Start = dependencies.FollowStart
 		}
 		tickConfig.FollowDeployedEngine = func() (bool, bool, error) {
-			replaced, err := testrun.FollowDeployedEngineAtBoundary(*repo, follow)
-			return replaced, false, err
+			replaced, refusal, err := testrun.FollowDeployedEngineAtBoundary(*repo, follow)
+			machine := "this machine"
+			if enrolled, resolveErr := goal.ResolveMachine(*repo); resolveErr == nil {
+				machine = enrolled
+			}
+			refused, tellErr := steward.TellFollow(*repo, machine, refusal, now())
+			if tellErr != nil {
+				_ = steward.NoteRearmFailure(*repo, tellErr, now())
+			}
+			return replaced, refused, err
 		}
 		tickConfig.RearmAtBoundary = func() (bool, error) { return false, nil }
 	}
