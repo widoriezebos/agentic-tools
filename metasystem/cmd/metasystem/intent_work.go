@@ -1142,13 +1142,9 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
-	// The declared check runs from the installation, as the lane proves it;
-	// a manual check runs from the folder its caller chose.
-	checkDir := inv.worktreeFolderHere(worktree)
-	if installed := filepath.Join(worktree, inv.layout.InstallationRel); len(inv.input.values["check"]) == 0 {
-		if info, err := os.Stat(installed); err == nil && info.IsDir() {
-			checkDir = installed
-		}
+	proofDirectory := filepath.Join(worktree, inv.layout.InstallationRel)
+	if inv.input.has("check") {
+		proofDirectory = inv.worktreeFolderHere(worktree)
 	}
 	sizeSource, lines, problem := inv.unitSize(unit, briefPath, designs)
 	if problem != nil {
@@ -1239,7 +1235,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
-			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: os.Environ()}}}
+			Proof: []launch.ProofCommand{{Name: "check", Dir: proofDirectory, Argv: append([]string{}, check...), Env: os.Environ()}}}
 		if readEachRound {
 			plan.Read = launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel}
 			if _, err := atomicfile.WriteText(readBrief, binding.readBrief(template, buildBrief), directory); err != nil {

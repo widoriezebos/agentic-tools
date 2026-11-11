@@ -23,17 +23,20 @@ type UnitDeclaration struct {
 }
 
 type UnitCheck struct {
-	FullArgv    []string `json:"fullArgv,omitempty"`
-	ProcessAct  string   `json:"processAct,omitempty"`
-	SelectedBy  string   `json:"selectedBy,omitempty"`
-	Reason      string   `json:"reason,omitempty"`
-	Base        string   `json:"base,omitempty"`
-	SourceTree  string   `json:"sourceTree"`
-	Cheap       string   `json:"cheap"`
-	Audits      string   `json:"audits"`
-	Minutes     int      `json:"minutes"`
-	Directory   string   `json:"directory"`
-	Environment []string `json:"environment"`
+	FullArgv   []string `json:"fullArgv,omitempty"`
+	ProcessAct string   `json:"processAct,omitempty"`
+	SelectedBy string   `json:"selectedBy,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Base       string   `json:"base,omitempty"`
+	SourceTree string   `json:"sourceTree"`
+	Cheap      string   `json:"cheap"`
+	Audits     string   `json:"audits"`
+	Minutes    int      `json:"minutes"`
+	// Directory is the engine's installation folder in the goal worktree.
+	Directory string `json:"directory"`
+	// ManualDirectory applies only to the caller's explicit cheap command.
+	ManualDirectory string   `json:"manualDirectory,omitempty"`
+	Environment     []string `json:"environment"`
 
 	Declaration *UnitDeclaration `json:"declaration,omitempty"`
 }
@@ -89,6 +92,10 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	if check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Directory == "" || check.Environment == nil {
 		return "", nil, errors.New("the frozen unit check is incomplete")
 	}
+	manualDirectory, err := check.cheapDirectory(directory)
+	if err != nil {
+		return "", nil, err
+	}
 	if err := os.MkdirAll(records, 0700); err != nil {
 		return "", nil, err
 	}
@@ -121,6 +128,9 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
 		process := exec.Command("/bin/sh", "-c", command.text)
 		process.Dir, process.Env = directory, slices.Clone(check.Environment)
+		if command.name == "cheap" {
+			process.Dir = manualDirectory
+		}
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
 		}
@@ -173,4 +183,17 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		Exits       []CheckExit `json:"exits"`
 	}{filepath.Base(execution), directory, check, exits}, execution)
 	return execution, exits, errors.Join(append(failures, err)...)
+}
+
+// cheapDirectory maps the caller's manual folder into the executing tree,
+// including an isolated base tree. Declared commands use the runner folder.
+func (check UnitCheck) cheapDirectory(directory string) (string, error) {
+	if check.ManualDirectory == "" {
+		return directory, nil
+	}
+	relative, err := filepath.Rel(check.Directory, check.ManualDirectory)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, relative), nil
 }

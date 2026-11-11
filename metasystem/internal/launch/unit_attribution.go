@@ -351,7 +351,11 @@ func (runner *UnitRunner) rerunAlone(record *UnitRunRecord, round *UnitRound, in
 		}
 		if plan.Check != nil {
 			command.Argv = []string{"/bin/sh", "-c", plan.Check.Cheap}
-			command.Dir, command.Env = plan.Check.Directory, plan.Check.Environment
+			command.Dir, err = plan.Check.cheapDirectory(plan.Check.Directory)
+			if err != nil {
+				return run, false, err
+			}
+			command.Env = plan.Check.Environment
 		}
 		if len(plan.FullArgv) > 0 {
 			command.Argv = plan.FullArgv

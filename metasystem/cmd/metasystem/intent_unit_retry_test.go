@@ -620,13 +620,12 @@ func TestIntentDeclaredCheckRunsFromTheInstallation(t *testing.T) {
 	for _, row := range []struct {
 		name, folder string
 		check        []string
-		want         string
 		laneFix      bool
 	}{
 		{name: "checkout-root", folder: "."},
 		{name: "below-the-installation", folder: "module"},
-		{name: "manual-check", folder: "module", check: []string{"--check", "true"}, want: "module"},
-		{name: "lane-fix-check", folder: "module", check: []string{"--check", "metasystem test impact"}, want: "module", laneFix: true},
+		{name: "manual-check", folder: "module", check: []string{"--check", "true"}},
+		{name: "lane-fix-check", folder: "module", check: []string{"--check", "metasystem test impact"}, laneFix: true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -641,12 +640,12 @@ func TestIntentDeclaredCheckRunsFromTheInstallation(t *testing.T) {
 			var code int
 			var built intentResult
 			if row.laneFix {
-				// The lane's own fix check runs where the lane's caller stands;
-				// the plan is frozen before the build launch is admitted.
+				// The lane's engine check uses the installation even when
+				// its caller stands below it.
 				laneCheckAt(t, b, filepath.Join(b.root(), row.folder), append(args, row.check...)...)
 				plan, err := launch.ReadUnitPlan(filepath.Join(onlyRun(t, b).Rounds[0].Directory, "plan.json"))
-				if err != nil || plan.Check == nil || plan.Check.Cheap != "metasystem test impact --check" || plan.Check.Directory != filepath.Join(b.worktree, row.want) {
-					t.Fatalf("the lane-fix check is frozen at %+v, want the worktree's %q: %v", plan.Check, row.want, err)
+				if err != nil || plan.Check == nil || plan.Check.Cheap != "metasystem test impact --check" || plan.Check.Directory != b.worktree || plan.Check.ManualDirectory != "" {
+					t.Fatalf("the lane-fix check is frozen at %+v, want the worktree's installation: %v", plan.Check, err)
 				}
 				return
 			}
@@ -659,8 +658,12 @@ func TestIntentDeclaredCheckRunsFromTheInstallation(t *testing.T) {
 				t.Fatalf("no plan: %d %s %v", code, built.Summary, built.Details)
 			}
 			plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
-			if err != nil || plan.Check == nil || plan.Check.Directory != filepath.Join(b.worktree, row.want) {
-				t.Fatalf("%d %s: the check is frozen at %+v, want the worktree's %q: %v", code, built.Summary, plan.Check, row.want, err)
+			manualDirectory := ""
+			if row.check != nil {
+				manualDirectory = filepath.Join(b.worktree, row.folder)
+			}
+			if err != nil || plan.Check == nil || plan.Check.Directory != b.worktree || plan.Check.ManualDirectory != manualDirectory {
+				t.Fatalf("%d %s: the check is frozen at %+v, want the worktree's installation and manual folder %q: %v", code, built.Summary, plan.Check, manualDirectory, err)
 			}
 		})
 	}
