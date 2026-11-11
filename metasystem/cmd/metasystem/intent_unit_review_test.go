@@ -1330,6 +1330,7 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 }
 
 func TestWorkReviewCollectsExaminationStop(t *testing.T) {
+	t.Parallel()
 	forUnitLayouts(t, testWorkReviewCollectsExaminationStop)
 }
 
