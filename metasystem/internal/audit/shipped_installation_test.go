@@ -6,6 +6,7 @@ package audit
 // each reads the real installation tree at ../.. and writes nothing into it.
 
 import (
+	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"go/parser"
 	"go/token"
@@ -78,18 +79,34 @@ func TestMetasystemAuditSpawnsNoExternalCommand(t *testing.T) {
 }
 
 // The delivery mode is declared, never inferred (D33): the engine compiles
-// metasystem.engine-delivery=source, the shipped metasystem.conf does not
-// override it, and source delivery ships the Go module that declares the
-// metasystem module path.
+// metasystem.engine-delivery=source. The template may declare central once
+// for its own seats (R-151-m1e); adoption drops that declaration. Source
+// delivery ships the Go module that declares the metasystem module path.
 func TestShippedInstallationDeclaresItsEngineDelivery(t *testing.T) {
 	t.Parallel()
+	for _, row := range []struct {
+		name, conf string
+		wantError  bool
+	}{
+		{"compiled default", "", false},
+		{"template seats", "metasystem.engine-delivery=central\n", false},
+		{"explicit source", "metasystem.engine-delivery=source\n", true},
+		{"unknown delivery", "metasystem.engine-delivery=other\n", true},
+		{"duplicate declaration", "metasystem.engine-delivery=central\nmetasystem.engine-delivery=central\n", true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			if err := templateEngineDeliveryError([]byte(row.conf)); (err != nil) != row.wantError {
+				t.Fatalf("template delivery declaration error = %v, want error %v", err, row.wantError)
+			}
+		})
+	}
 	root := shippedInstallationRoot(t)
 	conf, err := os.ReadFile(filepath.Join(root, "metasystem.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if overridden := regexp.MustCompile(`(?m)^metasystem\.engine-delivery=`).FindAllString(string(conf), -1); len(overridden) != 0 {
-		t.Fatalf("metasystem.conf overrides the compiled metasystem.engine-delivery %d times", len(overridden))
+	if err := templateEngineDeliveryError(conf); err != nil {
+		t.Fatal(err)
 	}
 	if mode, ok := config.CompiledDefault("metasystem.engine-delivery"); !ok || mode != "source" {
 		t.Fatalf("the template ships its engine as source; the compiled metasystem.engine-delivery=%q", mode)
@@ -101,6 +118,17 @@ func TestShippedInstallationDeclaresItsEngineDelivery(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^module github\.com/widoriezebos/agentic-tools/metasystem$`).Match(module) {
 		t.Fatal("metasystem Go source present but go.mod does not declare the metasystem module: damaged template")
 	}
+}
+
+func templateEngineDeliveryError(conf []byte) error {
+	overrides := regexp.MustCompile(`(?m)^metasystem\.engine-delivery=([^\r\n]*)`).FindAllSubmatch(conf, -1)
+	if len(overrides) > 1 {
+		return fmt.Errorf("metasystem.conf overrides the compiled metasystem.engine-delivery %d times", len(overrides))
+	}
+	if len(overrides) == 1 && string(overrides[0][1]) != "central" {
+		return fmt.Errorf("the template's own seats must declare central delivery, got %q", overrides[0][1])
+	}
+	return nil
 }
 
 // The assets the always-loaded instructions and the agent protocol route to

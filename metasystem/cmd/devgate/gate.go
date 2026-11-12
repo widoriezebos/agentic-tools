@@ -28,6 +28,7 @@ import (
 const (
 	testWorkersVariable    = "METASYSTEM_TEST_WORKERS"
 	concurrentGateVariable = "METASYSTEM_ALLOW_CONCURRENT_GATE"
+	checkoutBuildVariable  = "METASYSTEM_ALLOW_CHECKOUT_BUILD"
 )
 
 type gateRun struct {

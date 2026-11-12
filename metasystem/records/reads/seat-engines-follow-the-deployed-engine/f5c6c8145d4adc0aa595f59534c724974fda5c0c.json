@@ -1,0 +1,69 @@
+{
+  "canonicalRead": {
+    "engine": "cea4b2ea2ab8abd2ea34ea02871c9075a935b201",
+    "findings": [],
+    "id": "code-critic-daff68bc7655a6a14af1848c",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-seat-engines-follow-the-deployed-engine/metasystem/artifacts/agents/code-critic-daff68bc7655a6a14af1848c/rounds/1/return.md",
+    "subject": {
+      "commit": "f5c6c8145d4adc0aa595f59534c724974fda5c0c",
+      "diffDigest": "6df070ba4f05639ed9bae0e8638a6b9c02917d5c6e6c4a78fea779f0f52e6091",
+      "kind": "commit",
+      "parent": "2d022cce8b94a4d7c03953e415c687b594d289fb",
+      "tree": "6844c0f36f0775eb4aefb2f867ba881521a7aba1"
+    }
+  },
+  "readDigest": "f1c06eb7819774405bc72d8fefac234284a7c29358e07d13e54d092ca84ddb6d",
+  "schemaVersion": 1,
+  "goal": "seat-engines-follow-the-deployed-engine",
+  "unit": "follow-site-ceiling",
+  "subject": {
+    "commit": "f5c6c8145d4adc0aa595f59534c724974fda5c0c",
+    "parent": "2d022cce8b94a4d7c03953e415c687b594d289fb",
+    "tree": "6844c0f36f0775eb4aefb2f867ba881521a7aba1",
+    "patchDigest": "6df070ba4f05639ed9bae0e8638a6b9c02917d5c6e6c4a78fea779f0f52e6091",
+    "unitDigest": "0b1545847d1f1f9ff46ed088b6ff40bb91f47f3d87a9a5e15d27adeb3dadce51"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-daff68bc7655a6a14af1848c",
+    "round": 1,
+    "closureSha256": "b929149003b367ba3e2fb8e13627ed31caf5ed21bd288e20eab49479b8092862"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6844c0f36f0775eb4aefb2f867ba881521a7aba1",
+    "runId": "goal-read-gate-20261112t103611z-8d890893d34e3323"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "fedc0f03adfe0077b68914acae86e5472e2743b1",
+      "digest": "63500871e47968d2ee1d455b1c05ed565056b5e8b7ebcf623a5119054ee2ba91"
+    },
+    {
+      "kind": "read",
+      "commit": "f8cbe53ff91e10d8b1a396f3afcf1109f1415f21",
+      "digest": "bd391df772ad43afc333920d46123a8cf41e3b522fc9eac6debab0a2e5f74c18"
+    },
+    {
+      "kind": "read",
+      "commit": "08b30daad389b7be2c8edf944054c552b150bfce",
+      "digest": "12b053782c87f72d67439eb22edf0715c9f7ee6d8c0f2273e7cb305065f2f59d"
+    },
+    {
+      "kind": "read",
+      "commit": "2d022cce8b94a4d7c03953e415c687b594d289fb",
+      "digest": "67d214a0083769cf5eb64941c5d21593003a0c64ea80e2fe4d8be217ff66e340"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/verb_ratchet_test.go",
+      "readerWord": "reviewed by critic root code-critic-daff68bc7655a6a14af1848c"
+    }
+  ],
+  "sha256": "de836abfa792b1551616ca631787f338b45d7a0b5578d434c3d3e2bfe27b3226"
+}

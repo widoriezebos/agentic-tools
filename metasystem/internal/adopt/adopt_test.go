@@ -405,3 +405,23 @@ func TestAppendMissingLinesKeepsExistingBytes(t *testing.T) {
 		t.Fatalf("a present line was appended again: %v", err)
 	}
 }
+
+func TestDropTemplateModeKeepsOnlyApplicationDeclarations(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	input := "# Application runtime\nmetasystem.runtimes=claude\n" +
+		"# Template mode\nmetasystem.template=true\n" +
+		"# Template proof\nproof.cheap=go test ./...\n" +
+		"# Template seats follow the deployed engine\nmetasystem.engine-delivery=central\n" +
+		"# Application role\nrole.default.runtime=claude\n"
+	if err := os.WriteFile(conf, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := dropTemplateMode(conf); err != nil {
+		t.Fatal(err)
+	}
+	want := "# Application runtime\nmetasystem.runtimes=claude\n# Application role\nrole.default.runtime=claude\n"
+	if got := readText(t, conf); got != want {
+		t.Fatalf("adopted conf = %q, want only application declarations and their comments: %q", got, want)
+	}
+}

@@ -9,11 +9,31 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 var ErrRearmDeferred = errors.New("re-arm deferred")
+
+// OpenJob holds the engine at any nonterminal or unreadable job, regardless of its goal or process.
+func OpenJob(root string) (job string, open bool) {
+	paths, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
+	for _, path := range paths {
+		value, err := readHealthObject(path)
+		status, _ := value["status"].(string)
+		if err != nil || !dispatch.TerminalStatus(status) {
+			return strings.TrimSuffix(filepath.Base(path), ".json"), true
+		}
+	}
+	return "", false
+}
+
+// NoteFollowFailure retains one line for each deployed commit and refusal reason.
+func NoteFollowFailure(root, commit, reason, command string, now time.Time) error {
+	message := "engine follow: " + strings.ReplaceAll(reason, "\n", "; ") + "; to follow by hand: " + command
+	return logOrphanSeatRun(root, message+" ["+commit+"]", now)
+}
 
 // NoteRearmFailure logs each refresh reason once without holding the runner's pass.
 func NoteRearmFailure(root string, reason error, now time.Time) error {

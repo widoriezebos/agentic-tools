@@ -17,6 +17,8 @@ flags. Adoption ships the engine as source — `cmd/`, `internal/`,
 `go.mod`, `go.sum` ride the payload, `metasystem.engine-delivery=source`
 is a required conf key, and the adopted repository builds its own
 binary under its own go gate.
+This repository's own conf declares `central` for its own seats (R-151-m1e),
+and adoption drops that line.
 
 ## The boundary: core versus plumbing
 

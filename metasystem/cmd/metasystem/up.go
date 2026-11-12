@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -395,6 +396,12 @@ func runUpWithProcessOwners(args []string, owners processIntentOwners, stdout, s
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid:             int64(os.Getppid()),
 		RestampStopCapability: owners.adoptionReads.RestampFresh, AdoptionRemedy: "metasystem internal up",
+	}
+	if followsDeployedEngine(root) {
+		options.ReArmRebuiltEngine = steward.ReArmDeployedEngine(func() (steward.DeployedEngine, bool, error) {
+			engine, err := activeDeployedEngine(root, scope)
+			return engine, err == nil, err
+		})
 	}
 	if *printScheduler {
 		fmt.Fprintln(stdout, up.SchedulerEntry(options))

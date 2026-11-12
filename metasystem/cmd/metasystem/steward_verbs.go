@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -356,9 +357,12 @@ func runStewardRunWith(args []string, stdout, stderr io.Writer,
 }
 
 type stewardRunDependencies struct {
-	Prober       identity.Prober
-	Signal       identity.SignalFunc
-	ReviveLaunch steward.LaunchSeam
+	Prober           identity.Prober
+	Signal           identity.SignalFunc
+	ReviveLaunch     steward.LaunchSeam
+	FollowOperations steward.RearmOperations
+	FollowStart      func() error
+	RearmBoundary    func(string, func() (bool, error)) (bool, error)
 }
 
 func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
@@ -399,6 +403,10 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	tickConfig.Prober, tickConfig.Signal = dependencies.Prober, dependencies.Signal
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.RunnerClock = clock
+	rearm := testrun.RearmStewardAtBoundary
+	if dependencies.RearmBoundary != nil {
+		rearm = dependencies.RearmBoundary
+	}
 	tickConfig.RearmAtBoundary = func() (bool, error) {
 		_, err := steward.VerifyIdentity(steward.RepoIdentityPath(*repo), *repo)
 		if err != nil {
@@ -408,7 +416,7 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 		if err != nil {
 			return false, err
 		}
-		return testrun.RearmStewardAtBoundary(*repo, func() (bool, error) {
+		return rearm(*repo, func() (bool, error) {
 			now := time.Now()
 			if !tickConfig.Now.IsZero() {
 				now = tickConfig.Now
@@ -419,7 +427,38 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 			return steward.SeatAtUnitBoundary(*repo, home, now, tickConfig.Prober)
 		})
 	}
+	if followsDeployedEngine(*repo) {
+		now := time.Now
+		if clock != nil {
+			now = clock.Now
+		}
+		follow := testrun.DeployedFollowDependencies(context.Background(), *repo, now, func() (bool, error) {
+			home, err := steward.HomeStateRoot()
+			if err != nil {
+				return false, err
+			}
+			return steward.SeatAtUnitBoundary(*repo, home, now(), tickConfig.Prober)
+		}, func() (steward.DeployedEngine, error) { return activeDeployedEngine(*repo, *repo) },
+			func(engine steward.DeployedEngine) error { return installDeployedEngine(*repo, engine) }, dependencies.FollowOperations)
+		if dependencies.FollowStart != nil {
+			follow.Start = dependencies.FollowStart
+		}
+		tickConfig.FollowDeployedEngine = func() (bool, bool, error) {
+			replaced, refusal, err := testrun.FollowDeployedEngineAtBoundary(*repo, follow)
+			machine := "this machine"
+			if enrolled, resolveErr := goal.ResolveMachine(*repo); resolveErr == nil {
+				machine = enrolled
+			}
+			refused, tellErr := steward.TellFollow(*repo, machine, refusal, now())
+			if tellErr != nil {
+				_ = steward.NoteRearmFailure(*repo, tellErr, now())
+			}
+			return replaced, refused, err
+		}
+		tickConfig.RearmAtBoundary = func() (bool, error) { return false, nil }
+	}
 	if refresh != nil {
+		tickConfig.FollowDeployedEngine = nil
 		tickConfig.RearmAtBoundary = refresh
 	}
 	tickConfig.BreachStop = delegateBreachStop(*repo)

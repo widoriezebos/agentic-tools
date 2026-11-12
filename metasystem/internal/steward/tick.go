@@ -85,6 +85,8 @@ type TickConfig struct {
 	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
 	// A true result ends this runner so its replacement can take the lock.
 	RearmAtBoundary func() (bool, error)
+	// FollowDeployedEngine installs deployed bytes at a safe boundary, including at the helm.
+	FollowDeployedEngine func() (replaced, refused bool, err error)
 	// CompletedBoundary retains completed work before later boundary consumers.
 	CompletedBoundary func(string, time.Time) error
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.

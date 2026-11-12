@@ -512,6 +512,9 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 		if strings.HasPrefix(strings.TrimSpace(line), config.TemplateModeKey+"=") {
 			t.Fatalf("adoption shipped the template-mode signal: %s", line)
 		}
+		if strings.HasPrefix(strings.TrimSpace(line), "metasystem.engine-delivery=") {
+			t.Fatalf("adoption shipped the template's own engine-delivery declaration: %s", line)
+		}
 	}
 	if config.TemplateMode(target) {
 		t.Fatal("the adopted installation reads as the template")
@@ -520,7 +523,7 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 		t.Fatalf("adoption lost the conf's header or kept the template-mode comment:\n%s", conf)
 	}
 	// The conf holds overrides only; the rest resolves to compiled defaults.
-	for key, want := range map[string]string{"role.default.runtime": "claude", "suite.progress-silence-min": "30",
+	for key, want := range map[string]string{"metasystem.engine-delivery": "source", "role.default.runtime": "claude", "suite.progress-silence-min": "30",
 		"suite.section-cap-min": "45", "suite.evidence-copy-timeout-sec": "60", "suite.evidence-copy-max-mb": "512"} {
 		value, _, err := config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(target, "metasystem.conf"),
 			LookupEnv: func(string) (string, bool) { return "", false }})
