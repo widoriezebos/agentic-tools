@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build the lane-held row (40) if lane health does not already route one, then the runner's scoped seat-revive (70, --last); briefs cut and Astra-checked before each build; after the deputy's first delivery; design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-owner-decides-the-machine-does-the-rest.md decisions E1, E4.
 - OpenedAt: 2026-11-12T22:37:35Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=G2YJPH1ZMV3G9YK46WETRCPQSX-m1e-f5de59ff minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T22:37:35Z QKZSFN38NC9WQNHA13SQTS8PDK-m1e-f5de59ff open actor=human:Wido targets=a-seat-and-a-lane-recover-under-delegation
 - 2026-11-12T22:38:32Z G2YJPH1ZMV3G9YK46WETRCPQSX-m1e-f5de59ff approve actor=human:Wido targets=a-seat-and-a-lane-recover-under-delegation
-Integrity: sha256=09ef7de0b642147595c9e858f8bcb3083bc89b1af903aeca799a9818de40efd0
+- 2026-11-12T22:38:56Z R5ZN8R496FXS54SZEXCEQ1DTE4-m1e-f5de59ff set-pin actor=human:Wido targets=a-seat-and-a-lane-recover-under-delegation
+Integrity: sha256=ed4ce4fa7363f48f53944c7f43b3862d1271868b1c1f9da396b07ccbe3f09393
