@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 2
+- Sequence: 1
 - Risk: severity=3 novelty=1 exposure=3 accumulation=2 basis="The lane's merge resolver installed a dirty engine; every lane session since failed arming silently and no merge resolution could run for a day."
 - Tier: 3
 - Intent: A check never replaces an enrolled checkout's engine (one publication policy at every devgate install boundary), a session whose arming fails asks the person once at the source with the remedy and retires the question when it arms, and a lane stop closes once main moves past its tree; root cause of the lane's silent merge refusals (finding 612).
@@ -10,7 +10,7 @@
 - Next step: Build U1 (60), U2 (98), U3 (32, --last; may land first) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-lane-session-owns-its-merge.r4.md (Astra DESIGN STANDS r4). After seat-engines-follow-the-deployed-engine lands: deploy, P4 bootstrap of the lane, verify announce, lease succession and merge dispatch (page Remediation). Program the-route-holds-when-something-deviates (2026-11-12, D1): build U3 (32) first, it depends on nothing and retires the stop of 2026-11-11 21:07; then U1 (60), U2 (98); added U4 (40, --last): the lane's health row reports authorization readiness from the same enrollment comparison authorization uses (runner.go:729) instead of health.go:566. Program the-owner-decides-the-machine-does-the-rest (2026-11-12): U1 lands alone as this goal's whole (it frees m1e's claim for the deputy's first delivery); U3, U2 and U4 continue in a follow-up goal a1 opens at the hand-in.
 - OpenedAt: 2026-11-12T09:09:13Z
 - FirstClaimAt: 2026-11-12T20:43:53Z
-- Revision: 11
+- Revision: 12
 - BlockedBy: seat-engines-follow-the-deployed-engine
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
@@ -32,4 +32,5 @@ History:
 - 2026-11-12T17:07:28Z NJNVDRY07SK68B8A28T2FN0ZHG-m1e-5a087708 set-priority actor=human:Wido targets=required-test-file-selectors-are-understood,the-lane-session-owns-its-merge reason=priority-order subject=the-lane-session-owns-its-merge from=1:3 to=1:2 requested-sequence=2
 - 2026-11-12T20:43:53Z RYXYZM6E9HQYVH8JH490ZFPWC5-m1e-cc2e8fc8 claim actor=human:Wido targets=the-lane-session-owns-its-merge authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=765 reason=areas unknown for goal the-lane-session-owns-its-merge: no accepted design declares areas
 - 2026-11-12T22:42:05Z KMS9V69M509XMNQBTPFN7MQ30Q-m1e-f5de59ff edit actor=human:Wido targets=the-lane-session-owns-its-merge displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T20:43:53Z
-Integrity: sha256=5bbb6b91511e8617c7860d73c079bb2424ccd0935a6d67219e61620bcd5b6c97
+- 2026-11-12T22:42:46Z XQ4PBBP6BBGJTXAX5024ZJZ93C-m1e-f5de59ff set-priority actor=human:Wido targets=the-lane-session-owns-its-merge,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=the-lane-session-owns-its-merge from=1:2 to=1:1 requested-sequence=1
+Integrity: sha256=93c4b6cf3e218af15d13fb2c84f409233c7653452a10b7a9bde410307f08fc3c
