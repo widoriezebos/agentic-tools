@@ -18,7 +18,7 @@ type RoundResult struct {
 
 // ProveRoundResult runs the retained cheap checks on the publication tree.
 // Output is retained with the round; checks may not change the candidate.
-func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, subject *UnitSubject, retain func(UnitSubject) error) (string, error) {
+func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree, parent string, subject *UnitSubject, retain func(UnitSubject) error) (string, error) {
 	plan, err := readUnitPlan(filepath.Join(review.Round.Directory, "plan.json"), review.Round.Directory)
 	if err != nil {
 		return "", err
@@ -36,8 +36,16 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, s
 		return "", fmt.Errorf("the publication checks changed the result tree")
 	}
 	subject.GateWorktree = worktree
+	decision := runner.applicableRoundCheck(review, plan, worktree, parent, before.TreeID, subject.GateReuse)
+	subject.GateReuse = decision.Reuse
 	if err := retain(*subject); err != nil {
 		return "", err
+	}
+	if decision.Reuse != nil {
+		return decision.Reuse.Source, nil
+	}
+	if runner.CheckMismatch != nil {
+		runner.CheckMismatch("publication check runs: " + decision.Field + " differs")
 	}
 	for index, command := range proofCommands(plan) {
 		var launchID string
@@ -123,6 +131,30 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, s
 		return "", fmt.Errorf("the publication checks changed the result tree: %v", err)
 	}
 	return strings.Join(subject.GateLaunches, ","), nil
+}
+
+func (runner *UnitRunner) applicableRoundCheck(review UnitReview, plan UnitPlan, worktree, parent, tree string, reuse *CheckReuse) CheckDecision {
+	paths, _ := filepath.Glob(filepath.Join(review.Round.Directory, "check-*", "evidence.json"))
+	if reuse != nil {
+		paths = append([]string{reuse.Path}, paths...)
+	}
+	decision := CheckDecision{Field: "missing evidence"}
+	for _, path := range paths {
+		var record CheckEvidence
+		err := readJSONFile(path, &record)
+		need := CheckNeed{Tree: tree, Base: parent, Strength: "audited"}
+		if plan.Check != nil && runner.PublicationCheck != nil && err == nil {
+			need.Check = *plan.Check
+			need.Context, need.Requirements, err = runner.PublicationCheck(worktree, parent, *plan.Check, record.Selection)
+		} else if err == nil {
+			return CheckDecision{Field: "current context unavailable"}
+		}
+		decision = ApplicableCheck(&record, path, err, need)
+		if decision.Reuse != nil {
+			return decision
+		}
+	}
+	return decision
 }
 
 // PublicationPending retains the check to resume after a command wait ends.
