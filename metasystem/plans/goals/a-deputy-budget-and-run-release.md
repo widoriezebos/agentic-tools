@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build U2b1 32, U2b2 86, U2a1a, U2a1b, U2a2a, U2a2b, U2a2c (--last) from the accepted page metasystem/plans/designs/the-deputy-acts-under-a-recorded-delegation.md; one brief and one Astra round each; after the first delivery lands; design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-owner-decides-the-machine-does-the-rest.md decision E3.
 - OpenedAt: 2026-11-12T22:39:18Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=WJJ29G2FA4PQ5YXN80GETMJA4H-m1e-f5de59ff minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T22:39:18Z 9198THKYBR41APP0K0WYQSYZE9-m1e-f5de59ff open actor=human:Wido targets=a-deputy-budget-and-run-release
 - 2026-11-12T22:39:38Z WJJ29G2FA4PQ5YXN80GETMJA4H-m1e-f5de59ff approve actor=human:Wido targets=a-deputy-budget-and-run-release
-Integrity: sha256=2da7361dd2c75ddf823ab4384632ae7af1934e38916fb83c502b0a4fbe333535
+- 2026-11-12T22:39:57Z XCHS0CDH9Y1P2AJT21T00DWHW4-m1e-f5de59ff set-pin actor=human:Wido targets=a-deputy-budget-and-run-release
+Integrity: sha256=846474b5dd514f41b98f07921ffcf0a5c3a0b54d989adfc3f68001055aa8534a
