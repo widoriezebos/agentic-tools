@@ -115,7 +115,7 @@ func TestSelected(t *testing.T) {
 	b := newMergeGateBed(t)
 	b.fail = func(_ *exec.Cmd, _ string) (string, error) {
 		var out, problem bytes.Buffer
-		code := runNamedTestGroups(root, contract, []string{"unit/owner"}, environment, map[string]string{"unit/owner": "owner"}, &out, &problem)
+		code, _ := runNamedTestGroups(root, contract, []string{"unit/owner"}, environment, map[string]string{"unit/owner": "owner"}, &out, &problem)
 		if code != 0 {
 			t.Fatalf("real Go exit=%d\n%s\n%s", code, &out, &problem)
 		}

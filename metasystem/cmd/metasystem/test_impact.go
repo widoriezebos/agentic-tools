@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -33,7 +34,11 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 	return runTestImpactSelection(args, stdout, stderr, only)
 }
 
-func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string) (code int) {
+func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string) int {
+	return (impactSources{plain.Git, goadapter.UnitImpact, os.Environ(), config.Get, os.Getenv}).run(args, stdout, stderr, only)
+}
+
+func (sources impactSources) run(args []string, stdout, stderr io.Writer, only string) (code int) {
 	invocation := testRunInvocation{stdout: stdout, stderr: stderr, name: "test impact"}
 	finish := invocation.envelope(invocation.name, args)
 	defer func() { finish(code) }()
@@ -41,7 +46,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	flags := newFlagSet("test impact", stdout, stderr)
 	flags.Bool("json", false, "print the plan as a JSON result")
 	output := plain.ImpactPlan{Selections: []string{}}
-	base := flags.String("base", os.Getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
+	base := flags.String("base", sources.getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
 	check := flags.Bool("check", false, "check a unit at impact depth only when cheap")
 	publicationOnly := flags.Bool("publication-only", false, "run only the publication requirements")
 	plan := flags.Bool("plan", false, "print the selection without running it")
@@ -57,11 +62,36 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		fmt.Fprintln(stderr, "the unit check needs its comparison base\nrun: metasystem test impact --base COMMIT # or set LANDING_PROOF_BASE")
 		return 2
 	}
+	selectionPath := sources.getenv("METASYSTEM_CHECK_SELECTION")
+	selection := launch.CheckSelection{Mode: "impact", Settings: map[string]string{}}
+	var results []proofrun.NamedGroupResult
+	var description string
+	var environment []string
 	installation, contract, _, err := testrun.LoadContract(*root)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
 		return 1
+	}
+	fullContract := contract
+	units := map[string]string{}
+	if selectionPath != "" {
+		if err := os.Remove(selectionPath); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer func() {
+			if code == 0 && results != nil {
+				selection.Base, selection.NotRunnable = output.Base, output.NotRunnable
+				if output.Check != "" {
+					selection.Mode = output.Check
+				}
+				if err := writeImpactSelection(selectionPath, installation, description, selection, contract, fullContract, results, units, environment); err != nil {
+					fmt.Fprintln(stderr, err)
+					code = 1
+				}
+			}
+		}()
 	}
 	started := time.Now()
 	identity := repairCheck{Reason: "impact"}
@@ -94,7 +124,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}()
 	}
 
-	if *check && !*plan && !replay && !*publicationOnly {
+	if selectionPath == "" && *check && !*plan && !replay && !*publicationOnly {
 		identity, err = repairCheckIdentity(installation, *base)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
@@ -134,30 +164,36 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	if config.TemplateMode(installation) {
 		prefix = "metasystem/"
 	}
-	fullContract := contract
 	ids := []string{}
-	units := map[string]string{}
 	selections := strings.Fields(only)
 	if replay {
+		selection.BaseReason = "replay"
 		fmt.Fprintln(stdout, "note: replay selections ignore the comparison base from flags and environment")
 	} else if !*publicationOnly {
-		sha, err := plain.Git(installation, "rev-parse", "--verify", *base+"^{commit}")
+		sha, err := sources.git(installation, "rev-parse", "--verify", *base+"^{commit}")
 		if err != nil {
 			fmt.Fprintf(stderr, "the unit check's base %s is not a commit in this repository\nrun: metasystem test impact --base COMMIT  (a commit the branch contains)\n%v\n", *base, err)
 			return 2
 		}
-		if _, err := plain.Git(installation, "merge-base", "--is-ancestor", sha, "HEAD"); err != nil {
+		if _, err := sources.git(installation, "merge-base", "--is-ancestor", sha, "HEAD"); err != nil {
 			fmt.Fprintf(stderr, "the unit check's base %s is not an ancestor of HEAD; nothing was selected\nrun: metasystem test impact --base <the round's base>\n", sha)
 			return 2
 		}
-		subject, err := plain.Git(installation, "show", "-s", "--format=%s", sha)
+		subject, err := sources.git(installation, "show", "-s", "--format=%s", sha)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		output.Base, output.Subject = sha, subject
+		if selectionPath != "" {
+			selection.BaseTree, err = sources.git(installation, "rev-parse", sha+"^{tree}")
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
+		}
 		fmt.Fprintf(stdout, "plan: base %s (%s)\n", sha, subject)
-		impact, err := goadapter.UnitImpact(installation, sha, os.Getenv("LANDING_PROOF_SCOPE") == "impact")
+		impact, err := sources.impact(installation, sha, sources.getenv("LANDING_PROOF_SCOPE") == "impact")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -222,6 +258,16 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			fmt.Fprintf(stdout, "not runnable here: %d selected tests are in files Go does not build for %s/%s; not counted missing\n", impact.NotRunnable, impact.GOOS, impact.GOARCH)
 		}
 	}
+	if *publicationOnly && selectionPath != "" {
+		output.Base, err = sources.git(installation, "rev-parse", "--verify", *base+"^{commit}")
+		if err == nil {
+			selection.BaseTree, err = sources.git(installation, "rev-parse", output.Base+"^{tree}")
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+	}
 	if replay {
 		for _, selection := range selections {
 			unit, names, named := strings.Cut(selection, "=")
@@ -242,11 +288,17 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}
 	}
 	if (*check || *plan) && !replay && !*publicationOnly {
+		effective := &selection
 		var selection strings.Builder
 		for _, item := range selections {
 			fmt.Fprintln(&selection, "selection: "+item)
 		}
-		share, cheap, full, _, err := impactCost(installation, installation, selection.String(), fullContract)
+		share, cheap, full, _, err := impactCost(installation, installation, selection.String(), fullContract, func(p config.GetParams) (string, int, error) {
+			value, code, err := sources.get(p)
+			// Keep the value from the same read that decides the selection.
+			effective.Settings[p.Key] = value
+			return value, code, err
+		})
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -291,15 +343,17 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}
 		return 0
 	}
-	environment := slices.DeleteFunc(os.Environ(), func(entry string) bool {
-		return strings.HasPrefix(entry, "LANDING_ONLY=") || !replay && strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
+	environment = slices.DeleteFunc(slices.Clone(sources.environment), func(entry string) bool {
+		return strings.HasPrefix(entry, "METASYSTEM_CHECK_SELECTION=") || strings.HasPrefix(entry, "LANDING_ONLY=") || !replay && strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
 	})
 	environment = append(environment, "LANDING_ONLY="+only)
 	if !replay {
 		environment = append(environment, "LANDING_PROOF_BASE="+output.Base)
 	}
 	if err := proofrun.WriteLandingEnvironment(stdout, func() (string, error) {
-		return proofrun.LandingEnvironment(context.Background(), installation, environment)
+		var err error
+		description, err = proofrun.LandingEnvironment(context.Background(), installation, environment)
+		return description, err
 	}); err != nil {
 		fmt.Fprintln(stderr, err)
 		finishTiming()
@@ -314,7 +368,8 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		fmt.Fprintln(stdout, "LANDING-CHECKED\t0")
 		return 0
 	}
-	return runNamedTestGroups(installation, contract, ids, environment, units, stdout, stderr, finishTiming)
+	code, results = runNamedTestGroups(installation, contract, ids, environment, units, stdout, stderr, finishTiming)
+	return code
 }
 
 // landingOnly reads the replay selection: the lane's gate always sets
@@ -382,8 +437,12 @@ func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool
 	return share, !whole && len(selected)*100 < limit*len(full)
 }
 
-func depthSetting(install, key string) (int, error) {
-	value, _, err := config.Get(config.GetParams{ConfPath: filepath.Join(install, "metasystem.conf"), Key: key})
+func depthSetting(install, key string, readers ...func(config.GetParams) (string, int, error)) (int, error) {
+	get := config.Get
+	if len(readers) > 0 {
+		get = readers[0]
+	}
+	value, _, err := get(config.GetParams{ConfPath: filepath.Join(install, "metasystem.conf"), Key: key})
 	if n, numberErr := strconv.Atoi(value); err == nil && numberErr == nil && n >= 1 {
 		return n, nil
 	}
@@ -414,13 +473,13 @@ func fullPackageMeasure(install string, contract testpolicy.Contract) (map[strin
 	return packages, nil
 }
 
-func impactCost(install, module, plan string, contract testpolicy.Contract) (int, bool, int, string, error) {
+func impactCost(install, module, plan string, contract testpolicy.Contract, readers ...func(config.GetParams) (string, int, error)) (int, bool, int, string, error) {
 	packages, err := fullPackageMeasure(module, contract)
 	full := len(packages)
 	if err != nil {
 		return 0, false, 0, "", err
 	}
-	limit, err := depthSetting(install, "landing.impact-max-share")
+	limit, err := depthSetting(install, "landing.impact-max-share", readers...)
 	share, cheap := impactDepth(plan, contract, packages, limit)
 	reason := ""
 	if err == nil && full > 0 && !cheap && share < limit {
@@ -577,7 +636,7 @@ func committedImpactCheck(directory, base string, stdout, stderr io.Writer, flag
 	return checked, err
 }
 
-func impactSelectionForm(directory string, contract testpolicy.Contract, ids []string, units map[string]string) (string, error) {
+func impactSelectionForm(directory string, contract testpolicy.Contract, ids []string, units map[string]string, discovered ...map[string][]string) (string, error) {
 	tests, packages := 0, 0
 	var groups []string
 	for _, group := range contract.Groups {
@@ -590,9 +649,7 @@ func impactSelectionForm(directory string, contract testpolicy.Contract, ids []s
 		}
 		packages += len(group.Packages)
 		var names []string
-		if json.Unmarshal(group.Tests, &names) == nil {
-			tests += len(names)
-		} else {
+		if json.Unmarshal(group.Tests, &names) != nil {
 			for _, path := range group.Packages {
 				dir := filepath.Join(directory, path)
 				pkg, err := build.Default.ImportDir(dir, 0)
@@ -606,11 +663,16 @@ func impactSelectionForm(directory string, contract testpolicy.Contract, ids []s
 					}
 					for _, decl := range parsed.Decls {
 						if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && testpolicy.GoTestName(fn.Name.Name) {
-							tests++
+							names = append(names, fn.Name.Name)
 						}
 					}
 				}
 			}
+		}
+		tests += len(names)
+		slices.Sort(names)
+		if len(discovered) > 0 {
+			discovered[0][units[group.ID]] = names
 		}
 	}
 	form := fmt.Sprintf("impact: %d tests of %d packages", tests, packages)
@@ -618,4 +680,49 @@ func impactSelectionForm(directory string, contract testpolicy.Contract, ids []s
 		form += " + groups " + strings.Join(groups, ", ")
 	}
 	return form, nil
+}
+
+type impactSources struct {
+	git         func(string, ...string) (string, error)
+	impact      func(string, string, bool) (goadapter.Impact, error)
+	environment []string
+	get         func(config.GetParams) (string, int, error)
+	getenv      func(string) string
+}
+
+func writeImpactSelection(path, installation, description string, selection launch.CheckSelection, contract, full testpolicy.Contract, results []proofrun.NamedGroupResult, units map[string]string, environment []string) error {
+	selection.Version, selection.VerdictPolicyVersion = 1, 1
+	selection.Groups, selection.GroupDigests = []string{}, map[string]string{}
+	selection.PackageTests, selection.BuildTags = map[string][]string{}, map[string][]string{}
+	data, _ := json.Marshal(full)
+	selection.ContractDigest = bytesSHA256(data)
+	selection.EnvironmentSHA256 = bytesSHA256([]byte(strings.Join(environment, "\x00")))
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	selection.EngineDigest, err = fileSHA256(executable)
+	if err != nil {
+		return err
+	}
+	selection.GoVersion, _, _ = strings.Cut(description, "; ")
+	if _, err := fmt.Sscanf(strings.TrimPrefix(description, selection.GoVersion+"; "), "GOOS=%q; GOARCH=%q;", &selection.GOOS, &selection.GOARCH); err != nil {
+		return err
+	}
+	for _, result := range results {
+		selection.Groups = append(selection.Groups, result.ID)
+		selection.Workers = result.Workers
+	}
+	for _, group := range contract.Groups {
+		if !slices.Contains(selection.Groups, group.ID) {
+			continue
+		}
+		data, _ := json.Marshal(group)
+		selection.GroupDigests[group.ID] = bytesSHA256(data)
+		selection.BuildTags[group.ID] = group.BuildTags
+	}
+	if _, err := impactSelectionForm(installation, contract, selection.Groups, units, selection.PackageTests); err != nil {
+		return err
+	}
+	return selection.Write(path)
 }
