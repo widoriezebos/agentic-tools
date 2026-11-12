@@ -1,0 +1,49 @@
+{
+  "canonicalRead": {
+    "engine": "9cae462fa0582cdff4e07a589549ada6df8a763e",
+    "findings": [],
+    "id": "code-critic-ce04cf12630d80727c49f1e7",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-publication-consumes-the-units-check/metasystem/artifacts/agents/code-critic-ce04cf12630d80727c49f1e7/rounds/1/return.md",
+    "subject": {
+      "commit": "46d95b0b52cfa2c2db5f1af4a214f02de2ebb950",
+      "diffDigest": "75d3e1de56ef63d24e8a1a2fa0c90b7ec3f2d04ebf9610e17a4819b5b67f6c82",
+      "kind": "commit",
+      "parent": "fc171bca9947c3bd4a3bebba57a6c724da1637fb",
+      "tree": "a9a5f2b9dc978d5cb652f093a66e7056d527a59b"
+    }
+  },
+  "readDigest": "21de2ae831c454a7896f394824858ac7b0c2c43076cc1f921d0aaf9a8a04d264",
+  "schemaVersion": 1,
+  "goal": "a-publication-consumes-the-units-check",
+  "unit": "D2-U2",
+  "subject": {
+    "commit": "46d95b0b52cfa2c2db5f1af4a214f02de2ebb950",
+    "parent": "fc171bca9947c3bd4a3bebba57a6c724da1637fb",
+    "tree": "a9a5f2b9dc978d5cb652f093a66e7056d527a59b",
+    "patchDigest": "75d3e1de56ef63d24e8a1a2fa0c90b7ec3f2d04ebf9610e17a4819b5b67f6c82",
+    "unitDigest": "9b0abbb9954a3b134d79d866bdd9fadce08b11f572a9d5c13602d92381cfdee0"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ce04cf12630d80727c49f1e7",
+    "round": 1,
+    "closureSha256": "e382674ace7ebf9ebc47b804ad3b9260867cab1dd2a17298f94c14124b52ab06"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a9a5f2b9dc978d5cb652f093a66e7056d527a59b",
+    "runId": "goal-read-gate-20261112t112015z-313ccbc90e98161d"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "fc171bca9947c3bd4a3bebba57a6c724da1637fb",
+      "digest": "006479f85c0af660a5ab9a6a00494ce726bdc795c73b14a1075a4966e5ae3b59"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "d8524c57881ef5e9e49582ee1af724579fd01919080eed9a2557d4bee1763db1"
+}
