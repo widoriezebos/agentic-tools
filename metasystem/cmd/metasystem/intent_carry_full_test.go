@@ -422,6 +422,8 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		unavailable = true
 		owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
 		repair := []string{"work", "review", "--commit", subject.Commit, "--goal", b.id, "--repo", b.root(), "--check-only", "--reason", "Repair missing classification", "--by", "Wido", "--check", script}
+		engine := publicationEngineStub(t)
+		owners.processes.executable = func() (string, error) { return engine, nil }
 		mismatch := slices.Clone(repair)
 		mismatch[slices.Index(mismatch, "--by")+1] = "W. Riezebos"
 		code, refused := checkActBuild(t, b, owners, mismatch...)
@@ -510,7 +512,7 @@ func TestDeclaredResumeAndRepairPublicBuild(t *testing.T) {
 		t.Fatalf("person retained repair: %d %+v", code, repaired)
 	}
 	plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
-	if err != nil || plan.Check.Cheap != "false" || plan.Check.Audits != "true" || plan.Check.ProcessAct == "" {
+	if err != nil || plan.Check.Cheap != "false" || plan.Check.Audits != "metasystem test impact --publication-only" || plan.Check.ProcessAct == "" {
 		t.Fatalf("repair didn't replace check: %+v %v", plan.Check, err)
 	}
 	raw, _ := os.ReadFile(baseline)

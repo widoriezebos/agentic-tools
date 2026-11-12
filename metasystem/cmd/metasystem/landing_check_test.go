@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -31,7 +30,7 @@ func TestLandingResolveCheckCostAndCollectionReuse(t *testing.T) {
 	group.Kind = "static"
 	group.Inputs = []string{"cmd/**"}
 	group.Argv = []string{"/bin/sh", "-c", fmt.Sprintf("printf checked >> %s", shellCommand([]string{count}))}
-	contract.Groups = append(contract.Groups, group)
+	contract.Groups[2] = group
 	data, err = json.Marshal(contract)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +45,7 @@ func TestLandingResolveCheckCostAndCollectionReuse(t *testing.T) {
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = false\n")
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() { _ = 1 }\n")
 	testingFixtureGit(t, root, "add", ".")
-	run := func(wantCount int, reused bool) {
+	run := func(wantCount int) {
 		t.Helper()
 		code, out, problem := impactPublic(t, root, "--base", base, "--check")
 		if code != 0 {
@@ -56,22 +55,16 @@ func TestLandingResolveCheckCostAndCollectionReuse(t *testing.T) {
 		if err != nil || string(got) != strings.Repeat("checked", wantCount) {
 			t.Fatalf("checks=%s err=%v", got, err)
 		}
-		if reused {
-			if !strings.Contains(out, "check reused from the job") || strings.Contains(out, "landing group") {
-				t.Fatalf("collection ran a check: %s", out)
-			}
-		} else {
-			if !strings.Contains(out, "check: fast-static-build only; impact would cover 50% of 4 packages") || !strings.Contains(out, "landing group fast-static-build green") || strings.Contains(out, "landing group unit/") {
-				t.Fatalf("expensive check: %s", out)
-			}
+		if !strings.Contains(out, "check: fast-static-build only; impact would cover 50% of 4 packages") || !strings.Contains(out, "landing group fast-static-build green") || strings.Contains(out, "landing group unit/") || strings.Contains(out, "check reused from the job") {
+			t.Fatalf("expensive check: %s", out)
 		}
 		t.Log(out)
 	}
-	run(1, false)
-	run(1, true)
+	run(1)
+	run(2)
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() { _ = 2 }\n")
 	testingFixtureGit(t, root, "add", ".")
-	run(2, false)
+	run(3)
 	// A different comparison base cannot borrow the preceding job's green.
 	identity, err := repairCheckIdentity(root, base)
 	if err != nil {
@@ -107,7 +100,7 @@ func TestLandingCheckSaveWorkingTreeGitAdapter(t *testing.T) {
 			if changeIndex {
 				group.Argv = []string{"git", "add", "stage-me.txt"}
 			}
-			contract.Groups = append(contract.Groups, group)
+			contract.Groups[2] = group
 			data, err = json.Marshal(contract)
 			if err != nil {
 				t.Fatal(err)
@@ -133,8 +126,8 @@ func TestLandingCheckSaveWorkingTreeGitAdapter(t *testing.T) {
 					t.Fatalf("record=%s err=%v", record, err)
 				}
 				code, out, problem = impactPublic(t, root, "--base", base, "--check")
-				if code != 0 || !strings.Contains(out, "check reused from the job") {
-					t.Fatalf("reuse=%d out=%s err=%s", code, out, problem)
+				if code != 0 || strings.Contains(out, "check reused from the job") || !strings.Contains(out, "landing group fast-static-build green") {
+					t.Fatalf("recheck=%d out=%s err=%s", code, out, problem)
 				}
 			}
 			t.Log(out)
@@ -167,7 +160,7 @@ func TestLandingCheckFixRecordsEveryOutcomeGitAdapter(t *testing.T) {
 			if outcome == "unsaved" {
 				group.Argv = []string{"git", "add", "stage-me.txt"}
 			}
-			contract.Groups = append(contract.Groups, group)
+			contract.Groups[2] = group
 			data, err = json.Marshal(contract)
 			if err != nil {
 				t.Fatal(err)
@@ -211,12 +204,12 @@ func TestLandingCheckFixRecordsEveryOutcomeGitAdapter(t *testing.T) {
 				t.Logf("fix record after real check: %s", record)
 				for reuse := 1; reuse <= 2; reuse++ {
 					code, out, problem := impactPublic(t, root, "--base", base, "--check")
-					if code != 0 || !strings.Contains(out, "check reused from the job") || strings.Contains(out, "landing group") {
-						t.Fatalf("reuse %d: exit=%d out=%s problem=%s", reuse, code, out, problem)
+					if code != 0 || strings.Contains(out, "check reused from the job") || !strings.Contains(out, "landing group fast-static-build green") {
+						t.Fatalf("recheck %d: exit=%d out=%s problem=%s", reuse, code, out, problem)
 					}
 					after, err := os.ReadFile(filepath.Join(plain.Dir(root), "fixes", "attempt.json"))
-					if err != nil || !bytes.Equal(record, after) {
-						t.Fatalf("reuse %d changed the real check record: before=%s after=%s err=%v", reuse, record, after, err)
+					if err != nil || json.Unmarshal(after, &fields) != nil || fields.Result != wantResult || fields.Minutes < 2.0/60 {
+						t.Fatalf("recheck %d did not record the new execution: after=%s err=%v", reuse, after, err)
 					}
 					t.Logf("fix record after reuse %d: %s", reuse, after)
 				}

@@ -50,7 +50,7 @@ func TestTestImpactPlanJSONMatchesTextGitAdapter(t *testing.T) {
 			t.Fatalf("JSON plan: exit=%d stdout=%s stderr=%s error=%v", code, out, problem, err)
 		}
 		var plan plain.ImpactPlan
-		if err := result.DecodeData(&plan); err != nil || plan.Text() != text {
+		if err := result.DecodeData(&plan); err != nil || plan.Text()+"required: fast-static-build\n" != text {
 			t.Fatalf("plan differs: %+v error=%v text=%q", plan, err, text)
 		}
 		if first != "" && first != out {
@@ -66,7 +66,7 @@ func TestTestImpactPlanJSONMatchesTextGitAdapter(t *testing.T) {
 	command.Stderr = &problemBuffer
 	result, err := verbresult.Run(command, "test impact")
 	var plan plain.ImpactPlan
-	if err != nil || result.Outcome != verbresult.Confirmed || result.DecodeData(&plan) != nil || plan.Text() != text || strings.Contains(problemBuffer.String(), "landing group ") {
+	if err != nil || result.Outcome != verbresult.Confirmed || result.DecodeData(&plan) != nil || plan.Text()+"required: fast-static-build\n" != text || strings.Contains(problemBuffer.String(), "landing group ") {
 		t.Fatalf("executable plan: %+v error=%v stderr=%s", result, err, &problemBuffer)
 	}
 }

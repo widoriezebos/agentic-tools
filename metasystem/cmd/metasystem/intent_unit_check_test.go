@@ -275,7 +275,7 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 				owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
 			}
 			var stdout, stderr bytes.Buffer
-			starter := &declaredCheckStarter{bed: b, t: t, beforeBuild: func() {
+			starter := &declaredCheckStarter{bed: b, t: t, engine: publicationEngineStub(t), beforeBuild: func() {
 				if !strings.Contains(stderr.String(), "Impact:") {
 					t.Fatal("repair launched before impact was printed")
 				}
@@ -319,7 +319,7 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 				}
 			}
 			plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
-			if err != nil || plan.Check.Base != plan.Base || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "true" || len(plan.FullArgv) != 0 {
+			if err != nil || plan.Check.Base != plan.Base || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "metasystem test impact --publication-only" || len(plan.FullArgv) != 0 {
 				t.Fatalf("manual check provenance missing: %v", err)
 			}
 		})

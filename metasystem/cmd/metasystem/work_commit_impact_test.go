@@ -35,7 +35,7 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 			if mode == "static-red" {
 				static.Argv = []string{"/bin/sh", "-c", "exit 7"}
 			}
-			contract.Groups = append(contract.Groups, static)
+			contract.Groups[2] = static
 			data, err = json.Marshal(contract)
 			helmMust(t, err)
 			impactWrite(t, c.worktree, "testing.json", string(data))
@@ -79,7 +79,8 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 			}
 			impactWrite(t, c.worktree, pkg+"/value.go", "package main\nfunc Value() bool { return "+value+"\n}\n")
 			connectionGit(t, c.worktree, "add", ".")
-			owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+			staticCalls := 0
+			owners.connection.rebaseGate = func(string) (string, error) { staticCalls++; return "static-green", nil }
 			owners.connection.commitCheck = func(directory, base string) (repairCheck, error) {
 				if base != parent {
 					t.Fatalf("unit base %s != parent %s", base, parent)
@@ -98,6 +99,13 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 				owners.connection.commitCheck = nil
 			}
 			code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "value")
+			wantStatic := 0
+			if strings.HasPrefix(mode, "declared") {
+				wantStatic = 1
+			}
+			if staticCalls != wantStatic {
+				t.Fatalf("separate static gate ran %d times, want %d", staticCalls, wantStatic)
+			}
 			if strings.HasPrefix(mode, "declared") {
 				data, err := os.ReadFile(marker)
 				if err != nil || string(data) != parent {
@@ -225,12 +233,12 @@ func TestWorkCommitImpactCheckKeepsRecordedValuesGitAdapter(t *testing.T) {
 	helmMust(t, err)
 	var output bytes.Buffer
 	got, err := committedImpactCheck(root, base, &output, &output)
-	if err != nil || got != checked || !strings.Contains(output.String(), "check reused from the job") {
-		t.Fatalf("check recomputed recorded values: got=%+v want=%+v err=%v output=%s", got, checked, err, output.String())
+	if err != nil || got.Tree != checked.Tree || got.Base != checked.Base || got.Form == checked.Form || strings.Contains(output.String(), "check reused from the job") || !strings.Contains(output.String(), "landing group fast-static-build green") {
+		t.Fatalf("check did not replace legacy evidence: got=%+v legacy=%+v err=%v output=%s", got, checked, err, output.String())
 	}
 }
 
-// Real Git binds the declarations and the reused check to the candidate's parent.
+// Real Git binds the declarations and the fresh check to the candidate's parent.
 func TestWorkCommitRunsTheDeclaredAuditsGitAdapter(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{"impact", "declared", "reused"} {
@@ -280,8 +288,8 @@ func TestWorkCommitRunsTheDeclaredAuditsGitAdapter(t *testing.T) {
 						t.Fatalf("audit failure: %+v error=%v output=%s", checked, err, output.String())
 					}
 				}
-				if path == "reused" && (declaration == "" || declaration == "proof.audits=true\n" || declaration == "proof.audits=exit 3\n") && (!strings.Contains(output.String(), "check reused from the job") || checked.Minutes != 2.05) {
-					t.Fatalf("cheap check was not reused: %+v output=%s", checked, output.String())
+				if path == "reused" && (declaration == "" || declaration == "proof.audits=true\n" || declaration == "proof.audits=exit 3\n") && (strings.Contains(output.String(), "check reused from the job") || !strings.Contains(output.String(), "landing group fast-static-build green")) {
+					t.Fatalf("legacy evidence skipped the cheap check: %+v output=%s", checked, output.String())
 				}
 			})
 		}

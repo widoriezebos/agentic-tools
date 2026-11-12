@@ -73,7 +73,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		err = inv.admitUnitDeclaration(&plan, records, func() error { return nil }, subject)
 		if err == nil {
 			check.ProcessAct = ""
-			check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "true", 15
+			check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "metasystem test impact --publication-only", 15
 			err = inv.admitProcessCheck(plan, records, &check)
 			check.Declaration = nil
 			if err == nil {
