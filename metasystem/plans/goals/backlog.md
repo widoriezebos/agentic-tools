@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 240
+- Revision: 241
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -323,4 +323,5 @@ History:
 - 2026-11-12T02:16:39Z 6XXM0JQATSQ09PX3N1FDBNVY5V-ui-71c5cb39 ack actor=ui+steward-seat targets=seat-engines-follow-the-deployed-engine displaced=ui+steward-seat@2026-11-11T10:55:35Z ack
 - 2026-11-12T04:18:11Z 6PEXQ08V1A52V92ZWBPDD69MRC-m1e-cc2e8fc8 ack actor=human:Wido targets=the-unit-check-runs-what-publication-requires displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T00:45:05Z ack
 - 2026-11-12T20:43:53Z RYXYZM6E9HQYVH8JH490ZFPWC5-m1e-cc2e8fc8 ack actor=human:Wido targets=a-publication-consumes-the-units-check displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T04:18:11Z ack
-Integrity: sha256=3fb628425ad95c731703700958d0773d0abc88f688a883e0bc9805cdda4936ef
+- 2026-11-12T23:04:21Z S47MBQS600KAXWF2HKVE9HM4Z5-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-session-owns-its-merge displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T20:43:53Z ack
+Integrity: sha256=caaf99626f04e4d58de8af4a67bf3794d590c2bd8dbf1bb5d9040f5063b3c286
