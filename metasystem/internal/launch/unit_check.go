@@ -130,6 +130,7 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		process.Dir, process.Env = directory, slices.Clone(check.Environment)
 		if command.name == "cheap" {
 			process.Dir = manualDirectory
+			process.Env = append(process.Env, "METASYSTEM_CHECK_SELECTION="+filepath.Join(execution, "selection.json"))
 		}
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)

@@ -20,7 +20,7 @@ func TestImpactNamedGroupsEmitLandingPackageProgress(t *testing.T) {
 		{ID: "unit/owner", Adapter: "go", CWD: ".", Packages: []string{"./owner"}, Tests: json.RawMessage(`["TestSelected"]`), Requires: []string{"canary"}},
 	}}
 	var out, problem bytes.Buffer
-	code := runNamedTestGroups(root, contract, []string{"unit/owner"}, append(os.Environ(), "METASYSTEM_TESTING_WORKERS=9"), map[string]string{"unit/owner": "owner"}, &out, &problem)
+	code, _ := runNamedTestGroups(root, contract, []string{"unit/owner"}, append(os.Environ(), "METASYSTEM_TESTING_WORKERS=9"), map[string]string{"unit/owner": "owner"}, &out, &problem)
 	if code != 0 {
 		t.Fatalf("exit=%d out=%s err=%s", code, &out, &problem)
 	}
