@@ -1,0 +1,86 @@
+{
+  "canonicalRead": {
+    "engine": "9cae462fa0582cdff4e07a589549ada6df8a763e",
+    "findings": [
+      {
+        "change": "Optional: register the selection-writing defer after the fix-record defer, so a failed write is seen before the fix record is stamped.",
+        "claim": "If the selection record cannot be written after a green run, test impact exits 1. But the lane-fix record (the 'fix' file) has already been stamped green by an earlier-running deferred function. The two records then disagree about the same run.",
+        "class": "other",
+        "evidence": "Go runs deferred functions last-registered first. In cmd/metasystem/test_impact.go the selection writer's defer (around line 82) is registered before the plain.ReadFix/WriteFix defer (around line 106), so the fix record is written with CheckResult green first, and only then can the selection writer turn the exit code to 1. This needs a disk write failure in the check's own execution directory, which is rare. The slice works and is safe without a fix.",
+        "id": "code-critic-bd382ac50fbbef6afc082455:1",
+        "material": false,
+        "relation": "R-124-m1u (later, when it hurts)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/test_impact.go"
+      },
+      {
+        "change": "None now. D2-U4, which reworks the repair cache, should have committedImpactCheck clear the variable or take the cache result directly instead of through the environment.",
+        "claim": "The hook is controlled only by the process environment. committedImpactCheck, used by work commit, runs test impact --check in the same process and then reads back repair-check.json. If that process ever had METASYSTEM_CHECK_SELECTION set, the cache would not be saved and the read-back would fail or pick up an older file. Today nothing reaches this: the variable is set only on the unit check's cheap process, and test impact removes it from the environment of every group it runs.",
+        "class": "other",
+        "evidence": "test_impact.go line 37 reads os.Getenv through the sources struct, and line 126 skips the cache save when the path is set. committedImpactCheck at test_impact.go lines 627-636 reads repair-check.json after calling runTestImpactSelection. intent_work_commit.go line 219 is its only production caller. No traced path sets the variable in a work commit process.",
+        "id": "code-critic-bd382ac50fbbef6afc082455:2",
+        "material": false,
+        "relation": "R-124-m1u (later, when it hurts)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/test_impact.go"
+      },
+      {
+        "change": "None needed for this unit.",
+        "claim": "With the path set and no base given, --publication-only now exits 1 on a git error, where it used to run. This cannot happen through UnitCheck: there --publication-only is the audits command, which is never given the path.",
+        "class": "other",
+        "evidence": "test_impact.go lines 178-187 resolve the base for publication-only when the path is set. intent_unit_check.go line 95 and intent_carry_check.go line 76 use 'metasystem test impact --publication-only' as Audits, not as Cheap. unit_check.go line 132 adds the path for the cheap command only. The brief allows only a replay to record no base, so failing here is consistent with it.",
+        "id": "code-critic-bd382ac50fbbef6afc082455:3",
+        "material": false,
+        "relation": "R-124-m1u (later, when it hurts)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/test_impact.go"
+      }
+    ],
+    "id": "code-critic-bd382ac50fbbef6afc082455",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-publication-consumes-the-units-check/metasystem/artifacts/agents/code-critic-bd382ac50fbbef6afc082455/rounds/1/return.md",
+    "subject": {
+      "commit": "9bdb920576117b7756a561f63e11c348cdb7b490",
+      "diffDigest": "5d496b019aeed5aa329ed7f1c9b723929980e944a7e01d438e2d4bbe07d0cd31",
+      "kind": "commit",
+      "parent": "5c212bc6a4442b655b6dbf637a67284cd4954f08",
+      "tree": "4be747c1c4022682b4ee437c4b52ca6c9bab7d26"
+    }
+  },
+  "readDigest": "b5112cdee4907592daaf68653f05b0ee105588cef3a37ffc4b9cc3332d9a9460",
+  "schemaVersion": 1,
+  "goal": "a-publication-consumes-the-units-check",
+  "unit": "D2-U1",
+  "subject": {
+    "commit": "9bdb920576117b7756a561f63e11c348cdb7b490",
+    "parent": "5c212bc6a4442b655b6dbf637a67284cd4954f08",
+    "tree": "4be747c1c4022682b4ee437c4b52ca6c9bab7d26",
+    "patchDigest": "5d496b019aeed5aa329ed7f1c9b723929980e944a7e01d438e2d4bbe07d0cd31",
+    "unitDigest": "9279ecffe16e7d7b712c11eea3f85fe311592a48e10ab8954c16e9abb755dc19"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-bd382ac50fbbef6afc082455",
+    "round": 1,
+    "closureSha256": "fc05add4ea235cb8d40cf0683c4ac38c3dc8870174fbacb790f718660912ccc2"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4be747c1c4022682b4ee437c4b52ca6c9bab7d26",
+    "runId": "goal-read-gate-20261112t060249z-b068d0dc63036127"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_fresh_test.go",
+      "readerWord": "reviewed by critic root code-critic-bd382ac50fbbef6afc082455"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/test_impact_progress_test.go",
+      "readerWord": "reviewed by critic root code-critic-bd382ac50fbbef6afc082455"
+    }
+  ],
+  "sha256": "b010409fb5503d554ba140e7ae44796d19e42925ffbbba9db85d006cd843bddb"
+}
