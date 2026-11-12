@@ -1,0 +1,103 @@
+{
+  "canonicalRead": {
+    "engine": "898c1cc50c29a943257bfd68afa2e5185251a54e",
+    "findings": [
+      {
+        "change": "Optionally build the message from the required list. Not needed for this unit.",
+        "claim": "The reason text in the static-only fallback still hard-codes the name 'fast-static-build' instead of using the owner's list of required groups.",
+        "class": "other",
+        "evidence": "test_impact.go around line 262: identity.Reason = \"check: fast-static-build only; ...\" while ids now comes from the required list. Output only. Behavior and proof are unaffected, and existing tests check this exact text.",
+        "id": "code-critic-222f7d874c71e644b1efec2c:1",
+        "material": false,
+        "relation": "code-critique materiality criterion (non-material: wording only)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/test_impact.go"
+      },
+      {
+        "change": "None for D1. D2 removes the duplicate run.",
+        "claim": "For a manual check, the separate static gate still runs, because only the cheap command is tested for 'metasystem test impact' and a manual check puts the impact command in its second command. Its publication can therefore run the static gate twice.",
+        "class": "other",
+        "evidence": "intent_unit_review.go: the condition only looks at plan.Check.Cheap, and for a manual check Audits is 'metasystem test impact --publication-only' (intent_unit_check.go:95). This costs extra time but is not unsafe. The brief only asks to remove the gate where the cheap command is test impact, and D2 removes the second run.",
+        "id": "code-critic-222f7d874c71e644b1efec2c:2",
+        "material": false,
+        "relation": "code-critique materiality criterion (non-material: cost only, within brief)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_unit_review.go"
+      }
+    ],
+    "id": "code-critic-222f7d874c71e644b1efec2c",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-unit-check-runs-what-publication-requires/metasystem/artifacts/agents/code-critic-222f7d874c71e644b1efec2c/rounds/1/return.md",
+    "subject": {
+      "commit": "181cad7c1a4b1f77733d53ed581e25e4e65f7b32",
+      "diffDigest": "2c0c3cd5c06971dec7e75646efdc3887fb70e35c26b23acd11b308f41c4cb165",
+      "kind": "commit",
+      "parent": "a12ea5d476b5e41e7539afdaaf3bf865bb0b12d2",
+      "tree": "e982b13df3d431660c42d687ab1a94a939dd2582"
+    }
+  },
+  "readDigest": "21ffdf497116d2734ab3086abe54809e2ffac6a82634eb60b15ac59880e168ad",
+  "schemaVersion": 1,
+  "goal": "the-unit-check-runs-what-publication-requires",
+  "unit": "D1-U1",
+  "subject": {
+    "commit": "181cad7c1a4b1f77733d53ed581e25e4e65f7b32",
+    "parent": "a12ea5d476b5e41e7539afdaaf3bf865bb0b12d2",
+    "tree": "e982b13df3d431660c42d687ab1a94a939dd2582",
+    "patchDigest": "2c0c3cd5c06971dec7e75646efdc3887fb70e35c26b23acd11b308f41c4cb165",
+    "unitDigest": "f545f099042e6a7d70089c627979acacfcd7409bba6a07f9f149241d49db0529"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-222f7d874c71e644b1efec2c",
+    "round": 1,
+    "closureSha256": "3b2d7d48215bb382dfc6de1221d00034d194df42a06d420f807d544ffdd8a8a3"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e982b13df3d431660c42d687ab1a94a939dd2582",
+    "runId": "goal-read-gate-20261112t022848z-3775ef937767149b"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_carry_full_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_check_directory_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_skip_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_command_selection_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/test_impact_envelope_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/test_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/work_commit_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-222f7d874c71e644b1efec2c"
+    }
+  ],
+  "sha256": "9465bdcf68a7731bf8fa8374ebbc0b3a7ddffeafe023affc819c6b49dd312ef4"
+}
