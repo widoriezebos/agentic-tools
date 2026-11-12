@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build U1 (70), U2 (60), U3 (80) on m1e after a-returned-member-leaves-the-batch, U4 (60, seat side, --last); briefs cut and Astra-checked just before each build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decision D6.
 - OpenedAt: 2026-11-12T16:43:25Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=WB9MKKT4BS7EXJWVH366DTY184-m1e-5a087708 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T16:43:25Z DH9690NDVBVDJ5DH3VV5KAQWGZ-m1e-5a087708 open actor=human:Wido targets=the-lane-carries-one-work-subject
 - 2026-11-12T16:43:58Z WB9MKKT4BS7EXJWVH366DTY184-m1e-5a087708 approve actor=human:Wido targets=the-lane-carries-one-work-subject
-Integrity: sha256=a89314c317da6d6a49f9a0790dd97cdc5e543e3b5b5b55f6847f3226a967fdc5
+- 2026-11-12T16:45:19Z 1DS1QJ7AXRMDY5BSHD0E6Q7SDW-m1e-5a087708 set-pin actor=human:Wido targets=the-lane-carries-one-work-subject
+Integrity: sha256=1813c44568f8d86fcce3c685a2f45687e75e873d83a70dea33d73b02d6307612
