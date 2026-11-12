@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -120,6 +121,7 @@ type Group struct {
 	TargetMS          int64           `json:"targetMs"`
 	CPUBudgetSeconds  *int64          `json:"cpuBudgetSeconds,omitempty"`
 	Packages          []string        `json:"packages,omitempty"`
+	RequiredTestFiles []string        `json:"requiredTestFiles,omitempty"`
 	BuildTags         []string        `json:"buildTags,omitempty"`
 	// PackageSelection is a protected template expanded against exact Go trees
 	// into one ordinary group per affected package before policy selection.
@@ -157,6 +159,9 @@ type GroupResources struct {
 }
 
 type groupWithoutMethods Group
+
+// Selector declares required test files rather than an executable group.
+func (group Group) Selector() bool { return len(group.RequiredTestFiles) > 0 }
 
 func (group *Group) UnmarshalJSON(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -367,37 +372,40 @@ func (contract Contract) Validate() error {
 			return fmt.Errorf("testing contract references missing group %s", group)
 		}
 	}
-	// A selector is policy, not executable evidence. Its generated concrete
-	// groups enter always.standard after exact-tree expansion. Keeping the
-	// template out of every other policy edge prevents a missing or empty
-	// expansion from satisfying an obligation or prerequisite by name.
+	// Selectors declare policy rather than executable evidence. Keeping them
+	// off execution edges prevents an absent expansion from satisfying an
+	// obligation or prerequisite by name.
 	for _, template := range contract.Groups {
-		if template.PackageSelection == "" {
+		if template.PackageSelection == "" && !template.Selector() {
 			continue
 		}
-		if strings.Contains(template.ID, "/") {
+		selectorKind := "package selector template"
+		if template.Selector() {
+			selectorKind = "required test file selector"
+		}
+		if template.PackageSelection != "" && strings.Contains(template.ID, "/") {
 			return fmt.Errorf("testing group %s: package selector template id cannot contain a slash", template.ID)
 		}
 		if len(template.Obligations) != 0 || len(template.Requires) != 0 {
-			return fmt.Errorf("testing group %s: package selector template cannot provide obligations or require groups", template.ID)
+			return fmt.Errorf("testing group %s: %s cannot provide obligations or require groups", template.ID, selectorKind)
 		}
 		for _, other := range contract.Groups {
 			for _, id := range other.Requires {
 				if id == template.ID {
-					return fmt.Errorf("testing group %s requires package selector template %s", other.ID, template.ID)
+					return fmt.Errorf("testing group %s requires %s %s", other.ID, selectorKind, template.ID)
 				}
 			}
 		}
 		for _, surface := range contract.Surfaces {
 			for _, id := range append(append([]string{}, surface.Standard...), surface.Deep...) {
 				if id == template.ID {
-					return fmt.Errorf("testing surface %s references package selector template %s", surface.ID, template.ID)
+					return fmt.Errorf("testing surface %s references %s %s", surface.ID, selectorKind, template.ID)
 				}
 			}
 		}
 		for _, id := range append(append(append([]string{}, contract.Always.Canary...), contract.Always.Standard...), append(contract.Unknown, contract.Cadence...)...) {
 			if id == template.ID {
-				return fmt.Errorf("testing contract references package selector template %s", template.ID)
+				return fmt.Errorf("testing contract references %s %s", selectorKind, template.ID)
 			}
 		}
 	}
@@ -512,6 +520,19 @@ func validateGroup(group Group) error {
 		}
 		externalIDs[external.ID] = true
 	}
+	if group.Selector() {
+		if group.Adapter != "go" || group.Phase != "acceptance" || len(group.Tests) != 0 || group.PackageSelection != "" || group.Shards != 0 || group.Coverage || group.CoverageSet {
+			return fmt.Errorf("requiredTestFiles requires go acceptance without tests, packageSelection, shards, or coverage")
+		}
+		for _, pattern := range group.RequiredTestFiles {
+			parsed, err := pathpattern.Parse(pattern)
+			if err != nil || !strings.HasSuffix(pattern, "_test.go") || strings.Contains(pattern, "**") || !slices.ContainsFunc(group.Packages, func(pkg string) bool {
+				return strings.TrimPrefix(pkg, "./") == filepath.ToSlash(filepath.Dir(parsed.String()))
+			}) {
+				return fmt.Errorf("requiredTestFiles pattern %q must name _test.go files without ** in a declared package", pattern)
+			}
+		}
+	}
 	switch group.Adapter {
 	case "go":
 		if len(group.Argv) != 0 || group.Section != "" {
@@ -532,6 +553,9 @@ func validateGroup(group Group) error {
 		}
 		if group.PackageSelection == "changed-and-consumers" && len(group.Packages) != 0 {
 			return fmt.Errorf("changed-and-consumers packageSelection forbids explicit packages")
+		}
+		if group.Selector() {
+			return nil
 		}
 		if group.PackageSelection == "" && len(group.Packages) == 0 || len(group.Tests) == 0 {
 			return fmt.Errorf("go adapter requires packages and tests")

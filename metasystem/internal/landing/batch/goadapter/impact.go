@@ -21,6 +21,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -74,16 +75,7 @@ func unitImpact(moduleRoot, base string, wholeDependents bool, environment []str
 	base, impact.Paths = selection.base, selection.paths
 	var context *build.Context
 	if !wholeDependents {
-		command := exec.Command("go", "env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT")
-		command.Dir, command.Env = moduleRoot, environment
-		settings := map[string]string{}
-		if output, err := command.Output(); err == nil && json.Unmarshal(output, &settings) == nil {
-			var entries []string
-			for name, value := range settings {
-				entries = append(entries, name+"="+value)
-			}
-			context, _ = gopackages.EffectiveContext(nil, entries)
-		}
+		context = EffectiveBuildContext(moduleRoot, environment)
 		if context != nil {
 			impact.GOOS, impact.GOARCH = context.GOOS, context.GOARCH
 		}
@@ -170,6 +162,75 @@ func unitImpact(moduleRoot, base string, wholeDependents bool, environment []str
 		impact.Packages = append(impact.Packages, testpolicy.Group{ID: "unit/" + strings.TrimPrefix(pkg, "./"), Adapter: "go", CWD: ".", Packages: []string{pkg}, Tests: encoded})
 	}
 	return impact, nil
+}
+
+// EffectiveBuildContext reads the Go tool's effective settings, including GOENV.
+// Unresolved settings leave discovery conservative, retaining possible tests.
+func EffectiveBuildContext(moduleRoot string, environment []string) *build.Context {
+	command := exec.Command("go", "env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT")
+	command.Dir, command.Env = moduleRoot, environment
+	settings := map[string]string{}
+	if output, err := command.Output(); err == nil && json.Unmarshal(output, &settings) == nil {
+		var entries []string
+		for name, value := range settings {
+			entries = append(entries, name+"="+value)
+		}
+		context, _ := gopackages.EffectiveContext(nil, entries)
+		return context
+	}
+	return nil
+}
+
+// RequiredTests reads test declarations from the candidate's mapped files.
+func RequiredTests(moduleRoot string, context *build.Context, patterns []string) (map[string][]string, int, error) {
+	packages, seen, notRunnable := map[string][]string{}, map[string]bool{}, 0
+	for _, pattern := range patterns {
+		parsed, err := pathpattern.Parse(pattern)
+		if err != nil {
+			return nil, 0, err
+		}
+		files, err := parsed.Expand(moduleRoot)
+		if err != nil {
+			return nil, 0, fmt.Errorf("required test pattern %q: %w", pattern, err)
+		}
+		if len(files) == 0 {
+			return nil, 0, fmt.Errorf("required test pattern %q matched no files", pattern)
+		}
+		for _, path := range files {
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(moduleRoot, path), nil, 0)
+			if err != nil {
+				return nil, 0, fmt.Errorf("required test pattern %q file %s: %w", pattern, path, err)
+			}
+			var names []string
+			for _, declaration := range file.Decls {
+				if function, ok := declaration.(*ast.FuncDecl); ok && function.Recv == nil && testpolicy.GoTestName(function.Name.Name) {
+					names = append(names, function.Name.Name)
+				}
+			}
+			if context != nil {
+				mayBuild, err := gopackages.FileMayBuild(context, filepath.Join(moduleRoot, path))
+				if err != nil {
+					return nil, 0, fmt.Errorf("required test pattern %q file %s: %w", pattern, path, err)
+				}
+				if !mayBuild {
+					notRunnable += len(names)
+					continue
+				}
+			}
+			pkg := "./" + filepath.ToSlash(filepath.Dir(path))
+			if filepath.Dir(path) == "." {
+				pkg = "."
+			}
+			if len(names) > 0 {
+				packages[pkg] = slices.Compact(slices.Sorted(slices.Values(append(packages[pkg], names...))))
+			}
+		}
+	}
+	return packages, notRunnable, nil
 }
 
 // impactFile reads both sides to find readers of changed declarations, fields and messages.

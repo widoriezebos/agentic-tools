@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -160,7 +161,6 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		output.NotRunnable = impact.NotRunnable
 		for i := range impact.Paths {
 			impact.Paths[i] = prefix + impact.Paths[i]
 		}
@@ -171,7 +171,27 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}
 		wanted := map[string]bool{}
 		reads := map[string]bool{}
+		required := map[string][]string{}
+		var requiredContext *build.Context
 		for _, group := range affected.Groups {
+			if group.Group.Selector() {
+				if requiredContext == nil {
+					requiredContext = goadapter.EffectiveBuildContext(installation, os.Environ())
+				}
+				packages, excluded, err := goadapter.RequiredTests(installation, requiredContext, group.Group.RequiredTestFiles)
+				if err != nil {
+					fmt.Fprintf(stderr, "required test selector %s: %v\n", group.Group.ID, err)
+					return 1
+				}
+				impact.NotRunnable += excluded
+				count := 0
+				for pkg, names := range packages {
+					count += len(names)
+					required[pkg] = slices.Compact(slices.Sorted(slices.Values(append(required[pkg], names...))))
+				}
+				fmt.Fprintf(stdout, "required: %s selects %d tests of %s\n", group.Group.ID, count, strings.Join(group.Group.RequiredTestFiles, ","))
+				continue
+			}
 			reads[group.Group.ID] = len(group.Paths) > 0
 			for _, path := range group.Paths {
 				if !slices.Contains(affected.TemplateCovered, path) {
@@ -180,8 +200,27 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 				}
 			}
 		}
+		for _, pkg := range slices.Sorted(maps.Keys(required)) {
+			i := slices.IndexFunc(impact.Packages, func(group testpolicy.Group) bool { return slices.Contains(group.Packages, pkg) })
+			if i < 0 {
+				i = len(impact.Packages)
+				impact.Packages = append(impact.Packages, testpolicy.Group{ID: "unit/" + strings.TrimPrefix(pkg, "./"), Adapter: "go", CWD: ".", Packages: []string{pkg}})
+			}
+			if string(impact.Packages[i].Tests) != `"all"` {
+				var names []string
+				_ = json.Unmarshal(impact.Packages[i].Tests, &names)
+				impact.Packages[i].Tests, _ = json.Marshal(slices.Compact(slices.Sorted(slices.Values(append(names, required[pkg]...)))))
+			}
+		}
+		output.NotRunnable = impact.NotRunnable
+		if requiredContext != nil {
+			impact.GOOS, impact.GOARCH = requiredContext.GOOS, requiredContext.GOARCH
+		}
 	groups:
 		for _, group := range contract.Groups {
+			if group.Selector() {
+				continue
+			}
 			canary := slices.Contains(contract.Always.Canary, group.ID)
 			audit := auditGroup(contract, group) && reads[group.ID]
 			if strings.HasPrefix(group.ID, "section/") || !canary && !audit && (group.Phase == "acceptance" || !wanted[group.ID]) {

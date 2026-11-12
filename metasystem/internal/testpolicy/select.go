@@ -99,6 +99,9 @@ func RequireFirstTransition(contract Contract, plan Plan) (Plan, error) {
 func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	for _, id := range append(append([]string{}, request.Groups...), request.BatchRequirements...) {
 		for _, group := range contract.Groups {
+			if group.ID == id && group.Selector() {
+				return Plan{}, fmt.Errorf("requested group %s selects required test files; it is not run as a group", id)
+			}
 			if group.ID == id && group.PackageSelection != "" {
 				return Plan{}, fmt.Errorf("requested group %s is a Go package selector template; select a concrete package group", id)
 			}
@@ -306,6 +309,9 @@ func WithBatchRequirements(contract Contract, plan Plan, requirements []string) 
 	explicit, seen := map[string]bool{}, map[string]bool{}
 	for _, id := range requirements {
 		group, ok := groups[id]
+		if group.Selector() {
+			return Plan{}, fmt.Errorf("requested group %s selects required test files; it is not run as a group", id)
+		}
 		if !ok || group.PackageSelection != "" || seen[id] {
 			return Plan{}, fmt.Errorf("invalid batch required group %s", id)
 		}

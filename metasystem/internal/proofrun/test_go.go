@@ -944,6 +944,12 @@ func sortedStringSet(values map[string]bool) []string {
 	return result
 }
 
+func nativeDiscoveryGroups(contract testpolicy.Contract) []testpolicy.Group {
+	return slices.DeleteFunc(slices.Clone(contract.Groups), func(group testpolicy.Group) bool {
+		return group.PackageSelection != "" || group.Selector()
+	})
+}
+
 // CheckNativeDiscovery validates the committed native inventories without
 // compiling or executing application tests. Go declarations are parsed from
 // source; a section group declares its script bed by argv. The base
@@ -951,10 +957,7 @@ func sortedStringSet(values map[string]bool) []string {
 // same prepared environment used for actual group execution.
 func CheckNativeDiscovery(ctx context.Context, projectRoot, installation string, contract testpolicy.Contract, baseEnvironment []string) error {
 	discoveryCache := &goDiscoveryCache{catalogs: map[string]goPackageCatalog{}}
-	for _, group := range contract.Groups {
-		if group.PackageSelection != "" {
-			continue
-		}
+	for _, group := range nativeDiscoveryGroups(contract) {
 		switch group.Adapter {
 		case "go":
 			environment := GroupTestingEnvironment(baseEnvironment, group)

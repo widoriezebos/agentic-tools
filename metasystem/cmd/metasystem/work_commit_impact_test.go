@@ -181,6 +181,9 @@ func TestWorkCommitRealLaneFixImpactPlanGitAdapter(t *testing.T) {
 	count := len(strings.Split(names, ","))
 	family := map[string]bool{}
 	for _, group := range contract.Groups {
+		if group.Selector() {
+			continue
+		}
 		if !slices.ContainsFunc(group.Packages, func(p string) bool {
 			return strings.TrimPrefix(strings.TrimPrefix(p, "./"), "metasystem/") == "cmd/metasystem"
 		}) {
