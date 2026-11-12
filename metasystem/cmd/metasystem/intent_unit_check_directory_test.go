@@ -43,6 +43,8 @@ func TestIntentUnitCheckDirectoriesAcrossRounds(t *testing.T) {
 				}
 				b.declaredCheap, b.declaredAudits, b.declaredDeadline = "pwd", "pwd", "15"
 				owners := b.workOwners()
+				engine := publicationEngineStub(t)
+				owners.processes.executable = func() (string, error) { return engine, nil }
 				owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
 					if withinPath(path, b.worktree) {
 						return b.worktree, nil

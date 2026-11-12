@@ -119,8 +119,10 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 						if err != nil {
 							return err
 						}
-						if _, err := conn.rebaseGate(installation); err != nil {
-							return err
+						if !publicationCheckCoversRequirements(installation, parent) {
+							if _, err := conn.rebaseGate(installation); err != nil {
+								return err
+							}
 						}
 						checked, err = conn.commitCheck(installation, parent)
 						if err != nil {
@@ -213,7 +215,7 @@ func committedWorkCheck(directory, base string, stdout, stderr io.Writer) (repai
 	}
 	words := shellWords(command)
 	var checked repairCheck
-	if len(words) >= 3 && words[0] == "metasystem" && words[1] == "test" && words[2] == "impact" {
+	if impactCheckCommand(command) {
 		checked, err = committedImpactCheck(directory, base, stdout, stderr, words[3:]...)
 	} else {
 		checked, err = repairCheckIdentity(directory, base)

@@ -42,14 +42,18 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	flags.Bool("json", false, "print the plan as a JSON result")
 	output := plain.ImpactPlan{Selections: []string{}}
 	base := flags.String("base", os.Getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
-	check := flags.Bool("check", false, "check a unit at impact depth only when cheap; reuse its unchanged staged tree")
+	check := flags.Bool("check", false, "check a unit at impact depth only when cheap")
+	publicationOnly := flags.Bool("publication-only", false, "run only the publication requirements")
 	plan := flags.Bool("plan", false, "print the selection without running it")
 	root := pathFlag(flags, "root", ".", "the Go module installation")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
+	if *publicationOnly {
+		only = ""
+	}
 	replay := strings.TrimSpace(only) != ""
-	if !replay && *base == "" {
+	if !replay && !*publicationOnly && *base == "" {
 		fmt.Fprintln(stderr, "the unit check needs its comparison base\nrun: metasystem test impact --base COMMIT # or set LANDING_PROOF_BASE")
 		return 2
 	}
@@ -62,7 +66,6 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	started := time.Now()
 	identity := repairCheck{Reason: "impact"}
 	timed := false
-	reusedCheck := false
 	finishTiming := func() {
 		if !*plan && !timed {
 			fmt.Fprintf(stdout, "impact check: %s; wall time %s\n", identity.Reason, time.Since(started).Round(time.Millisecond))
@@ -72,9 +75,6 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	defer finishTiming()
 	if !*plan {
 		defer func() {
-			if reusedCheck {
-				return
-			}
 			fix, err := plain.ReadFix(installation)
 			if err == nil && fix != nil {
 				fix.CheckMinutes = time.Since(started).Minutes()
@@ -94,17 +94,11 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}()
 	}
 
-	if *check && !*plan && !replay {
+	if *check && !*plan && !replay && !*publicationOnly {
 		identity, err = repairCheckIdentity(installation, *base)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
-		}
-		if reused, _ := repairCheckCache(installation, identity, false); reused {
-			reusedCheck = true
-			identity.Reason = "check reused from the job"
-			fmt.Fprintln(stdout, identity.Reason)
-			return 0
 		}
 		defer func() {
 			if code != 0 {
@@ -128,6 +122,14 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			}
 		}()
 	}
+	var required []string
+	if !replay {
+		required, err = publicationRequirements(contract)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+	}
 	prefix := ""
 	if config.TemplateMode(installation) {
 		prefix = "metasystem/"
@@ -138,7 +140,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	selections := strings.Fields(only)
 	if replay {
 		fmt.Fprintln(stdout, "note: replay selections ignore the comparison base from flags and environment")
-	} else {
+	} else if !*publicationOnly {
 		sha, err := plain.Git(installation, "rev-parse", "--verify", *base+"^{commit}")
 		if err != nil {
 			fmt.Fprintf(stderr, "the unit check's base %s is not a commit in this repository\nrun: metasystem test impact --base COMMIT  (a commit the branch contains)\n%v\n", *base, err)
@@ -182,6 +184,9 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}
 	groups:
 		for _, group := range contract.Groups {
+			if slices.Contains(required, group.ID) {
+				continue
+			}
 			canary := slices.Contains(contract.Always.Canary, group.ID)
 			audit := auditGroup(contract, group) && reads[group.ID]
 			if strings.HasPrefix(group.ID, "section/") || !canary && !audit && (group.Phase == "acceptance" || !wanted[group.ID]) {
@@ -236,7 +241,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			ids = append(ids, id)
 		}
 	}
-	if (*check || *plan) && !replay {
+	if (*check || *plan) && !replay && !*publicationOnly {
 		var selection strings.Builder
 		for _, item := range selections {
 			fmt.Fprintln(&selection, "selection: "+item)
@@ -251,7 +256,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 				index := slices.IndexFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == id })
 				return index < 0 || !auditGroup(contract, contract.Groups[index])
 			})
-			ids = append([]string{"fast-static-build"}, audits...)
+			ids = append(slices.Clone(required), audits...)
 			output.Check = "static-only"
 			identity.Form = "static-only: selection not cheap"
 			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%% of %d packages; not cheap: static gate only; the batch proof covers the tree", share, full)
@@ -272,6 +277,12 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			output.CheckReason = identity.Reason
 			fmt.Fprintln(stdout, identity.Reason)
 		}
+	}
+	if *publicationOnly {
+		output.Check, identity.Reason = "publication-only", "publication-only"
+	}
+	if *plan && !replay {
+		fmt.Fprintln(stdout, "required: "+strings.Join(required, " "))
 	}
 	if *plan && (!replay || invocation.outcome != nil) {
 		if invocation.outcome != nil {
@@ -295,8 +306,8 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
 		return 1
 	}
-	if !replay && os.Getenv("LANDING_PROOF_SCOPE") == "impact" {
-		ids = append([]string{"fast-static-build"}, slices.DeleteFunc(ids, func(id string) bool { return id == "fast-static-build" })...)
+	if !replay {
+		ids = append(slices.Clone(required), slices.DeleteFunc(ids, func(id string) bool { return slices.Contains(required, id) })...)
 	}
 	if len(ids) == 0 {
 		finishTiming()

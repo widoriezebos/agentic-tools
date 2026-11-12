@@ -27,7 +27,7 @@ func commandSelectionFixture(t *testing.T, root string) {
 	static.ID, static.Kind, static.Phase = "fast-static-build", "static", "admission"
 	static.Inputs = []string{"cmd/**"}
 	static.Argv = []string{"/bin/sh", "-c", "printf static-ran > static-ran"}
-	contract.Groups = append(contract.Groups, static)
+	contract.Groups[2] = static
 	data, err = json.Marshal(contract)
 	helmMust(t, err)
 	impactWrite(t, root, "testing.json", string(data))

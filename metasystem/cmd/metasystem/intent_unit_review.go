@@ -413,9 +413,16 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 									gateErr = err
 									return err
 								}
-								if _, err := conn.rebaseGate(installation); err != nil {
+								plan, err := launch.ReadUnitPlan(filepath.Join(review.Round.Directory, "plan.json"))
+								if err != nil {
 									gateErr = err
 									return err
+								}
+								if plan.Check == nil || !impactCheckCommand(plan.Check.Cheap) {
+									if _, err := conn.rebaseGate(installation); err != nil {
+										gateErr = err
+										return err
+									}
 								}
 							}
 							gate, err := runner.ProveRoundResult(review, dir, subject, retain)

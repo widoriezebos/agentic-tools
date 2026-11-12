@@ -40,7 +40,9 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 				static.Argv = []string{"/bin/sh", "-c", "exit 7"}
 			}
 			if mode != "missing-static" {
-				contract.Groups = append(contract.Groups, static)
+				contract.Groups[2] = static
+			} else {
+				contract.Groups = contract.Groups[:2]
 			}
 			data, err = json.Marshal(contract)
 			helmMust(t, err)
@@ -92,7 +94,11 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 			if mode == "cheap" || mode == "cmd-named" {
 				want = "impact"
 			}
-			if err != nil || code != 0 || json.Unmarshal(result.Data, &plan) != nil || plan.Check != want {
+			if mode == "missing-static" {
+				if code != 1 || !strings.Contains(problem, "the contract has no publication group fast-static-build; nothing was run") {
+					t.Fatalf("missing publication requirement: exit=%d %s", code, problem)
+				}
+			} else if err != nil || code != 0 || json.Unmarshal(result.Data, &plan) != nil || plan.Check != want {
 				t.Fatalf("plan decision: exit=%d out=%s stderr=%s error=%v", code, out, problem, err)
 			}
 			if _, err := os.Stat(filepath.Join(root, "static-ran")); !os.IsNotExist(err) {
@@ -277,7 +283,7 @@ func TestWorkCommitLaneFixCheckGitAdapter(t *testing.T) {
 			if staticRed {
 				static.Argv = []string{"/bin/sh", "-c", "exit 7"}
 			}
-			contract.Groups = append(contract.Groups, static)
+			contract.Groups[2] = static
 			data, err = json.Marshal(contract)
 			helmMust(t, err)
 			impactWrite(t, c.worktree, "testing.json", string(data))

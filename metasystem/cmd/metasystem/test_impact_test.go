@@ -31,6 +31,9 @@ func impactAdapterBed(t *testing.T) string {
 	}
 	contract.Groups = []testpolicy.Group{group("canary"), group("standard")}
 	contract.Groups[1].Inputs = []string{"outside/**"}
+	static := group("fast-static-build")
+	static.Kind, static.Phase, static.Inputs = "static", "admission", []string{"outside/**"}
+	contract.Groups = append(contract.Groups, static)
 	contract.Surfaces = []testpolicy.Surface{{ID: "unit", Paths: []string{"internal/**", "cmd/**"}, Standard: []string{"standard"}}}
 	contract.Unknown = []string{"standard"}
 	contract.Always.Canary, contract.Always.Standard = []string{"canary"}, []string{"standard"}
@@ -96,7 +99,8 @@ func impactAuditGitAdapterBed(t *testing.T) (string, string) {
 	template.ID, template.Inputs, template.Packages, template.PackageSelection = "go-affected", []string{"docs/**"}, nil, "changed-and-consumers"
 	static := contract.Groups[0]
 	static.ID, static.Phase, static.Kind, static.Inputs = "fast-static-build", "admission", "static", []string{"outside/**"}
-	contract.Groups = append(contract.Groups, audits, docs, whole, template, static)
+	contract.Groups[2] = static
+	contract.Groups = append(contract.Groups, audits, docs, whole, template)
 	contract.Always.Standard = append(contract.Always.Standard, audits.ID, docs.ID, whole.ID, static.ID)
 	helmMust(t, contract.Validate())
 	data, err = json.Marshal(contract)
@@ -438,7 +442,7 @@ func TestTestImpactContractGroupsStayCheapGitAdapter(t *testing.T) {
 	impactWrite(t, root, "testing.json", string(data))
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {} // edited\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || out != "plan: base "+base+" (base)\nselection: canary\nselection: admission\nselection: cmd/metasystem\n" {
+	if code != 0 || out != "plan: base "+base+" (base)\nselection: canary\nselection: admission\nselection: cmd/metasystem\nrequired: fast-static-build\n" {
 		t.Fatalf("cheap groups exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -758,7 +762,7 @@ func TestTestImpactReverseDependentsRunWholeGitAdapter(t *testing.T) {
 	helmMust(t, json.Unmarshal(data, &contract))
 	static := contract.Groups[0]
 	static.ID = "fast-static-build"
-	contract.Groups = append(contract.Groups, static)
+	contract.Groups[2] = static
 	data, err = json.Marshal(contract)
 	helmMust(t, err)
 	impactWrite(t, root, "testing.json", string(data))
@@ -954,6 +958,7 @@ func TestImpactRunsInTheModuleAndRunsGroupsByIDGitAdapter(t *testing.T) {
 	recorder := filepath.Join(t.TempDir(), "record-group")
 	helmMust(t, testexec.WriteFile(recorder, []byte("#!/bin/sh\nprintf '%s\\n' \"$PWD\" > \"$1\"\n"), 0700))
 	contract.Groups[0].ID = "fast-static-build"
+	contract.Groups = slices.DeleteFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == "fast-static-build" && group.Kind == "static" })
 	contract.Groups[0].Inputs = []string{"metasystem/internal/**"}
 	contract.Groups[0].Argv = []string{recorder, filepath.Join(root, "group-ran")}
 	contract.Always.Canary = []string{"fast-static-build"}
@@ -1064,7 +1069,7 @@ func TestTestImpactStaticFirstAndEnvironmentGitAdapter(t *testing.T) {
 			if red {
 				static.Argv[2] = "exit 1"
 			}
-			contract.Groups = append(contract.Groups, static)
+			contract.Groups[2] = static
 			data, err = json.Marshal(contract)
 			helmMust(t, err)
 			impactWrite(t, root, "testing.json", string(data))

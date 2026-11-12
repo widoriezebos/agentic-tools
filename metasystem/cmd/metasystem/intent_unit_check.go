@@ -92,7 +92,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		}
 		check.ProcessAct = ""
 		check.SelectedBy, check.Reason = inv.input.text("by"), inv.input.text("reason")
-		check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "true", 15
+		check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "metasystem test impact --publication-only", 15
 		if err := inv.admitProcessCheck(plan, directory, check); err != nil {
 			return plan, err
 		}
