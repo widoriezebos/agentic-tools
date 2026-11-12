@@ -10,13 +10,14 @@
 - Next step: Build U1 (60), U2 (98), U3 (32, --last; may land first) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-lane-session-owns-its-merge.r4.md (Astra DESIGN STANDS r4). After seat-engines-follow-the-deployed-engine lands: deploy, P4 bootstrap of the lane, verify announce, lease succession and merge dispatch (page Remediation). Program the-route-holds-when-something-deviates (2026-11-12, D1): build U3 (32) first, it depends on nothing and retires the stop of 2026-11-11 21:07; then U1 (60), U2 (98); added U4 (40, --last): the lane's health row reports authorization readiness from the same enrollment comparison authorization uses (runner.go:729) instead of health.go:566. Program the-owner-decides-the-machine-does-the-rest (2026-11-12): U1 lands alone as this goal's whole (it frees m1e's claim for the deputy's first delivery); U3, U2 and U4 continue in a follow-up goal a1 opens at the hand-in.
 - OpenedAt: 2026-11-12T09:09:13Z
 - FirstClaimAt: 2026-11-12T20:43:53Z
-- Revision: 12
+- Revision: 13
 - BlockedBy: seat-engines-follow-the-deployed-engine
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=1T7DXRZ8AY6AZ725SSJZMB6NAH-m1e-bfec86c9 minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-11-12T09:12:24Z revision=2 opid=1T7DXRZ8AY6AZ725SSJZMB6NAH-m1e-bfec86c9 authority=proven digest=131cdeae7dad7514ab7ba6cc4f8784f98aefe4a5f5240c5eb55c92133cdd3044 episode=2
+- Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=10 at=2026-11-12T22:56:51Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-12T20:43:53Z by=human:Wido areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-lane-session-owns-its-merge: no accepted design declares areas\"]" revision=10 accountingRevision=10 episodeAt=2026-11-12T20:43:53Z episodeRevision=10
 - StopCapability: generation=10 revision=10 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -33,4 +34,5 @@ History:
 - 2026-11-12T20:43:53Z RYXYZM6E9HQYVH8JH490ZFPWC5-m1e-cc2e8fc8 claim actor=human:Wido targets=the-lane-session-owns-its-merge authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=765 reason=areas unknown for goal the-lane-session-owns-its-merge: no accepted design declares areas
 - 2026-11-12T22:42:05Z KMS9V69M509XMNQBTPFN7MQ30Q-m1e-f5de59ff edit actor=human:Wido targets=the-lane-session-owns-its-merge displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T20:43:53Z
 - 2026-11-12T22:42:46Z XQ4PBBP6BBGJTXAX5024ZJZ93C-m1e-f5de59ff set-priority actor=human:Wido targets=the-lane-session-owns-its-merge,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=the-lane-session-owns-its-merge from=1:2 to=1:1 requested-sequence=1
-Integrity: sha256=93c4b6cf3e218af15d13fb2c84f409233c7653452a10b7a9bde410307f08fc3c
+- 2026-11-12T22:56:51Z 1KG4YWW448KGS98KS2SYW8H674-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-session-owns-its-merge
+Integrity: sha256=dec78c1dc34708c7108d46e1f5b7c23e852c66a5e3a76051572a8c9e53807b2f
