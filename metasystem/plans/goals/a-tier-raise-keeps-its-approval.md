@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build one unit (25, --last) from a brief cut and Astra-checked before the build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decision D11.
 - OpenedAt: 2026-11-12T16:52:57Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=HSC7DFJBKBSC8GT4PQJXYK1QHM-m1e-5a087708 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T16:52:57Z MD2T1PYG9JG7RH4JXSDRFMB6C0-m1e-5a087708 open actor=human:Wido targets=a-tier-raise-keeps-its-approval
 - 2026-11-12T16:55:51Z HSC7DFJBKBSC8GT4PQJXYK1QHM-m1e-5a087708 approve actor=human:Wido targets=a-tier-raise-keeps-its-approval
-Integrity: sha256=24aa3f5f8feb22ec13d45007126bbe69dd8868f14c12caa3bf315ee4b6ed458c
+- 2026-11-12T16:57:23Z W2MV3B4FJCXX9B4Z7E3KPJ1NFR-m1e-5a087708 set-pin actor=human:Wido targets=a-tier-raise-keeps-its-approval
+Integrity: sha256=db12122abcaab94c50e89d8491b34897dea110edd4329a34ae2f61b0c7c0028d
