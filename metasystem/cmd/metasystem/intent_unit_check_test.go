@@ -480,7 +480,7 @@ func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
 	run := resultData(t, built)["run"].(string)
 	err = runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		subject := launch.UnitSubject{Round: review.Round.Number, Operation: "publication"}
-		_, err := runner.ProveRoundResult(review, gate, &subject, retain)
+		_, err := runner.ProveRoundResult(review, gate, review.Head, &subject, retain)
 		return err
 	})
 	if err != nil {

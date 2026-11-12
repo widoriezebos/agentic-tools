@@ -509,6 +509,10 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return fix != nil && plan.Base == fix.Parent && plan.Unit == fix.Unit() && fix.Commit == "" && fix.Job == ""
 	}
 	runner.FreezeCheck = inv.resolveUnitCheck
+	if runner.PublicationCheck == nil {
+		runner.PublicationCheck = inv.publicationCheckContext
+	}
+	runner.CheckMismatch = func(message string) { fmt.Fprintln(inv.stderr, message) }
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
 	}
