@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build U1 (60) from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-returned-conflict-can-be-resolved-U1-brief.md, then U2 (120), U3 (50, --last, dropped if a-round-ends-without-its-caller covers it), each from a brief cut and Astra-checked just before its build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decision D2.
 - OpenedAt: 2026-11-12T16:41:11Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=AT3CX4PMR9ATPEQP9Y2RJFD5V9-m1e-5a087708 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T16:41:11Z A9C10YN4ND2ZMW038HME3HEBRV-m1e-5a087708 open actor=human:Wido targets=a-returned-conflict-can-be-resolved
 - 2026-11-12T16:42:25Z AT3CX4PMR9ATPEQP9Y2RJFD5V9-m1e-5a087708 approve actor=human:Wido targets=a-returned-conflict-can-be-resolved
-Integrity: sha256=062cf53696a1f843e1440f64be7f012521b8aa3ee8d754b543e4402e6f8b3738
+- 2026-11-12T16:43:00Z 84RNR7RBXPTBH8Q91152HHRMRG-m1e-5a087708 set-pin actor=human:Wido targets=a-returned-conflict-can-be-resolved
+Integrity: sha256=130d4becd4aaee07f6d45b1f6e390c6ffa1b4f3a0696c2ee94135b5a951144c3
