@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build U1 (70), U2 (50), U3 (40), U4 (40, --last); briefs cut and Astra-checked just before each build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decisions D10 and D7.
 - OpenedAt: 2026-11-12T16:47:54Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=32T2J0XXT3CAFMPAFJKR6R7MT2-m1e-5a087708 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T16:47:54Z 0W1M3YD5QER6D0Q62VXG8B33SS-m1e-5a087708 open actor=human:Wido targets=an-agent-refusal-reaches-a-person-once
 - 2026-11-12T16:49:48Z 32T2J0XXT3CAFMPAFJKR6R7MT2-m1e-5a087708 approve actor=human:Wido targets=an-agent-refusal-reaches-a-person-once
-Integrity: sha256=9612a058bff5f1135d4af2f9c338045500cf25f9767fcdd308ab7a2b473df97b
+- 2026-11-12T16:50:23Z 12NHM26DVSP63GXC6KM30BHF4M-m1e-5a087708 set-pin actor=human:Wido targets=an-agent-refusal-reaches-a-person-once
+Integrity: sha256=8565e72b0b46d2a06ce24a376cae8c9bdc21b08ddbbe825016da26c2a9de90b5
