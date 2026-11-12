@@ -46,10 +46,11 @@ func parseBuildArgs(args []string) (buildOptions, string) {
 // engine goes to PATH and bin/metasystem stays untouched, because a
 // supervision-armed checkout fingerprints the live binary and a commit-time
 // swap under an armed watch is exactly what the fingerprint refuses.
-// Without it, it stages beside bin/metasystem and renames over it, under the
-// gate fence. CGO is pinned off so link portability is deliberate, and the
-// commit stamp makes operational artifacts self-attest. Both branches build
-// with -trimpath, so no checkout path enters the binary or its cache keys.
+// Without it, it stages beside bin/metasystem and publishes through the
+// delivery policy, under the gate fence. CGO is pinned off so link portability
+// is deliberate, and the commit stamp makes operational artifacts self-attest.
+// Both branches build with -trimpath, so no checkout path enters the binary
+// or its cache keys.
 func runBuild(ctx context.Context, args []string, root string, d deps) int {
 	options, usage := parseBuildArgs(args)
 	if usage != "" {
@@ -138,11 +139,14 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 		fmt.Fprintln(d.stderr, "go-build: build failed")
 		return 1
 	}
-	if err := os.Rename(filepath.Join(root, staging), filepath.Join(root, "bin", "metasystem")); err != nil {
+	published, err := publishEngine(root, filepath.Join(root, staging), d)
+	if err != nil {
 		fmt.Fprintf(d.stderr, "go-build: cannot install bin/metasystem: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(d.stdout, "go-build: bin/metasystem @ %s (no cgo)\n", stamp)
+	if published {
+		fmt.Fprintf(d.stdout, "go-build: bin/metasystem @ %s (no cgo)\n", stamp)
+	}
 	return 0
 }
 

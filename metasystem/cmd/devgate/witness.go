@@ -372,7 +372,7 @@ func (g *gateRun) consumeFrozen(options gateOptions) int {
 		if !executableFile(built) {
 			fmt.Fprintln(d.stderr, "go gate: frozen witness consumer passed without producing its engine binary")
 			status = 1
-		} else if err := installBinary(built, g.root, d.selfPid); err != nil {
+		} else if err := installBinary(built, g.root, d.withEnvironment(g.env)); err != nil {
 			status = 1
 		}
 	}
@@ -387,9 +387,8 @@ func (g *gateRun) consumeFrozen(options gateOptions) int {
 	return status
 }
 
-// installBinary copies a proven engine over root's bin/metasystem through a
-// temporary sibling and a rename.
-func installBinary(built, root string, pid int64) error {
+// installBinary stages a proven engine for the checkout's delivery policy.
+func installBinary(built, root string, d deps) error {
 	data, err := os.ReadFile(built)
 	if err != nil {
 		return err
@@ -397,12 +396,12 @@ func installBinary(built, root string, pid int64) error {
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		return err
 	}
-	stage := filepath.Join(root, "bin", ".metasystem.witness."+strconv.FormatInt(pid, 10))
+	stage := filepath.Join(root, "bin", ".metasystem.witness."+strconv.FormatInt(d.selfPid, 10))
 	if err := os.WriteFile(stage, data, 0o755); err != nil {
 		_ = os.Remove(stage)
 		return err
 	}
-	if err := os.Rename(stage, filepath.Join(root, "bin", "metasystem")); err != nil {
+	if _, err := publishEngine(root, stage, d); err != nil {
 		_ = os.Remove(stage)
 		return err
 	}
