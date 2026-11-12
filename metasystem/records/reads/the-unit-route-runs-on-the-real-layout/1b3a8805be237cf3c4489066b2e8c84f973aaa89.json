@@ -1,0 +1,100 @@
+{
+  "canonicalRead": {
+    "engine": "3990c20498fa608057f98e9417403d5a1aed3051",
+    "findings": [
+      {
+        "change": "No change needed for this slice. If retained declaration acts turn up, the declaration resume could treat a cross-unit 'declaration' class act as 'no act selected' instead of refusing.",
+        "claim": "The declaration resume no longer exempts 'declaration' class acts from the unit and operation match. Under the old code, an unchanged declaration handed the goal's earlier declaration act (from another unit or round) to the next plan. A plan.json or carry snapshot (artifacts/unit-checks/carry/\u003ccommit\u003e/subject.json) written that way before this change will now refuse on resume with 'the admitted declaration act is unavailable', and a person must repair it.",
+        "class": "regression",
+        "evidence": "In check.go at the reviewed tree, the AdmitDeclaration resume condition now contains '(act.Unit != c.Unit || act.Operation != c.Operation)' for every class; before, it applied only when act.Class != \"declaration\". The old unchanged branch returned previous.Act unless the prior act was a full-suite exception. The carry path calls admitUnitDeclaration with publish=nil when subject.json exists (intent_carry_check.go:66-84), and that call resumes with the retained ProcessAct. This only applies to retained state from before the change, and only when a declaration act was ever applied. The live act directory holds no declaration acts, and a person's repair form recovers. The slice works and is safe without a change.",
+        "id": "code-critic-fed8df23a904a73826d08c0b:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/processchange/check.go"
+      },
+      {
+        "change": "Optional: add a direct AdmitDeclaration resume of the minted 'unchanged-check' act in the processchange tests.",
+        "claim": "The last step of TestProcessCheckRoundAfterPersonRepair resumes the run with 'work build run:R' after it is already green. That only checks that nothing relaunches. Whether round 2's act passes the declaration resume is shown indirectly, by round 2 reaching green through roundProofPlan's retained-plan FreezeCheck, not by an explicit resume assertion.",
+        "class": "other",
+        "evidence": "In the new test (intent_process_check_test.go), the final checkActBuild asserts only that the exit code is 0 and the launch count is unchanged. Separately, TestAdmitDeclarationAdmissionScope tests the refusal side of resume but never accepts an 'unchanged-check' act.",
+        "id": "code-critic-fed8df23a904a73826d08c0b:2",
+        "material": false,
+        "relation": "skills/code-critique/SKILL.md materiality criterion (non-material proof strengthening, R-124)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_process_check_test.go"
+      }
+    ],
+    "id": "code-critic-fed8df23a904a73826d08c0b",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-unit-route-runs-on-the-real-layout/metasystem/artifacts/agents/code-critic-fed8df23a904a73826d08c0b/rounds/1/return.md",
+    "subject": {
+      "commit": "1b3a8805be237cf3c4489066b2e8c84f973aaa89",
+      "diffDigest": "94f25b068af48f7a662b15de4fd6dfb4e7a3f90e7788a0592e16bedc40c9ece3",
+      "kind": "commit",
+      "parent": "45b6654052d8b10b26e7d6f6c82aaaca3d027c3b",
+      "tree": "f4d021d7437845224bc2d4bc1d142ea7fe186440"
+    }
+  },
+  "readDigest": "82875bec2a0d17a75fb13a70c21d9bbabcabe639421ac2aaf9d9b50774d78427",
+  "schemaVersion": 1,
+  "goal": "the-unit-route-runs-on-the-real-layout",
+  "unit": "U6",
+  "subject": {
+    "commit": "1b3a8805be237cf3c4489066b2e8c84f973aaa89",
+    "parent": "45b6654052d8b10b26e7d6f6c82aaaca3d027c3b",
+    "tree": "f4d021d7437845224bc2d4bc1d142ea7fe186440",
+    "patchDigest": "94f25b068af48f7a662b15de4fd6dfb4e7a3f90e7788a0592e16bedc40c9ece3",
+    "unitDigest": "90086eeaaabe735a20dc173ce275387a7af97a12c05eb874bc0c5a01349ed9eb"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-fed8df23a904a73826d08c0b",
+    "round": 1,
+    "closureSha256": "c94188a47e90ec04321b440d84515a510cb322205f2f27ec67b9c30594d51727"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "f4d021d7437845224bc2d4bc1d142ea7fe186440",
+    "runId": "goal-read-gate-20261111t143019z-fcc16eccf0690520"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1dab5a94ad7e595a5c281c72e0e2355cb92ab845",
+      "digest": "66d1e8671e3bf1793e81d6fd7764db47dc7a2f1958f686e784a062af10a1924a"
+    },
+    {
+      "kind": "read",
+      "commit": "281ee217346b62695387d66eafc7c149965bdd87",
+      "digest": "58a392314317027475db4845136feb8d5e3631b493ce1639695027378739631d"
+    },
+    {
+      "kind": "read",
+      "commit": "60112e1c39d63b7ba6402ddfc4c0b3cbf4b28eed",
+      "digest": "479684621ccd6f08647eb00287178258975e82a43ec60390dc01ae470b718a42"
+    },
+    {
+      "kind": "read",
+      "commit": "f0a1226aa61774d2cc0feaf64a8e9903a321d988",
+      "digest": "d5b6aee9f527be8595aaa9b80587cfa8e66a620afb9ad44dfdc7fe292c1e3316"
+    },
+    {
+      "kind": "read",
+      "commit": "45b6654052d8b10b26e7d6f6c82aaaca3d027c3b",
+      "digest": "561f60d0487e9076ff5f1884c18fcceb52206f84a9f4d9d63f231390a17ce1ce"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-fed8df23a904a73826d08c0b"
+    },
+    {
+      "path": "metasystem/internal/processchange/check_test.go",
+      "readerWord": "reviewed by critic root code-critic-fed8df23a904a73826d08c0b"
+    }
+  ],
+  "sha256": "41f3d5d89a6ac77cdb2023805bfa9889a5f015a713469d89e322dd60cfc28b56"
+}

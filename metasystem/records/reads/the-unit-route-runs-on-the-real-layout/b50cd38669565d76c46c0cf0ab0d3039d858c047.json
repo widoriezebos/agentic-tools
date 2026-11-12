@@ -1,0 +1,95 @@
+{
+  "coveredUnits": [
+    "Uholder"
+  ],
+  "canonicalRead": {
+    "engine": "3990c20498fa608057f98e9417403d5a1aed3051",
+    "findings": [],
+    "id": "code-critic-ebcdda194dc440f4a9cd9fbe",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-unit-route-runs-on-the-real-layout/metasystem/artifacts/agents/code-critic-ebcdda194dc440f4a9cd9fbe/rounds/1/return.md",
+    "subject": {
+      "commit": "b50cd38669565d76c46c0cf0ab0d3039d858c047",
+      "diffDigest": "db0dfe91e8ee71a71e45e477dfa880a9c2bbe4e1b129eeaeda1a567eda11290b",
+      "kind": "commit",
+      "parent": "7a8d28f1335e1cb1b30a8a2cbb359a63297530aa",
+      "tree": "6026e24dea0d92083898c775a70530cb70f5bc11"
+    }
+  },
+  "readDigest": "7be1a6660fa7a2cd7025dc9ac3565c62386ead533a89aece041c8abc4b96ae8f",
+  "schemaVersion": 1,
+  "goal": "the-unit-route-runs-on-the-real-layout",
+  "unit": "Uholder",
+  "subject": {
+    "commit": "b50cd38669565d76c46c0cf0ab0d3039d858c047",
+    "parent": "7a8d28f1335e1cb1b30a8a2cbb359a63297530aa",
+    "tree": "6026e24dea0d92083898c775a70530cb70f5bc11",
+    "patchDigest": "db0dfe91e8ee71a71e45e477dfa880a9c2bbe4e1b129eeaeda1a567eda11290b",
+    "unitDigest": "9324059ac93ea02ce075a911f9d54c917f63b450d778c05fe19abf07189b0572"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ebcdda194dc440f4a9cd9fbe",
+    "round": 1,
+    "closureSha256": "55738aecccbbef5f60266b7f60096a2335a064eb3cc3b70f78e4afb9e868f695"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6026e24dea0d92083898c775a70530cb70f5bc11",
+    "runId": "goal-read-gate-20261111t195954z-d413f82e1b555053"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1dab5a94ad7e595a5c281c72e0e2355cb92ab845",
+      "digest": "66d1e8671e3bf1793e81d6fd7764db47dc7a2f1958f686e784a062af10a1924a"
+    },
+    {
+      "kind": "read",
+      "commit": "281ee217346b62695387d66eafc7c149965bdd87",
+      "digest": "58a392314317027475db4845136feb8d5e3631b493ce1639695027378739631d"
+    },
+    {
+      "kind": "read",
+      "commit": "60112e1c39d63b7ba6402ddfc4c0b3cbf4b28eed",
+      "digest": "479684621ccd6f08647eb00287178258975e82a43ec60390dc01ae470b718a42"
+    },
+    {
+      "kind": "read",
+      "commit": "f0a1226aa61774d2cc0feaf64a8e9903a321d988",
+      "digest": "d5b6aee9f527be8595aaa9b80587cfa8e66a620afb9ad44dfdc7fe292c1e3316"
+    },
+    {
+      "kind": "read",
+      "commit": "45b6654052d8b10b26e7d6f6c82aaaca3d027c3b",
+      "digest": "561f60d0487e9076ff5f1884c18fcceb52206f84a9f4d9d63f231390a17ce1ce"
+    },
+    {
+      "kind": "read",
+      "commit": "2e6f99afa55f21ea46c7be01b4cfd92acc1e1669",
+      "digest": "bbbdf7ff2deb41ca2cb5317afe2c294315853f9061fe63be5ba2b638101add7d"
+    },
+    {
+      "kind": "read",
+      "commit": "7a8d28f1335e1cb1b30a8a2cbb359a63297530aa",
+      "digest": "c50511006df764f7c0e7a902652be8604cae112a0cfb494a0ea5fe5f09d03320"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_critic_custody_test.go",
+      "readerWord": "reviewed by critic root code-critic-ebcdda194dc440f4a9cd9fbe"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_tree_test.go",
+      "readerWord": "reviewed by critic root code-critic-ebcdda194dc440f4a9cd9fbe"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_carry_test.go",
+      "readerWord": "reviewed by critic root code-critic-ebcdda194dc440f4a9cd9fbe"
+    }
+  ],
+  "sha256": "87cb7c29feea5463c03ee4488efc5b6a2092eaaf74866c3cca0b0ef98aac92c5"
+}

@@ -36,6 +36,7 @@ func (*criticCustodyReader) ReadArgv(int64) ([]string, bool) { return []string{"
 func criticCustodyBed(t *testing.T) (*workBed, intentOwners, string, *criticCustodyReader) {
 	t.Helper()
 	b, owners, run, _ := unitCarryIntentBed(t, false)
+	holdUnitCarryCheckout(t, b, &owners)
 	b.head = "replayed-tip"
 	reader := &criticCustodyReader{}
 	dependencies := dispatchcore.CustodyDeathDependencies{Reader: reader, Processes: identity.FixedProcessTable{}, MatchesTag: func([]string, string) bool { return true }, TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} }}

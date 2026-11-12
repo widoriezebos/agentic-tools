@@ -55,7 +55,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	if !inv.input.has("check") && plan.Check != nil && plan.Check.Declaration != nil && plan.Path == filepath.Join(directory, "plan.json") {
 		return plan, inv.admitUnitDeclaration(&plan, directory, nil)
 	}
-	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir,
+	check := &launch.UnitCheck{Base: plan.Base, Directory: filepath.Join(plan.Worktree, inv.layout.InstallationRel),
 		Environment: commandenv.EngineEnvironmentInDirectory(plan.Proof[0].Env, filepath.Join(inv.layout.InstallationRoot.Path(), "bin"))}
 	laneFix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
 	laneCheck := laneFix != nil && slices.Equal(inv.input.values["check"], []string{"metasystem test impact"})
@@ -77,6 +77,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		}
 		check.Cheap, check.Audits, check.Minutes = "metasystem test impact --check", audits, 15
 	} else if inv.input.has("check") {
+		check.ManualDirectory = inv.worktreeFolderHere(plan.Worktree)
 		if laneFix != nil {
 			if _, _, problem := inv.actingAs("work build manual check", plan.Goal, actorHuman); problem != nil {
 				return plan, fmt.Errorf("%s", problem.Summary)

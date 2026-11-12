@@ -1,0 +1,72 @@
+{
+  "canonicalRead": {
+    "engine": "aa05a8f8ce55e88b1e463e47f870c6b2149fd3d6",
+    "findings": [
+      {
+        "change": "None required. Optionally, later, drop the reviewWork branch or name the commit's work through workOfCommit.",
+        "claim": "In criticClosure's new refusal, the branch that fills the real work id and attempt number from the goal-work review context almost never reaches a person. When that context is present, the caller throws criticClosure's result away and goes to closeWorkReview. On a plain commit review there is often no work target, so the offered command can carry the brief's own placeholder words U and N. The brief prescribes exactly these placeholders, the audit accepts them, and the person still gets a correct act to take. Nothing ships wrong.",
+        "class": "other",
+        "evidence": "cmd/metasystem/intent_delivery.go:1429-1432 fills work and after from inv.reviewWork. cmd/metasystem/intent_unit_review.go:1240-1296 returns criticClosure's result when the review context is absent (and failedRound is unset), and otherwise calls closeWorkReview.",
+        "id": "code-critic-c23ee59bb5d1a69949af481c:1",
+        "material": false,
+        "relation": "R-124-m1u (not material: the slice works and is safe without it)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_delivery.go"
+      }
+    ],
+    "id": "code-critic-c23ee59bb5d1a69949af481c",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-unit-route-runs-on-the-real-layout/metasystem/artifacts/agents/code-critic-c23ee59bb5d1a69949af481c/rounds/1/return.md",
+    "subject": {
+      "commit": "0d46c71c643c40567bc5c4e7cbcd4a199aacc6c4",
+      "diffDigest": "5d04e45ef075231038ff7cae81f02382d307ea9c6d4a7cca70fdfa11f9db2c23",
+      "kind": "commit",
+      "parent": "e457be44f1c1adcff6ba44a12308f2473d53cd0a",
+      "tree": "823cdd5a39509a073727b6b462fe317db9c9937e"
+    }
+  },
+  "readDigest": "e0d60bfddb9e9dc2b59fb03d681a10834ba12c4775a3752310f606e5adc9639b",
+  "schemaVersion": 1,
+  "goal": "the-unit-route-runs-on-the-real-layout",
+  "unit": "U1",
+  "subject": {
+    "commit": "0d46c71c643c40567bc5c4e7cbcd4a199aacc6c4",
+    "parent": "e457be44f1c1adcff6ba44a12308f2473d53cd0a",
+    "tree": "823cdd5a39509a073727b6b462fe317db9c9937e",
+    "patchDigest": "5d04e45ef075231038ff7cae81f02382d307ea9c6d4a7cca70fdfa11f9db2c23",
+    "unitDigest": "77521d9fad343dd6c3f67b2e9f6fa9c5a026a032f2635ac58e68e011e3945086"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c23ee59bb5d1a69949af481c",
+    "round": 1,
+    "closureSha256": "3bf1a946adf2c25e33c93810412eb8003c7a7160f2191b8181fd595400dec8f4"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "823cdd5a39509a073727b6b462fe317db9c9937e",
+    "runId": "goal-read-gate-20261110t230740z-7e7b365a57f7f741"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-c23ee59bb5d1a69949af481c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_stop_correction_test.go",
+      "readerWord": "reviewed by critic root code-critic-c23ee59bb5d1a69949af481c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_stop_test.go",
+      "readerWord": "reviewed by critic root code-critic-c23ee59bb5d1a69949af481c"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_review_subject_test.go",
+      "readerWord": "reviewed by critic root code-critic-c23ee59bb5d1a69949af481c"
+    }
+  ],
+  "sha256": "415cdbb6439dbd47d29594cdf800af4ba11801a00d1e8008200a9c5e928cba34"
+}

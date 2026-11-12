@@ -161,3 +161,71 @@ func TestCheckAdmissionKeepsProjectHistoryAndInstallationQuestions(t *testing.T)
 		}
 	}
 }
+
+func TestAdmitCheckAdmissionScope(t *testing.T) {
+	t.Parallel()
+	for _, origin := range []string{"round-1", "carry/other-unit", "already advanced"} {
+		t.Run(origin, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			c := Check{Root: root, Installation: roots.Installation(root), Person: true, Now: time.Unix(1, 0),
+				ProcessAct: ProcessAct{Goal: "goal", Unit: origin, Operation: origin, Checkout: root, After: "true", AfterArgv: []string{"true"}}}
+			first, err := AdmitCheck(c)
+			if err != nil || first.Status != "applied" || first.ID == "" {
+				t.Fatalf("person repair: %+v %v", first, err)
+			}
+			path := filepath.Join(root, "process", "acts", first.ID+".json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.Person, c.Observation, c.Unit, c.Operation = false, true, "round-1", "round-2"
+			if origin == "already advanced" {
+				selection, _ := json.Marshal(checkSelection{c.Goal, c.Operation, first.ID, c.AfterArgv})
+				path := filepath.Join(root, "process", fmt.Sprintf("check-%x.json", sha256.Sum256([]byte(c.Goal))))
+				if err := os.WriteFile(path, selection, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for range 2 {
+				next, err := AdmitCheck(c)
+				if err != nil || next.ID == "" || next.ID == first.ID || next.Unit != c.Unit || next.Operation != c.Operation || next.Class != "unchanged-check" || next.Status != "applied" || next.AppliedProof.Schema != 0 {
+					t.Fatalf("unchanged round lacks its own admission: %+v %v", next, err)
+				}
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(before) {
+				t.Fatalf("earlier admission was changed: %s %v", after, err)
+			}
+			c.Observation, c.Act = false, first.ID
+			if _, err := AdmitCheck(c); err == nil {
+				t.Fatal("explicit earlier act admitted a different unit or round")
+			}
+		})
+	}
+}
+
+func TestAdmitDeclarationAdmissionScope(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	main := Declaration{Commit: "main", Values: [4]string{"printf main", "true", "15", "printf full"}}
+	candidate := main
+	candidate.Commit, candidate.Values[0] = "candidate", "printf changed"
+	c := DeclarationAdmission{Check: Check{Root: root, Installation: roots.Installation(root), Person: true, Now: time.Unix(1, 0),
+		ProcessAct: ProcessAct{Goal: "goal", Unit: "other-unit", Operation: "carry/other-unit", Checkout: root, After: candidate.Values[0], AfterDeclaration: &candidate}},
+		Source:  func() (Declaration, Declaration, Declaration, error) { return candidate, main, main, nil },
+		Recheck: func() error { return nil }, Publish: func(ProcessAct) error { return nil }, Impact: func() error { return nil }}
+	first, err := AdmitDeclaration(c)
+	if err != nil || first.Status != "applied" || first.ID == "" {
+		t.Fatalf("person declaration: %+v %v", first, err)
+	}
+	c.Person, c.Unit, c.Operation = false, "unit", "round-2"
+	next, err := AdmitDeclaration(c)
+	if err != nil || next.Status != "unchanged" || next.ID != "" {
+		t.Fatalf("unchanged declaration selected another admission: %+v %v", next, err)
+	}
+	c.Resume, c.Act = true, first.ID
+	if _, err := AdmitDeclaration(c); err == nil {
+		t.Fatal("declaration resume admitted another unit's act")
+	}
+}

@@ -772,6 +772,7 @@ func TestIntentTreePublicationComparesFreshBytesUnderOwnerLocks(t *testing.T) {
 			t.Parallel()
 
 			b, owners, run, _ := unitCarryIntentBed(t, false)
+			holdUnitCarryCheckout(t, b, &owners)
 			tree := new(string)
 			b.head = "replayed-tip"
 			owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
@@ -839,6 +840,7 @@ func TestIntentTreePublicationComparesFreshBytesUnderOwnerLocks(t *testing.T) {
 func TestIntentTreeCollectedReadPushReleasesCommandLocks(t *testing.T) {
 	t.Parallel()
 	b, owners, run, _ := unitCarryIntentBed(t, false)
+	holdUnitCarryCheckout(t, b, &owners)
 	b.head = "replayed-tip"
 	owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
 		return &launch.UnitRunner{Manager: b.manager, Root: b.unitRoot, Git: boundaryGit{b, new(string)}}

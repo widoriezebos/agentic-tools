@@ -191,11 +191,15 @@ func TestProcessCheckPublicRemedy(t *testing.T) {
 	owners.prove = fixedFixtureGoalAuthority
 	checkNextWorktree(t, b)
 	code, next := checkActBuild(t, b, owners, checkBuildArgs(b, "same", brief, argv)...)
-	if code != 0 || len(checkActs(t, b)) != 1 {
-		t.Fatalf("unchanged replay created act: %d %+v", code, next)
+	if code != 0 || len(checkActs(t, b)) != 2 {
+		t.Fatalf("unchanged selection lacks its own admission: %d %s", code, next.Summary)
 	}
-	checkActLaunches(t, b, next, act.ID)
-	t.Log("work build held before launch; exact person command closed its question, retained argv, and bound build/proof launches; unchanged selection reused the act")
+	plan, err := launch.ReadUnitPlan(resultData(t, next)["plan"].(string))
+	if err != nil || plan.Check.ProcessAct == "" || plan.Check.ProcessAct == act.ID {
+		t.Fatalf("another unit selected the earlier act: %+v %v", plan.Check, err)
+	}
+	checkActLaunches(t, b, next, plan.Check.ProcessAct)
+	t.Log("work build held before launch; exact person command closed its question, retained argv, and bound build/proof launches; another unit admitted the same command under its own act")
 }
 
 func TestProcessCheckFirstAndPersonSelection(t *testing.T) {
@@ -474,7 +478,7 @@ func TestProcessCheckFailedObservationHoldsNextAgent(t *testing.T) {
 	}
 	checkNextWorktree(t, b)
 	owners.prove = fixedFixtureGoalAuthority
-	if code, result := checkActBuild(t, b, owners, checkBuildArgs(b, "repaired", brief, []string{"true"})...); code != 0 || len(checkActs(t, b)) != 1 {
+	if code, result := checkActBuild(t, b, owners, checkBuildArgs(b, "repaired", brief, []string{"true"})...); code != 0 || len(checkActs(t, b)) != 2 {
 		t.Fatalf("repaired selection remained unknown: %d %s", code, result.Summary)
 	}
 }
@@ -595,5 +599,70 @@ func TestProcessCheckAgentReusingAppliedActKeepsAudits(t *testing.T) {
 	plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
 	if err != nil || plan.Check.Audits != "make audits" || plan.Check.Minutes != 40 {
 		t.Fatalf("agent reused the person's no-audits repair: %+v %v", plan.Check, err)
+	}
+}
+
+func TestProcessCheckRoundAfterPersonRepair(t *testing.T) {
+	t.Parallel()
+	b := checkSelectionBed(t)
+	b.declaredCheap = "true"
+	b.starter.fail["proof"] = true
+	owners := b.workOwners()
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	args := []string{"work", "build", b.id, "--work", "repaired", "--brief", b.brief("repair-round.md", "Build.\n"), "--lines", "5", "--reason", "Repair the check", "--by", "Wido", "--check", "true"}
+	code, first := checkActBuild(t, b, owners, args...)
+	if code != 1 || resultData(t, first)["outcome"] != "proof-red" {
+		t.Fatalf("repaired first round: %d %+v", code, first.Summary)
+	}
+	old, err := launch.ReadUnitPlan(resultData(t, first)["plan"].(string))
+	if err != nil || old.Check.ProcessAct == "" {
+		t.Fatalf("missing person repair: %+v %v", old.Check, err)
+	}
+	b.starter.fail["proof"] = false
+	run := resultData(t, first)["run"].(string)
+	code, next, _ := stopPublic(t, b, "broken-policy", "work", "revise", "run:"+run, "--brief", b.brief("next-round.md", "Repair.\n"), "--reason", "Repair the failed check", "--by", "Wido")
+	if code != 0 || resultData(t, next)["outcome"] != "green" {
+		t.Fatalf("next round required another repair: %d %+v", code, next.Summary)
+	}
+	plan, err := launch.ReadUnitPlan(resultData(t, next)["plan"].(string))
+	if err != nil || plan.Check.ProcessAct == "" || plan.Check.ProcessAct == old.Check.ProcessAct || plan.Check.Declaration == nil {
+		t.Fatalf("next round selected the person's earlier act: %+v %v", plan.Check, err)
+	}
+	before := len(b.starter.launched())
+	code, resumed := checkActBuild(t, b, b.workOwners(), "work", "build", "run:"+run)
+	if code != 0 || len(b.starter.launched()) != before {
+		t.Fatalf("next round could not resume its own admission: %d %+v", code, resumed.Summary)
+	}
+}
+
+func TestProcessCheckRunContinuationRemedy(t *testing.T) {
+	t.Parallel()
+	b := checkSelectionBed(t)
+	b.declaredCheap = "true"
+	starter := &declaredCheckStarter{bed: b, t: t}
+	b.manager.Supervisor = starter
+	owners := b.workOwners()
+	code, first := checkActBuild(t, b, owners, "work", "build", b.id, "--work", "repair", "--brief", b.brief("continue.md", "Build.\n"), "--lines", "5", "--check", "printf", "repaired")
+	if code != 1 || processAct(t, first).Status != "proposed" {
+		t.Fatalf("first round: %d %+v", code, first.Summary)
+	}
+	run := filepath.Base(filepath.Dir(processAct(t, first).Operation))
+	code, held := checkActBuild(t, b, owners, "work", "build", "run:"+run, "--reason", "Repair the check", "--check", "printf", "repaired")
+	if code != 1 || processAct(t, held).Status != "proposed" || held.Next == nil {
+		t.Fatalf("repair was not proposed: %d %s", code, held.Summary)
+	}
+	for _, flag := range []string{"--work", "--brief", "--lines"} {
+		if slices.Contains(held.Next.Argv, flag) {
+			t.Fatalf("run remedy has a new-build option: %v", held.Next.Argv)
+		}
+	}
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	code, repaired := checkActBuild(t, b, owners, held.Next.Argv[1:]...)
+	if code != 0 || resultData(t, repaired)["run"] != run || resultData(t, repaired)["outcome"] != "green" || !slices.Equal(starter.calls, []int{0, 0}) {
+		t.Fatalf("printed person repair did not continue the run: %d %+v", code, repaired.Summary)
+	}
+	plan, err := launch.ReadUnitPlan(resultData(t, repaired)["plan"].(string))
+	if err != nil || plan.Check.Cheap != "printf repaired" || plan.Check.ProcessAct != processAct(t, held).ID {
+		t.Fatalf("repair did not freeze the selected command: %+v %v", plan.Check, err)
 	}
 }

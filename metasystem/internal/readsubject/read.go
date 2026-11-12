@@ -40,13 +40,22 @@ var FindingClasses = []string{"regression", "weakened-test", "incomplete-item", 
 
 // Collect validates structured evidence before assigning examination-qualified
 // identities. A prose verdict can contradict evidence, but cannot replace it.
-func Collect(id string, subject ReadSubject, engine, model, output string, data []byte, verdict string) (Read, error) {
-	r := Read{ID: id, Subject: subject, Engine: engine, Model: model, Output: output}
+func Collect(id string, subject ReadSubject, engine, model, output string, data []byte, verdict string) (r Read, err error) {
+	r = Read{ID: id, Subject: subject, Engine: engine, Model: model, Output: output}
 	var raw struct {
 		Findings json.RawMessage `json:"findings"`
 		Count    *int            `json:"verdictMaterialCount"`
 		Version  int             `json:"schemaVersion"`
 	}
+	defer func() {
+		if err != nil {
+			if raw.Version > 0 {
+				err = fmt.Errorf("return schema version %d: %w", raw.Version, err)
+			} else {
+				err = fmt.Errorf("return schema: %w", err)
+			}
+		}
+	}()
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return r, err
 	}

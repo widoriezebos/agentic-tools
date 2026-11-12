@@ -217,7 +217,7 @@ func TestAFailedCollectionKeepsTheRoundsRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, err := fixture.runner.Status(result.Record.ID)
-	if err != nil || calls != 1 || record.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs" || record.Rounds[0].Material != -1 || !reflect.DeepEqual(record.Rounds[0].Reads, result.Record.Rounds[0].Reads) {
+	if err != nil || calls != 1 || record.Rounds[0].Stop.Handoff != "stopped unreadable-read" || record.Rounds[0].Stop.Class != "the read cannot be read: dispatch evidence is unavailable" || record.Rounds[0].Stop.Evidence != path || record.Rounds[0].Material != -1 || !reflect.DeepEqual(record.Rounds[0].Reads, result.Record.Rounds[0].Reads) {
 		t.Fatalf("failed collection: %+v err=%v dispatch calls=%d", record, err, calls)
 	}
 }

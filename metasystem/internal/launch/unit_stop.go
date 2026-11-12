@@ -83,7 +83,7 @@ func collectLaunchRead(record Record, stateDir string) (readsubject.Read, error)
 	diffPath := readString(record.AdapterData, "readDiff")
 	diff, err := os.ReadFile(diffPath)
 	if err != nil {
-		return readsubject.Read{}, fmt.Errorf("read subject diff is unavailable: %w", err)
+		return readsubject.Read{Output: output}, fmt.Errorf("read subject diff is unavailable: %w", err)
 	}
 	subject := readsubject.ReadSubject{Kind: readsubject.SubjectLive, ImplementerRoot: record.Goal, ReviewedProjectTree: fmt.Sprintf("%x", sha256.Sum256(diff)), DiffDigest: fmt.Sprintf("%x", sha256.Sum256(diff))}
 	return readsubject.Collect(record.ID, subject, readString(record.AdapterData, "engine"), readString(record.AdapterData, "model"), output, data, record.Measurement.Verdict)
@@ -109,6 +109,8 @@ func (runner *UnitRunner) collectRoundRead(record *UnitRunRecord, round *UnitRou
 		return runner.decideRound(record, round, "")
 	}
 	unknown := ""
+	var collectErr error
+	returnPath := ""
 	for _, step := range round.Steps {
 		if !strings.HasPrefix(step.Name, "read") || step.LaunchID == "" || step.State == StepSkipped {
 			continue
@@ -130,6 +132,9 @@ func (runner *UnitRunner) collectRoundRead(record *UnitRunRecord, round *UnitRou
 			upgraded, err := collectLaunchRead(launch, stateDir)
 			if err == nil {
 				read = &upgraded
+			} else if upgraded.Output != "" {
+				unknown, collectErr, returnPath = "unreadable-read", err, upgraded.Output
+				continue
 			}
 		}
 		if read == nil {
@@ -138,13 +143,17 @@ func (runner *UnitRunner) collectRoundRead(record *UnitRunRecord, round *UnitRou
 		}
 		round.Reads = append(round.Reads, *read)
 	}
-	if len(round.Reads) == 0 {
+	if len(round.Reads) == 0 && unknown == "" {
 		unknown = "unavailable-stop-inputs"
 	}
-	return runner.decideRound(record, round, unknown)
+	return runner.decideRead(record, round, unknown, collectErr, returnPath)
 }
 
 func (runner *UnitRunner) decideRound(record *UnitRunRecord, round *UnitRound, unknown string) error {
+	return runner.decideRead(record, round, unknown, nil, "")
+}
+
+func (runner *UnitRunner) decideRead(record *UnitRunRecord, round *UnitRound, unknown string, collectErr error, returnPath string) error {
 	readUnknown := unknown != "" || len(round.Reads) == 0
 	policy := "auto"
 	if runner.ReviewPolicy != nil {
@@ -219,6 +228,9 @@ func (runner *UnitRunner) decideRound(record *UnitRunRecord, round *UnitRound, u
 		round.Material = -1
 	}
 	s = loopstop.Decide(loopstop.Input{Stop: s, Prior: prior, Inherited: inherited, Read: &combined, Policy: policy, Unknown: unknown})
+	if collectErr != nil {
+		s.Class, s.Handoff, s.Evidence = "the read cannot be read: "+collectErr.Error(), "stopped unreadable-read", returnPath
+	}
 	round.Stop = &s
 	return runner.saveDecision(record, round)
 }
@@ -325,6 +337,9 @@ func (runner *UnitRunner) CollectExamination(record *UnitRunRecord, round *UnitR
 	if runner.Manager != nil {
 		if launch, err := runner.Manager.Store.Read(subject.Examination); err == nil && launch.Kind == "read" {
 			read, err := runner.launchRead(launch)
+			if err != nil && read != nil && read.Output != "" {
+				return runner.decideRead(record, round, "unreadable-read", err, read.Output)
+			}
 			if err != nil || read == nil || read.Subject.DiffDigest != subject.DiffDigest {
 				return runner.decideRound(record, round, "unavailable-stop-inputs")
 			}
@@ -349,7 +364,7 @@ func (runner *UnitRunner) CollectExamination(record *UnitRunRecord, round *UnitR
 		if readErr == nil {
 			round.Reads = []readsubject.Read{read}
 		} else {
-			unknown = "unavailable-stop-inputs"
+			return runner.decideRead(record, round, "unreadable-read", readErr, subject.ExaminationReturnPath)
 		}
 	} else {
 		unknown = "unreadable-read"
@@ -399,6 +414,9 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 		}
 	}
 	joining := round.UnknownRetries >= 1 && fresh >= 0 && (round.Steps[fresh].State == StepPending || round.Steps[fresh].State == StepStarting || round.Steps[fresh].State == StepRunning)
+	if round.Stop != nil && strings.HasPrefix(round.Stop.Class, "the read cannot be read:") {
+		return UnitResult{Record: record}, coded("UNIT_STOPPED", round.Stop.Evidence, errors.New(round.Stop.Class+"; the unit stays stopped"))
+	}
 	if round.Stop == nil || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || round.UnknownRetries >= 1 && !joining {
 		return UnitResult{Record: record}, coded("UNIT_STOPPED", "", fmt.Errorf("the fresh examination allowance is spent; the unit stays stopped"))
 	}

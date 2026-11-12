@@ -77,7 +77,7 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 	}
 	if c.Person && c.Act == "" && !unknown {
 		for _, pending := range acts {
-			if pending.Status == "proposed" && pending.Operation == c.Operation && pending.Checkout == c.Checkout && slices.Equal(pending.AfterArgv, c.AfterArgv) && (len(previous.Argv) == 0 || slices.Equal(pending.BeforeArgv, previous.Argv)) && pending.Predecessor == previous.Act {
+			if pending.Status == "proposed" && pending.Unit == c.Unit && pending.Operation == c.Operation && pending.Checkout == c.Checkout && slices.Equal(pending.AfterArgv, c.AfterArgv) && (len(previous.Argv) == 0 || slices.Equal(pending.BeforeArgv, previous.Argv)) && pending.Predecessor == previous.Act {
 				c.Act = pending.ID
 			}
 		}
@@ -98,7 +98,11 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 	}
 	full := !c.Observation && len(c.FullArgv) != 0 && (slices.Equal([]string{"/bin/sh", "-c", c.After}, c.FullArgv) || slices.Equal([]string{"/bin/sh", "-c", c.Audits}, c.FullArgv))
 	changed := !c.Observation && (unknown || !slices.Equal(act.BeforeArgv, c.AfterArgv) || full)
-	if c.Act != "" || changed || (previous.Operation == c.Operation && previous.Act != "") {
+	sameAdmission := slices.ContainsFunc(acts, func(a ProcessAct) bool {
+		return a.ID == previous.Act && a.Unit == c.Unit && a.Operation == c.Operation && a.Checkout == c.Checkout
+	})
+	sameCheck := c.Act == "" && !changed && !sameAdmission && previous.Act != "" && slices.Equal(previous.Argv, c.AfterArgv)
+	if c.Act != "" || changed || sameCheck || sameAdmission {
 		act.Status, act.ProposedAt, act.Class = "proposed", c.Now.UTC(), "added-check"
 		if len(previous.Argv) > 0 {
 			act.Class = "widened-check"
@@ -107,14 +111,19 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 			act.Class, act.ApplicableArgv = "full-suite-exception", c.FullArgv
 			act.SelectedArgv, act.FullArgv = slices.Clone(c.FullArgv), c.FullArgv
 		}
-		if previous.Operation == c.Operation && previous.Act != "" && full {
+		if sameCheck {
+			// Keeping the command needs no new approval, but the admission
+			// records this unit and operation without carrying a person's proof.
+			act.Class, act.Status, act.AppliedAt = "unchanged-check", "applied", c.Now.UTC()
+		}
+		if sameAdmission && full {
 			c.Act = previous.Act
 		}
 		identity, _ := json.Marshal([]any{c.Checkout, c.Goal, c.Unit, c.Operation, act.BeforeArgv, c.AfterArgv, act.Predecessor, c.FullArgv})
 		act.ID = fmt.Sprintf("%x", sha256.Sum256(identity))
 		if c.Act != "" {
 			act.ID = c.Act
-		} else if previous.Operation == c.Operation && previous.Act != "" && !changed {
+		} else if sameAdmission && !changed {
 			act.ID = previous.Act
 		}
 		if filepath.Base(act.ID) != act.ID || strings.ContainsAny(act.ID, `/\`) {
@@ -149,8 +158,15 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 			}
 			act.Status, act.AppliedAt, act.AppliedProof = "applied", c.Now.UTC(), c.Proof
 		}
+		if sameCheck {
+			if err := save(c.Installation, actPath, act); err != nil {
+				return act, err
+			}
+		}
 		previous.Act = act.ID
-	} else if !slices.Equal(previous.Argv, c.AfterArgv) {
+	} else if previous.Operation != c.Operation || !slices.Equal(previous.Argv, c.AfterArgv) {
+		// The command remains a comparison baseline; its approval belongs to
+		// the admission that selected it, even when the next command is equal.
 		previous.Act = ""
 	}
 	if damaged {
@@ -208,7 +224,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 		}
 		actPath := filepath.Join(directory, "acts", c.Act+".json")
 		data, problem := os.ReadFile(actPath)
-		if filepath.Base(c.Act) != c.Act || problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != c.Act || act.Checkout != c.Checkout || (act.Class != "declaration" && (act.Unit != c.Unit || act.Operation != c.Operation)) || (act.Class == "declaration" && (act.AfterDeclaration == nil || c.AfterDeclaration == nil || act.AfterDeclaration.Values != c.AfterDeclaration.Values)) || (act.Class != "declaration" && act.Class != "full-suite-exception" && act.Class != "added-check" && act.Class != "widened-check") || (act.Class == "full-suite-exception" && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.After}) && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.Audits})) || (act.Class == "declaration" && act.AfterDeclaration.Values[0] != c.After) || ((act.Class == "added-check" || act.Class == "widened-check") && act.After != c.After) || act.Status != "applied" {
+		if filepath.Base(c.Act) != c.Act || problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != c.Act || act.Checkout != c.Checkout || (act.Unit != c.Unit || act.Operation != c.Operation) || (act.Class == "declaration" && (act.AfterDeclaration == nil || c.AfterDeclaration == nil || act.AfterDeclaration.Values != c.AfterDeclaration.Values)) || (act.Class != "declaration" && act.Class != "full-suite-exception" && act.Class != "added-check" && act.Class != "widened-check" && act.Class != "unchanged-check") || (act.Class == "full-suite-exception" && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.After}) && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.Audits})) || (act.Class == "declaration" && act.AfterDeclaration.Values[0] != c.After) || ((act.Class == "added-check" || act.Class == "widened-check" || act.Class == "unchanged-check") && act.After != c.After) || act.Status != "applied" {
 			return act, fmt.Errorf("the admitted declaration act is unavailable")
 		}
 		return act, save(c.Installation, actPath, act)
@@ -239,7 +255,13 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			return
 		}
 		if err = c.Recheck(); err == nil {
-			err = write(path, declarationReference{c.Goal, previous.Seed, c.Operation, act.ID, candidate})
+			operation, id := c.Operation, act.ID
+			if act.Status == "unchanged" && id == "" && previous.Act != "" {
+				// The baseline retains its approval history separately from
+				// the act selected for this admission.
+				operation, id = previous.Operation, previous.Act
+			}
+			err = write(path, declarationReference{c.Goal, previous.Seed, operation, id, candidate})
 		}
 		if err == nil {
 			err = c.Publish(act)
@@ -269,7 +291,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			if problem != nil || json.Unmarshal(data, &prior) != nil {
 				return act, fmt.Errorf("the admitted declaration act is unavailable")
 			}
-			if prior.Class == "full-suite-exception" {
+			if prior.Class == "full-suite-exception" || prior.Unit != c.Unit || prior.Operation != c.Operation {
 				act.ID = ""
 			}
 		}

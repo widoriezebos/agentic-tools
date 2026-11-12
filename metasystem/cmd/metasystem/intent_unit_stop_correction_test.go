@@ -403,17 +403,13 @@ func TestWorkReviewUnknownCommittedUnitLaunchesFreshExamination(t *testing.T) {
 		CheckClaim: func() error { return nil }, Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(string, string, string, string, string) (string, error) {
 			transferWriteJSON(t, filepath.Join(bed.worktree, "artifacts", "agents", "jobs", critic+".json"), map[string]any{
-				"jobId": critic, "role": "code-critic", "round": 1, "status": "completed", "reviews": "commit:" + unit,
+				"jobId": critic, "role": "code-critic", "round": 1, "status": "failed", "reviews": "commit:" + unit,
 				"goalId": bed.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-reader", "findingRegister": []any{},
 			})
 			transferWriteJSON(t, filepath.Join(roundDir, "subject.json"), readsubject.ReadSubject{
 				Kind: readsubject.SubjectCommit, Commit: unit, Parent: subject.Parent, Tree: subject.Tree, DiffDigest: subject.PatchDigest,
 			})
-			// A material finding without its class makes the stop inputs unknown.
-			finding := stopFinding("", "unit.go")
-			finding.ID = "F1"
-			transferWriteJSON(t, returnPath, map[string]any{"jobId": critic, "round": 1, "reviewedTree": subject.Tree,
-				"verdictMaterialCount": 1, "findings": []readsubject.Finding{finding}})
+			// A transport failure leaves no structured return to collect.
 			if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte("VERDICT: REVISE material=1\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -434,7 +430,7 @@ func TestWorkReviewUnknownCommittedUnitLaunchesFreshExamination(t *testing.T) {
 	}
 	before, err := runner.Status(run)
 	if err != nil || len(before.Subjects) != 1 || before.Subjects[0].Commit != unit || before.Rounds[0].Stop == nil ||
-		before.Rounds[0].Stop.Decision != "stop" || before.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs" || before.Rounds[0].UnknownRetries != 0 {
+		before.Rounds[0].Stop.Decision != "stop" || before.Rounds[0].Stop.Handoff != "stopped unreadable-read" || before.Rounds[0].UnknownRetries != 0 {
 		t.Fatalf("committed unit did not stop for unknown inputs: record=%+v err=%v", before, err)
 	}
 	bed.head = unit
@@ -781,11 +777,19 @@ func TestWorkReviewCollectsAStoppedReadWithNotes(t *testing.T) {
 		len(round.Reads[0].Findings) != 1 || round.Reads[0].Findings[0].Material || *fresh != 0 || !slices.Equal(launches, bed.starter.launched()) {
 		t.Fatalf("the collected round: %+v %+v %v fresh=%d", round, round.Stop, err, *fresh)
 	}
-	// A v4 material row still has no stop evidence: one fresh examination.
-	bed, owners, runner, run, _ = stoppedReadWithNotes(t, true)
+	// A v4 material row has incomplete stop evidence and stays stopped.
+	bed, owners, runner, run, fresh = stoppedReadWithNotes(t, true)
+	launches = bed.starter.launched()
 	code, result = bed.runJSON(owners, "work", "review", bed.id, "--work", "u1")
 	record, err = runner.Status(run)
-	if code != 1 || result.Next == nil || !slices.Contains(result.Next.Argv, "--retry") || err != nil || record.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs" {
+	if err != nil {
+		t.Fatal(err)
+	}
+	round = record.Rounds[0]
+	if code != 1 || result.Next == nil || slices.Contains(result.Next.Argv, "--retry") || resultData(t, result)["retry"] != nil ||
+		round.Stop == nil || round.Stop.Handoff != "stopped unreadable-read" || !strings.HasPrefix(round.Stop.Class, "the read cannot be read: return schema version 4:") ||
+		!strings.Contains(result.Summary, round.Stop.Class) || round.Stop.Evidence != record.Subjects[0].ExaminationReturnPath || !slices.Contains(result.Details, round.Stop.Evidence) ||
+		round.Material != -1 || len(round.Reads) != 0 || round.UnknownRetries != 0 || *fresh != 0 || !slices.Equal(launches, bed.starter.launched()) {
 		t.Fatalf("a v4 material row: exit=%d result=%+v stop=%+v %v", code, result, record.Rounds[0].Stop, err)
 	}
 }

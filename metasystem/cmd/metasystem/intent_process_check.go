@@ -29,7 +29,7 @@ func (h *processCheckHeld) Error() string {
 
 func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory string, check *launch.UnitCheck) error {
 	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: plan.Worktree, Key: "check", Layer: "unit-check", Lineage: inv.claimLineage(), Actor: "agent", Reason: inv.input.text("reason"), After: check.Cheap}
-	if inv.input.switched("check-only") {
+	if inv.input.switched("check-only") || !inv.input.has("check") {
 		act.Checkout = checkoutAuthorityRoot(inv.layout)
 	}
 	person := false
@@ -78,10 +78,16 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if index := slices.Index(remedy, "--check"); index >= 0 {
 		remedy = remedy[:index]
 	}
-	if !inv.input.has("work") && len(inv.input.args) == 1 {
-		remedy = append(remedy, "--work", plan.Unit)
+	continuation := len(inv.input.args) == 1 && strings.HasPrefix(inv.input.args[0], unitRunPrefix)
+	if continuation {
+		remedy = inv.publicArgv("work", "build", unitRunPrefix+filepath.Base(filepath.Dir(directory)))
+	} else {
+		if !inv.input.has("work") && len(inv.input.args) == 1 {
+			remedy = append(remedy, "--work", plan.Unit)
+		}
+		remedy = append(remedy, "--brief", inv.callerPath(inv.input.text("brief")))
 	}
-	remedy = append(append(remedy, "--repo", inv.layout.InstallationRoot.Path(), "--brief", inv.callerPath(inv.input.text("brief")), "--reason", "Apply the retained check selection", "--check"), act.AfterArgv...)
+	remedy = append(append(remedy, "--repo", inv.layout.InstallationRoot.Path(), "--reason", "Apply the retained check selection", "--check"), act.AfterArgv...)
 	withAct := func(id string) []string {
 		return slices.Insert(slices.Clone(remedy), len(remedy)-len(act.AfterArgv)-1, "--act", id)
 	}
@@ -128,7 +134,7 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if admitted.Status == "superseded" {
 		return &processCheckHeld{act: admitted, remedy: remedy, problem: "the earlier selection was superseded"}
 	}
-	if check.ProcessAct == "" {
+	if check.ProcessAct == "" && err == nil {
 		check.ProcessAct = admitted.ID
 	}
 	check.FullArgv = slices.Clone(fullArgv)

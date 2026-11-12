@@ -1142,13 +1142,9 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
-	// The declared check runs from the installation, as the lane proves it;
-	// a manual check runs from the folder its caller chose.
-	checkDir := inv.worktreeFolderHere(worktree)
-	if installed := filepath.Join(worktree, inv.layout.InstallationRel); len(inv.input.values["check"]) == 0 {
-		if info, err := os.Stat(installed); err == nil && info.IsDir() {
-			checkDir = installed
-		}
+	proofDirectory := filepath.Join(worktree, inv.layout.InstallationRel)
+	if inv.input.has("check") {
+		proofDirectory = inv.worktreeFolderHere(worktree)
 	}
 	sizeSource, lines, problem := inv.unitSize(unit, briefPath, designs)
 	if problem != nil {
@@ -1239,7 +1235,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
-			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: os.Environ()}}}
+			Proof: []launch.ProofCommand{{Name: "check", Dir: proofDirectory, Argv: append([]string{}, check...), Env: os.Environ()}}}
 		if readEachRound {
 			plan.Read = launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel}
 			if _, err := atomicfile.WriteText(readBrief, binding.readBrief(template, buildBrief), directory); err != nil {
@@ -1554,8 +1550,14 @@ func (b unitBinding) readBrief(template []byte, buildBrief string) string {
 // of a build, green or red; the read's verdict is reported as the reader
 // wrote it, and only VERDICT: land is a clean read. A capped wait is work
 // still in progress with the command that continues it.
-func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) intentResult {
+func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) (out intentResult) {
 	inv.closePersonActs(runner, result.Record)
+	defer func() {
+		out.text = append(slices.Clone(result.Record.Notes), out.text...)
+		if len(result.Record.Rounds) > 0 && result.Record.Rounds[0].StartingResult != "" {
+			out.text = append(out.text, result.Record.Rounds[0].StartingResult)
+		}
+	}()
 	var held *processCheckHeld
 	if errors.As(err, &held) {
 		return intentResult{Outcome: intentRefused, code: 1, Summary: held.Error(), Data: held.act, next: held.remedy, nextReason: "run this at your enrolled terminal"}
@@ -1771,10 +1773,16 @@ func (inv *intentInvocation) workArgv(record launch.UnitRunRecord, verb string, 
 func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]any {
 	data := map[string]any{"run": record.ID, "unit": record.Unit, "goal": record.Goal, "state": record.State, "worktree": record.Worktree,
 		"base": record.Base, "plan": record.Plan, "maxRounds": record.MaxRounds, "buildModel": record.BuildModel, "buildEffort": record.BuildEffort}
+	if len(record.Notes) > 0 {
+		data["notes"] = record.Notes
+	}
 	if len(record.Rounds) == 0 {
 		return data
 	}
 	round := record.Rounds[len(record.Rounds)-1]
+	if round.StartingResult != "" {
+		data["startingResult"] = round.StartingResult
+	}
 	data["stop"], data["reads"], data["unknownRetries"] = round.Stop, round.Reads, round.UnknownRetries
 	if len(round.ExcludedDropped) > 0 {
 		data["excludedDropped"], data["excludedArchive"] = round.ExcludedDropped, filepath.Join(round.Directory, "excluded")

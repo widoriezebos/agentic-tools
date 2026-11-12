@@ -1425,6 +1425,16 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 	data := map[string]any{"rootJob": rootJob, "state": "terminal-unclosed"}
 	if round, err := inv.newestRoundAt(root, rootJob); err == nil {
 		if _, _, err := readIntentFindings(inv.returnPathAt(root, rootJob, recordRound(round))); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				work, after := targetID(targets, "work", "U"), "N"
+				if inv.reviewWork != nil {
+					work, after = inv.reviewWork.work, fmt.Sprint(inv.reviewWork.attempt)
+				}
+				return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
+					Summary: "the read cannot be read: " + err.Error(), Details: []string{inv.returnPathAt(root, rootJob, recordRound(round))},
+					next:       inv.publicArgv("work", "revise", goalID, "--work", work, "--after", after, "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"),
+					nextReason: "a person supplies a correction brief and reason to start a new attempt after the unreadable read"}
+			}
 			// The examination ended without a return: there are no findings to
 			// decide; the same review examines the subject once more.
 			again := append(inv.canonicalReviewArgv(targets, goalID, unit), "--retry", fmt.Sprint(recordRound(round)))
