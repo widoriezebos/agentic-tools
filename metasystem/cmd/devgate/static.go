@@ -150,7 +150,12 @@ func (g *gateRun) static(proofOut string) int {
 		fmt.Fprintln(d.stderr, "go gate: publish static build failed")
 		return 1
 	}
-	if err := os.Rename(publish, target); err != nil {
+	if proofOut == "" {
+		_, err = publishEngine(g.root, publish, d.withEnvironment(g.env))
+	} else {
+		err = os.Rename(publish, target)
+	}
+	if err != nil {
 		_ = os.Remove(publish)
 		fmt.Fprintln(d.stderr, "go gate: publish static build failed")
 		return 1

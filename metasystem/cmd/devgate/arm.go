@@ -216,7 +216,7 @@ func armWitness(ctx context.Context, root string, env *environment, d deps, opti
 		release()
 		return 1
 	}
-	if err := installBinary(filepath.Join(exportRoot, "bin", "metasystem"), root, d.selfPid); err != nil {
+	if err := installBinary(filepath.Join(exportRoot, "bin", "metasystem"), root, d.withEnvironment(env)); err != nil {
 		fmt.Fprintln(d.stderr, "witness gate completed but the proven binary could not be published")
 		dropState()
 		release()

@@ -36,10 +36,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"io"
 	"os"
 	"os/exec"
@@ -80,15 +78,10 @@ func run(ctx context.Context, args []string, root string, deps deps) int {
 	}
 	switch args[0] {
 	case "build":
-		if !slices.Contains(args[1:], "--out") && deps.getenv(checkoutBuildVariable) != "1" {
-			if _, err := os.Stat(steward.RepoIdentityPath(root)); err == nil {
-				delivery, _, err := config.Get(config.GetParams{Key: "metasystem.engine-delivery", ConfPath: filepath.Join(root, "metasystem.conf")})
-				if err == nil && delivery == "central" {
-					fmt.Fprintf(deps.stderr, "go-build: this checkout takes its engine from the deploy (central delivery); nothing was built\n"+
-						"the steward installs the deployed engine at its next tick while no launch runs, then repeat the command that sent you here; to deploy main's tip: metasystem deploy now\n"+
-						"run: %s=1 go run ./cmd/devgate build  (only to build into this checkout anyway)\n", checkoutBuildVariable)
-					return 1
-				}
+		if !slices.Contains(args[1:], "--out") {
+			if refusal := checkoutEngineRefusal(root, deps); refusal != "" {
+				fmt.Fprint(deps.stderr, refusal)
+				return 1
 			}
 		}
 		return runBuild(ctx, args[1:], root, deps)

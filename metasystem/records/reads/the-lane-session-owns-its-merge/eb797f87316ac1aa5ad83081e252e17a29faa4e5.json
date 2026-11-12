@@ -1,0 +1,55 @@
+{
+  "canonicalRead": {
+    "engine": "8accbec82ebf7975c41352646c4c2e135e9ebe02",
+    "findings": [
+      {
+        "change": "Optional: when the build was not published, say so in the PASSED line. Not required for this unit.",
+        "claim": "In a central checkout that is enrolled, the full gate still compiles the engine, throws the build away, and ends with 'go gate: PASSED (... build @ \u003ccommit\u003e)'. A reader could take that line to mean bin/metasystem now holds the commit's build.",
+        "class": "other",
+        "evidence": "gate.go:375 calls runBuild, and publishEngine drops the staged file. gate.go then prints 'build @ commit' unchanged. The 'untouched' line is printed just before it, so the output is not false, only easy to misread. The brief asks for exactly this behaviour ('its private build is dropped'), so this is wording only.",
+        "id": "code-critic-10715fd431556a1ffa0d404f:1",
+        "material": false,
+        "relation": "materiality criterion: not material (wording only, behaviour matches the brief)",
+        "severity": "low",
+        "where": "metasystem/cmd/devgate/gate.go"
+      }
+    ],
+    "id": "code-critic-10715fd431556a1ffa0d404f",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-lane-session-owns-its-merge/metasystem/artifacts/agents/code-critic-10715fd431556a1ffa0d404f/rounds/1/return.md",
+    "subject": {
+      "commit": "eb797f87316ac1aa5ad83081e252e17a29faa4e5",
+      "diffDigest": "9d7d410276b6f6a342a6705cca8ec717e12d733c364bc89c7ed7f0e1fbc6c5b2",
+      "kind": "commit",
+      "parent": "ed99ad30c319e964f514dfe349465c6b08667a40",
+      "tree": "5d3d0568feaacf58240b8c285b7e80c5ddc27770"
+    }
+  },
+  "readDigest": "b4f4f258c9339a801750e72f5a0f5337510086136acefc9913389be9187cf9d3",
+  "schemaVersion": 1,
+  "goal": "the-lane-session-owns-its-merge",
+  "unit": "U1",
+  "subject": {
+    "commit": "eb797f87316ac1aa5ad83081e252e17a29faa4e5",
+    "parent": "ed99ad30c319e964f514dfe349465c6b08667a40",
+    "tree": "5d3d0568feaacf58240b8c285b7e80c5ddc27770",
+    "patchDigest": "9d7d410276b6f6a342a6705cca8ec717e12d733c364bc89c7ed7f0e1fbc6c5b2",
+    "unitDigest": "0f4cb21cd611dc2c247cda558936cb3deda290a2bc9666129962eb7e0b3995c0"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-10715fd431556a1ffa0d404f",
+    "round": 1,
+    "closureSha256": "fa382722356af09f9c6018f94f4cd4d613c8b3cdff0c487cdf558982945cfb00"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5d3d0568feaacf58240b8c285b7e80c5ddc27770",
+    "runId": "goal-read-gate-20261112t225634z-88fb1e88eaedf4db"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "585edb3431b6e9c543b6388d5a74ac9d57ab5e705e53f77166ddce1a912750d8"
+}
