@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build after a-persons-channel-carries-only-acts-and-deliveries G2 and a-lane-act-runs-from-the-phone: land-anyway 50, accept-risk 40, foreign release and take-over 60, the tier-gated word 50, goal verbs 80, the executable-answer audit 30, the reserved-question claim exemption 60 (--last); each from a brief cut and Astra-checked before its build; design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-owner-decides-the-machine-does-the-rest.md decision E5.
 - OpenedAt: 2026-11-12T22:35:09Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=BW7S84X2HJB5C8SN3G5W716YWV-m1e-f5de59ff minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-12T22:35:09Z ND4TZTJ4BXVC5NYNE5ZD168T9R-m1e-f5de59ff open actor=human:Wido targets=a-reserved-decision-executes-from-its-answer
 - 2026-11-12T22:36:16Z BW7S84X2HJB5C8SN3G5W716YWV-m1e-f5de59ff approve actor=human:Wido targets=a-reserved-decision-executes-from-its-answer
-Integrity: sha256=2e9e77d9d7d6ea89d870f42d9f3552421909f35cba9e6268a8f7ae112172b94c
+- 2026-11-12T22:37:04Z V3CPP1AWCPV8PGKY5BRP8RMS7J-m1e-f5de59ff set-pin actor=human:Wido targets=a-reserved-decision-executes-from-its-answer
+Integrity: sha256=c9f5d656bd33006df81f3f7154e6d41ddc4a51e1a1f9b7cd67014bee2053a918
