@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: Publication consumes the unit check's completed evidence when its full identity matches (tree, selection and prerequisites, declaration, base, engine and context, proof strength with audits run) instead of re-running the same checks on the same tree (root cause 2).
 - Origin: main
-- Next step: Build D2-U1..U4 (115/100/140/70 production lines; U4 --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D2). After the-unit-check-runs-what-publication-requires lands. Analysis /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-unplanned-struggle-2026-11-11.md.; WITHDRAWN MHC9ABWMT411SWCA4RG30DBJ8B: answered by the act: size accepted 05:36
+- Next step: Build D2-U1..U4 (115/100/140/70 production lines; U4 --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D2). After the-unit-check-runs-what-publication-requires lands. Analysis /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-unplanned-struggle-2026-11-11.md.; WITHDRAWN MHC9ABWMT411SWCA4RG30DBJ8B: answered by the act: size accepted 05:36; WITHDRAWN HCVZHHXS9VNC0M58X7NHV33551: answered by the act: size accepted 07:30
 - OpenedAt: 2026-11-11T17:58:42Z
 - FirstClaimAt: 2026-11-12T04:18:11Z
-- Revision: 11
+- Revision: 12
 - BlockedBy: the-unit-check-runs-what-publication-requires
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=16 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=20
@@ -33,4 +33,5 @@ History:
 - 2026-11-12T04:18:11Z 6PEXQ08V1A52V92ZWBPDD69MRC-m1e-cc2e8fc8 claim actor=human:Wido targets=a-publication-consumes-the-units-check authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=735 reason=areas unknown for goal a-publication-consumes-the-units-check: no accepted design declares areas; machine m1e also holds required-test-file-selectors-are-understood
 - 2026-11-12T04:37:22Z ZSWP7014R8C3TP7JJT41QB8V5K-m1e-76faa029 withdraw-question actor=m1e+steward targets=a-publication-consumes-the-units-check reason=question MHC9ABWMT411SWCA4RG30DBJ8B
 - 2026-11-12T06:02:54Z 5TQ071D3R1JTD6ZABW18M52JDT-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-publication-consumes-the-units-check
-Integrity: sha256=92aa7aed0f0ff17a67356e3f3ca4d8c3f6ed3a8e05a2c261a261b59f748d5d56
+- 2026-11-12T06:30:52Z 4FJVAPXT7RRR15YV99SA6TZYHK-m1e-76faa029 withdraw-question actor=m1e+steward targets=a-publication-consumes-the-units-check reason=question HCVZHHXS9VNC0M58X7NHV33551
+Integrity: sha256=c303798e07839c4be3fe9e350b8a2c14e0b08248c0800e9716a56912014c9ee0
