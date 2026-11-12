@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: U2: the launch supervisor continues the owning run when its launch ends (brief to write from design D1; Codex builds, Opus 5.5 reads, Wido hands in)
 - OpenedAt: 2026-10-14T19:01:54Z
-- Revision: 4
+- Revision: 5
+- Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-14T19:02:02Z revision=2 opid=Q0QST1DK6AAGKV6MJXZB8N454H-m1e-c6925449 authority=proven digest=96e67c4d1a139ccf269fb67651089bdfc94f0223b46eac67a8cfeebaa524845c episode=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-14T19:02:02Z Q0QST1DK6AAGKV6MJXZB8N454H-m1e-c6925449 approve actor=human:Wido targets=unit-run-truthful-and-self-advancing-2
 - 2026-10-23T22:34:31Z RH6EW0ZF0CEZ8XG5ZT0WV8PC0H-m1e-cca12454 park actor=human:Wido targets=unit-run-truthful-and-self-advancing-2 reason=parked in Wido's name (decision 47e, plan-use-for-real 0.5): the ledger holds only goals that can start now; resume when its turn comes
 - 2026-11-12T17:03:48Z FENRBRHYBR1YF9ZPRMBE4AWG45-m1e-5a087708 unpark actor=human:Wido targets=unit-run-truthful-and-self-advancing-2
-Integrity: sha256=0518f98b97760120cd394a2192cd95a38e6e077e1409afb91082ebfd8e12dba7
+- 2026-11-12T17:04:01Z DMX2NC14H1D97DPYB198B7XGQE-m1e-5a087708 set-pin actor=human:Wido targets=unit-run-truthful-and-self-advancing-2
+Integrity: sha256=3a2c4e17477803d1f29469027413ae4cba71acaa16b3ba94f81012aaf789c6fe
