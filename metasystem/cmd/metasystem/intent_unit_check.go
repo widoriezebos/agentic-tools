@@ -169,6 +169,8 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				}
 				body, briefErr := os.ReadFile(brief)
 				checkContext := launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: record.Goal, Run: record.ID, Round: filepath.Base(round), Role: role, BriefSHA256: fmt.Sprintf("%x", sha256.Sum256(body))}, Parent: parent, Now: inv.unitRunner().Manager.Now}
+				checkContext.Worktree = strings.TrimSpace(string(top))
+				checkContext.Tree = func() (string, error) { return inv.unitRunner().CheckTree(checkContext.Worktree) }
 				if briefErr != nil {
 					checkContext.BriefSHA256 = ""
 				}

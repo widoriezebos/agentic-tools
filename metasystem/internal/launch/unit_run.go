@@ -1408,6 +1408,12 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	return runner.snapshotWorktree(worktree, true)
 }
 
+// CheckTree observes the same content tree as the runner's repository snapshot.
+func (runner *UnitRunner) CheckTree(worktree string) (string, error) {
+	snapshot, err := runner.snapshotRepository(worktree)
+	return snapshot.TreeID, err
+}
+
 func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (repositorySnapshot, error) {
 	git := runner.Git
 	if git == nil {

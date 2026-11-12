@@ -2,6 +2,7 @@ package launch
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -54,11 +56,48 @@ type CheckExecution struct {
 }
 type CheckContext struct {
 	CheckExecution
-	Parent string
-	Attach func(*exec.Cmd)
-	Now    func() time.Time
+	Parent   string
+	Worktree string
+	Tree     func() (string, error)
+	Attach   func(*exec.Cmd)
+	Now      func() time.Time
 	// After is the check's timer; nil is time.After.
 	After func(time.Duration) <-chan time.Time
+}
+
+// CheckEvidence binds completed commands to the content and selection they proved.
+// Base and execution context are retained unchanged in Selection.
+type CheckEvidence struct {
+	Version                      int
+	Content                      struct{ Before, After string }
+	Selection                    CheckSelection
+	Declaration                  *UnitDeclaration
+	Manual                       bool
+	Commands                     [2]string
+	RunDirectory, CheapDirectory string
+	Strength                     struct{ Audited, Cheap, Coverage, Race, Complete bool }
+	Source                       string
+}
+
+func (check UnitCheck) evidence(directory, cheapDirectory, execution, before string, context CheckContext) CheckEvidence {
+	record := CheckEvidence{Version: 1, Declaration: check.Declaration, Manual: check.Declaration == nil,
+		Commands: [2]string{check.Cheap, check.Audits}, Source: filepath.Base(execution)}
+	record.Content.Before = before
+	if context.Tree != nil {
+		if tree, err := context.Tree(); err == nil {
+			record.Content.After = tree
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(execution, "selection.json"))
+	selected := err == nil && json.Unmarshal(data, &record.Selection) == nil && record.Selection.Version == 1
+	record.Strength.Cheap = selected
+	record.Strength.Complete = selected && before != "" && before == record.Content.After
+	record.Strength.Audited = record.Strength.Complete && check.Declaration != nil && check.Audits == check.Declaration.Values[1] && strings.TrimSpace(check.Audits) != "true" && !strings.Contains(check.Audits, "--publication-only")
+	if context.Worktree != "" {
+		record.RunDirectory, _ = filepath.Rel(context.Worktree, directory)
+		record.CheapDirectory, _ = filepath.Rel(context.Worktree, cheapDirectory)
+	}
+	return record
 }
 
 // checkCeilingFactor bounds a check that keeps writing: it ends at this many times proof.deadline after its start.
@@ -102,6 +141,18 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	execution, err := os.MkdirTemp(records, "check-")
 	if err != nil {
 		return "", nil, err
+	}
+	evidencePath, savedEvidence := filepath.Join(execution, "evidence.json"), false
+	defer func() {
+		if !savedEvidence {
+			_ = os.Remove(evidencePath)
+		}
+	}()
+	var before string
+	if context.Tree != nil {
+		if tree, err := context.Tree(); err == nil {
+			before = tree
+		}
 	}
 	// The log is what a reader sees while the check runs; without it the check runs as before.
 	var log io.Writer = io.Discard
@@ -183,6 +234,10 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		Check       UnitCheck   `json:"check"`
 		Exits       []CheckExit `json:"exits"`
 	}{filepath.Base(execution), directory, check, exits}, execution)
+	if err == nil && len(failures) == 0 {
+		err = writeUnitJSON(evidencePath, check.evidence(directory, manualDirectory, execution, before, context), execution)
+		savedEvidence = err == nil
+	}
 	return execution, exits, errors.Join(append(failures, err)...)
 }
 
