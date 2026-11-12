@@ -97,7 +97,12 @@ const (
 	// engineActRunner (internal/channel/poll.go): the channel answer runs the
 	// chosen act as an engine self-subprocess (the-answer-is-the-act U1).
 	// A decision record runs its act through the engine and reads its envelope.
-	verbRatchetSelfSubprocessCeiling = 104
+	// The seat's engine follow (cmd/metasystem/seat_engine_follow.go,
+	// installDeployedEngineWithRename) renames the verified copy of the lane's
+	// deployed engine onto bin/metasystem through its injected rename; the
+	// scan counts that call because it carries the engine path, but nothing
+	// is launched there (seat-engines-follow-the-deployed-engine U1c).
+	verbRatchetSelfSubprocessCeiling = 105
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.
