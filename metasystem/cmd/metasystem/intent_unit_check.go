@@ -182,7 +182,7 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					executable = os.Executable
 				}
 				if path, err := executable(); err == nil {
-					plan.Check.Environment = commandenv.EngineEnvironmentInDirectory(plan.Check.Environment, filepath.Dir(path))
+					checkContext.EngineDirectory = filepath.Dir(path)
 				}
 				install := inv.layout.InstallationRoot.Path()
 				var lease *proofrun.HostResourceLease

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 )
 
@@ -61,6 +62,8 @@ type CheckContext struct {
 	Tree     func() (string, error)
 	Attach   func(*exec.Cmd)
 	Now      func() time.Time
+	// EngineDirectory prefixes the process PATH after the frozen environment is fingerprinted.
+	EngineDirectory string
 	// After is the check's timer; nil is time.After.
 	After func(time.Duration) <-chan time.Time
 }
@@ -176,13 +179,15 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	}
 	var exits []CheckExit
 	var failures []error
+	environmentSHA256 := CheckEnvironmentDigest(check.Environment, check.Base)
+	check.Environment = commandenv.EngineEnvironmentInDirectory(check.Environment, context.EngineDirectory)
 	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
 		process := exec.Command("/bin/sh", "-c", command.text)
 		process.Dir, process.Env = directory, slices.Clone(check.Environment)
 		if command.name == "cheap" {
 			process.Dir = manualDirectory
 			process.Env = append(process.Env, "METASYSTEM_CHECK_SELECTION="+filepath.Join(execution, "selection.json"),
-				CheckEnvironmentVariable+"="+CheckEnvironmentDigest(process.Env, check.Base))
+				CheckEnvironmentVariable+"="+environmentSHA256)
 		}
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
