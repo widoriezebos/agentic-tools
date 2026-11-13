@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 21
+- Sequence: 20
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Six lane merge builds were refused and ended silent; six lane sessions were ended as silent while waiting on a gate; 15 blocked continuations were closed as done."
 - Tier: 2
 - Intent: A refusal an agent cannot clear becomes one deduplicated question retired when the verb later succeeds; the lane's silent-agent row measures from the end of the last wait; idle-backlog-dead fires only for a seat's goal that is not in the lane; the reaper reads a continuation's outcome (analysis causes K15, K7, K6).
 - Origin: main
 - Next step: Build U1 (70), U2 (50), U3 (40), U4 (40, --last); briefs cut and Astra-checked just before each build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decisions D10 and D7.
 - OpenedAt: 2026-11-12T16:47:54Z
-- Revision: 20
+- Revision: 21
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -37,4 +37,5 @@ History:
 - 2026-11-13T09:06:19Z 296FJVH34YQZQXKK70HYJPN7S4-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,an-agent-refusal-reaches-a-person-once,seat-recovers-a-dead-session reason=priority-order subject=a-lane-act-runs-from-the-phone from=1:19 to=1:18 requested-sequence=19
 - 2026-11-13T09:06:48Z 37KDRVKR0W6E1F3GTJ4V10NGM7-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=a-reserved-decision-executes-from-its-answer from=1:18 to=1:17 requested-sequence=20
 - 2026-11-13T09:07:13Z Y8G4H7A1BGK96DK8NG8Z2GBW82-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-lane-act-runs-from-the-phone,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=an-agent-refusal-reaches-a-person-once from=1:17 to=1:21 requested-sequence=21
-Integrity: sha256=28dae5bc2a9e06353d4d84bf584e0fab8a3f2f2d755567c9cf89a0e9700b5138
+- 2026-11-13T09:08:08Z J5YD80NT96T8D0PG9FA2FFFAQY-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work reason=priority-order subject=a-seat-and-a-lane-recover-under-delegation from=1:21 to=1:20 requested-sequence=22
+Integrity: sha256=7c8a1d9d67977eb05bd43ea55fb00a274232e999d8d4dcc74468fd722b9758ce
