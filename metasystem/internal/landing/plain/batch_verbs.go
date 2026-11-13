@@ -116,6 +116,7 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 					}
 				}
 				batch.Person = &person
+				batch.Delegated = nil
 				if kind == "restart" {
 					if err := bindBarrenStopLocked(install, batch.Person); err != nil {
 						return err
