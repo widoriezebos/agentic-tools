@@ -61,6 +61,7 @@ func (b *attorneyAdmitBed) admitter() *attorneyAdmitter {
 		holder:   func(string) (lease.CurrentHolderView, error) { return b.holder, nil },
 		fixture:  func(string) bool { return b.fixture },
 		verb:     func() string { return "goal approve g1" },
+		decision: func() string { return "" },
 		stderr:   &b.stderr,
 		appendLog: func(_ string, line string) error {
 			if b.logErr != nil {
@@ -80,10 +81,11 @@ func TestTheAdmitterAdmitsOnlyTheGrantsClasses(t *testing.T) {
 		{"goal prioritize G 1", "ordering"}, {"goal pin G m1e", "ordering"}, {"goal group G arc-1", "ordering"},
 		{"alert ack a1", "acks"}, {"question withdraw q1", "acks"},
 		{"work stop j2:j1", "recovery"}, {"work stop read:r1", "recovery"}, {"work stop G", "recovery"},
+		{"work stop run:r1", "run-release"},
 		{"goal release C --because=x", "stale-releases"},
 	}
 	for _, argv := range []string{
-		"goal budget G 1d/10/720m/1/3", "landing resume", "machine revive m1e", "work stop run:r1",
+		"goal budget G 1d/10/720m/1/3", "landing resume", "machine revive m1e",
 		"goal approve F --budget norm", "goal approve F N", "goal approve N", "goal approve F -- N",
 		"goal release D --reason x", "goal release G --reason x", "goal release missing --reason x",
 		"goal release F --reason x", "goal release C --reason-file x", "goal release C --reason x --repo /elsewhere",
@@ -107,7 +109,7 @@ func TestTheAdmitterAdmitsOnlyTheGrantsClasses(t *testing.T) {
 			b.args, b.entries[0].Classes = strings.Fields(row.argv), classes
 			b.subject = attorneySubject{"F": {flakeFix: true}, "C": {machine: "m1e", lineage: "lin-dead"}, "D": {machine: "m1b", lineage: "lin-dead"}, "G": {machine: "m1e", lineage: "lin-main"}}
 			_, ok := b.admitter().admit(b.root, 80, attorneyAdmitNow)
-			want := len(classes) == 0 || row.class != "" && slices.Contains(classes, row.class)
+			want := !slices.Contains(goal.DelegatedClasses, row.class) && (len(classes) == 0 || row.class != "" && slices.Contains(classes, row.class))
 			if ok != want {
 				t.Errorf("%s under %v: admitted %v, want %v", row.argv, classes, ok, want)
 			}

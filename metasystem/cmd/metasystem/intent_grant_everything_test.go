@@ -212,7 +212,7 @@ func TestGrantAddNamesClassesAndTheSeatLineage(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--acts", "everything", "--for", "24h", "--classes", "values"}, "class values is not one of acks, mechanical, ordering, recovery, stale-releases"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", "values"}, "class values is not one of acks, budget, lane-recovery, mechanical, ordering, recovery, run-release, stale-releases"},
 		{[]string{"--acts", "everything", "--for", "24h", "--classes", "acks,"}, "class  is not one of"},
 		{[]string{"--acts", "everything", "--for", "24h", "--classes", ""}, "--classes names at least one class; nothing was done"},
 		{[]string{"--acts", "everything", "--for", "24h", "--lineage", "other"}, "--lineage takes seat: the steward's seat sessions; nothing was done"},
