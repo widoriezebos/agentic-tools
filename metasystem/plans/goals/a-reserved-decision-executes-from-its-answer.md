@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 20
+- Sequence: 19
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Lane questions tell the person to run a command at his terminal; a text answer neither executes nor closes them; a goal waiting on his answer blocks its seat's one claim."
 - Tier: 3
 - Intent: A decision that is the owner's reaches him as a choice and his choice executes: land-anyway, accept-risk, release or take-over of a foreign claim, a tier-gated landing's word, approval above the norm, a tier raise, a larger budget and abandon each take an answer bound to its subject and stated consequence; every posted question kind has an executable answer per option or is on the terminal-only list; a goal waiting on a reserved question does not count against its seat's working-claim quota (analysis person-proxy Q11, Q9).
 - Origin: main
 - Next step: Build after a-persons-channel-carries-only-acts-and-deliveries G2 and a-lane-act-runs-from-the-phone: land-anyway 50, accept-risk 40, foreign release and take-over 60, the tier-gated word 50, goal verbs 80, the executable-answer audit 30, the reserved-question claim exemption 60 (--last); each from a brief cut and Astra-checked before its build; design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-owner-decides-the-machine-does-the-rest.md decision E5.
 - OpenedAt: 2026-11-12T22:35:09Z
-- Revision: 15
+- Revision: 16
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -32,4 +32,5 @@ History:
 - 2026-11-13T09:05:38Z CPV39VD6R6THVA8VFZK6QAHEB1-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:18 to=1:17 requested-sequence=18
 - 2026-11-13T09:06:19Z 296FJVH34YQZQXKK70HYJPN7S4-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,an-agent-refusal-reaches-a-person-once,seat-recovers-a-dead-session reason=priority-order subject=a-lane-act-runs-from-the-phone from=1:17 to=1:16 requested-sequence=19
 - 2026-11-13T09:06:48Z 37KDRVKR0W6E1F3GTJ4V10NGM7-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=a-reserved-decision-executes-from-its-answer from=1:16 to=1:20 requested-sequence=20
-Integrity: sha256=a8d0157c7b0408b70665f9fa17dcb92821411a9a42b8fba3d774ea4fb47daf75
+- 2026-11-13T09:07:13Z Y8G4H7A1BGK96DK8NG8Z2GBW82-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-lane-act-runs-from-the-phone,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=an-agent-refusal-reaches-a-person-once from=1:20 to=1:19 requested-sequence=21
+Integrity: sha256=582bd2ada1582e8953e67ec6dc3d12db0b94e21df33878a1fc6b1d6ff5fe0ec3

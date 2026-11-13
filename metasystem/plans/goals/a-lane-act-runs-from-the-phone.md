@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 18
+- Sequence: 17
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A phone answer selecting a lane batch is new authority ground; the design gates it before any brief: provenance bound to the question, destination and commits, every verb check kept; until it lands the lane's questions name the command"
 - Tier: 2
 - Intent: A person's channel answer can run a lane act: channel provenance bound to the answered question, destination and selected commits is accepted by the batch reader and the return record, landing give-back and landing resume take --answer, and the lane's questions offer Give it back to the seat and Resume as acts; this discharges the lane-question obligation of the design (design plans/designs/the-stewards-act-on-what-they-see.md (accepted, revision 4) D5, G8)
 - Origin: main
 - Next step: After the-lane-returns-its-own-red lands: the steward writes this goal's design section (channel provenance in landing/plain/batch.go:254 and resume.go:164, the return record, the two verbs; about 100 production lines, estimate only) with one Astra round, then opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole)
 - OpenedAt: 2026-10-27T15:32:33Z
-- Revision: 153
+- Revision: 154
 - BlockedBy: the-lane-returns-its-own-red
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
@@ -171,4 +171,5 @@ History:
 - 2026-11-13T09:05:38Z CPV39VD6R6THVA8VFZK6QAHEB1-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:16 to=1:15 requested-sequence=18
 - 2026-11-13T09:06:19Z 296FJVH34YQZQXKK70HYJPN7S4-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,an-agent-refusal-reaches-a-person-once,seat-recovers-a-dead-session reason=priority-order subject=a-lane-act-runs-from-the-phone from=1:15 to=1:19 requested-sequence=19
 - 2026-11-13T09:06:48Z 37KDRVKR0W6E1F3GTJ4V10NGM7-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=a-reserved-decision-executes-from-its-answer from=1:19 to=1:18 requested-sequence=20
-Integrity: sha256=e0791d26298b61b37bf76af025d8d7471d8183c2eeeb5336bb0d9666971fce7a
+- 2026-11-13T09:07:13Z Y8G4H7A1BGK96DK8NG8Z2GBW82-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-lane-act-runs-from-the-phone,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=an-agent-refusal-reaches-a-person-once from=1:18 to=1:17 requested-sequence=21
+Integrity: sha256=e35ce63ada48f01ca8f1ffc7d4531885a6b38c0c43bcb0b6f4c0cf92d0e591f2
