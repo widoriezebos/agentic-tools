@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build U3 (32), U2 (98), U4 (40, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-lane-session-owns-its-merge.r4.md (D3, D2) and program the-route-holds-when-something-deviates D1 (U4); one brief and one Astra round each, cut by a1 before each build.
 - OpenedAt: 2026-11-13T02:49:47Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=4NP3DXEM6YHK1JVA9RBW4SBNKE-m1e-8fc3538a minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-13T02:49:47Z CSDWVYP665Q2CWZ2NX4KFR0PTY-m1e-8fc3538a open actor=human:Wido targets=the-lane-session-owns-its-merge-2
 - 2026-11-13T02:50:08Z 4NP3DXEM6YHK1JVA9RBW4SBNKE-m1e-8fc3538a approve actor=human:Wido targets=the-lane-session-owns-its-merge-2
-Integrity: sha256=98b5d2d23d3c5707c3245c1638a123381b0b0f3a2542a4ab8a475dba163e9074
+- 2026-11-13T02:50:23Z RHPZ1TX94B2MXTW6A18JEPJJN8-m1e-8fc3538a set-pin actor=human:Wido targets=the-lane-session-owns-its-merge-2
+Integrity: sha256=9e7342d4e6d2591e70341c13a2a0d67bb433c2872b2af1ce373f0d2cea7ece30
