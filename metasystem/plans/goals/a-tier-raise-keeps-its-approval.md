@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 28
+- Sequence: 27
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A person's tier raise was refused twice until the budget was changed first (597)."
 - Tier: 2
 - Intent: A tier edit keeps the budget and the approval consistent: it updates the norm approval through the function the budget operation uses, so a person's tier raise is not refused by the validator (finding 597, analysis cause K21).
 - Origin: main
 - Next step: Build one unit (25, --last) from a brief cut and Astra-checked before the build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decision D11.
 - OpenedAt: 2026-11-12T16:52:57Z
-- Revision: 21
+- Revision: 22
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -38,4 +38,5 @@ History:
 - 2026-11-13T09:12:28Z 314B0ASBAKGV2919Y1E3TJFS3Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-returned-member-leaves-the-batch from=1:26 to=1:25 requested-sequence=26
 - 2026-11-13T09:13:08Z YTMCYCXMSQ36GK12ZZHZ2RVF09-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,the-lane-carries-one-work-subject reason=priority-order subject=the-lane-carries-one-work-subject from=1:25 to=1:24 requested-sequence=27
 - 2026-11-13T09:13:39Z 0SVAHK4C6YX3RYW7GJDFMPN659-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject reason=priority-order subject=a-tier-raise-keeps-its-approval from=1:24 to=1:28 requested-sequence=28
-Integrity: sha256=4e59f935f32969347f4b49712cb564f0ecd753d21b570976e6c4da3aba9b27c8
+- 2026-11-13T09:14:07Z NMNH3YQCGSSPRAJEXRDVC507TG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-refresh-leaves-a-busy-checkout-alone from=1:28 to=1:27 requested-sequence=29
+Integrity: sha256=b0846bad187c3701aea48ad0f4d60fc367297520bbb17f300e6f4e11896d8212

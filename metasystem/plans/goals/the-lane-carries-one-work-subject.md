@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 26
+- Sequence: 25
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="A one-member batch's proof recorded 77 goals; a gate red with no batch became a stop with subject main that never closed (608, 605); pushes 86-94 have empty clock records."
 - Tier: 3
 - Intent: The lane carries one work subject from admission to closure: batch identity is attached before any gate red, a proof's goals are its frozen membership, a stop names its batch and closes on it, and a rebased unit keeps its run identity on the seat (analysis cause K2).
 - Origin: main
 - Next step: Build U1 (70), U2 (60), U3 (80) on m1e after a-returned-member-leaves-the-batch, U4 (60, seat side, --last); briefs cut and Astra-checked just before each build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decision D6.
 - OpenedAt: 2026-11-12T16:43:25Z
-- Revision: 24
+- Revision: 25
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -41,4 +41,5 @@ History:
 - 2026-11-13T09:12:28Z 314B0ASBAKGV2919Y1E3TJFS3Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-returned-member-leaves-the-batch from=1:24 to=1:23 requested-sequence=26
 - 2026-11-13T09:13:08Z YTMCYCXMSQ36GK12ZZHZ2RVF09-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,the-lane-carries-one-work-subject reason=priority-order subject=the-lane-carries-one-work-subject from=1:23 to=1:27 requested-sequence=27
 - 2026-11-13T09:13:39Z 0SVAHK4C6YX3RYW7GJDFMPN659-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject reason=priority-order subject=a-tier-raise-keeps-its-approval from=1:27 to=1:26 requested-sequence=28
-Integrity: sha256=c6022c4698c52101139b3d4173489ada935414e62114cef1dfd3239c2479426d
+- 2026-11-13T09:14:07Z NMNH3YQCGSSPRAJEXRDVC507TG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-refresh-leaves-a-busy-checkout-alone from=1:26 to=1:25 requested-sequence=29
+Integrity: sha256=d06367e841e12d4a8af387b18d7c28877331b4bf637ff04559b72e56d1b5ee5c
