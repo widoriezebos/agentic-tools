@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 33
+- Sequence: 32
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a false mutation entry lets an unproved rule reach the read, which is today's state, and a strict check refuses a return until the builder adds the test; novelty 2: a new return field and a new conformance check beside the existing return schema and conformance; exposure 3: every implementer chain; accumulation 2: every unproved rule that reaches the read costs a read and a fold round."
 - Tier: 2
 - Intent: What: For every rule a builder adds, the builder shows a test that fails when that rule alone is removed, before handing the work back. Why: Reads keep finding rules that no test protects, and each one costs a fix round. The original design put this check in the old dispatch lane, which has not run since 09-24; builds now go through the launch lane. Pros: Rules are proven when they are built, not found unprotected in the read; the reader only spot-checks. Cons: Builders do more work per unit, and confirming that a named test really fails has to stay cheap.
 - Origin: human
 - Next step: Next: Retarget to the launch build lane: add the rule to the build brief template and the implementer role, and have each unit's read check one named mutation per rule. Drop the old plan to enforce it in the dispatch lane's return format. Done when: build briefs carry the rule, and a unit read refuses a return that names no failing test for one of its rules. Root cause 4 of /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-unplanned-struggle-2026-11-11.md (2026-11-11): required test behaviour and isolated mutation sensitivity are not established before builder hand-back (the-lane-finishes-tests-its-page-names took five rounds). Retarget to the current launch brief/role/read path; priority 1 in the unit-check block.
 - OpenedAt: 2026-09-14T15:28:42Z
-- Revision: 409
+- Revision: 410
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -423,4 +423,5 @@ History:
 - 2026-11-13T09:15:26Z H8EGCWN7N9N89ZS4YE6DD62N5W-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=briefs-carry-their-rules from=1:31 to=1:30 requested-sequence=33
 - 2026-11-13T09:15:43Z HDPH4T59TE7F48SQCEM8Q7SRTP-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=builder-proves-each-rule-by-mutation from=1:30 to=1:34 requested-sequence=34
 - 2026-11-13T09:15:59Z Y2X813HM1WZ01GFNNMZKWJ25DG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,lane-steward-2 reason=priority-order subject=a-steward-tick-costs-seconds from=1:34 to=1:33 requested-sequence=35
-Integrity: sha256=988474745bd7738a9b7a08041715e0b25c3384014ca1f93e145967d428fcc32a
+- 2026-11-13T09:16:18Z 2M7BHFWPD0461KVWSDQ29YEX5A-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,builder-proves-each-rule-by-mutation,lane-steward-2,the-lane-batches-goals-and-proves-once reason=priority-order subject=attempts-are-bounded-per-unit from=1:33 to=1:32 requested-sequence=36
+Integrity: sha256=6b6e5273a704337774fb74d62ffab0cf71a2e9c6efc29b00a53cce2f43e931f1
