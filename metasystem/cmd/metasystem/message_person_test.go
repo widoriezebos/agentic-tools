@@ -138,13 +138,13 @@ func TestMessageGrantAddAtTheHelmIsOneRefusal(t *testing.T) {
 	helmMust(t, err)
 	_, err = helm.Write(root, helm.Record{By: "wido", At: time.Now().UTC().Format(time.RFC3339), Reason: "e2e", Checkout: seat.Checkout})
 	helmMust(t, err)
-	code, out := helmEngine(t, root, "grant", "add", "--acts", "everything", "--for", "24h")
+	code, out := helmEngine(t, root, "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h")
 	want := "✗ this terminal isn't enrolled (wido enrolled another one), so nothing was done\n" +
 		"  → metasystem system enroll --name wido  moves the enrollment here; then repeat this command\n"
 	if code != 2 || out != want {
 		t.Fatalf("grant add at the helm = %d\n%s\nwant\n%s", code, out, want)
 	}
-	code, out = helmEngine(t, root, "grant", "add", "--acts", "everything", "--for", "24h", "--verbose")
+	code, out = helmEngine(t, root, "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h", "--verbose")
 	if code != 2 || !strings.HasPrefix(out, strings.Replace(want, "✗ ", "✗ metasystem grant add: ", 1)) || !strings.Contains(out, "HUMAN AT THE HELM (wido): grant add runs as wido's act") {
 		t.Fatalf("grant add --verbose at the helm = %d\n%s", code, out)
 	}

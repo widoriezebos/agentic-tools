@@ -49,7 +49,7 @@ exit 0
       "process.change = person (helm held by wido); underlying person from built-in, set by built-in",
       "review.stop = person (helm held by wido); underlying auto from built-in, set by built-in",
       "seat.driver = person (helm held by wido); underlying auto from built-in, set by built-in",
-      "POWER OF ATTORNEY: m1e acts for wido until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
+      "POWER OF ATTORNEY: wido's grant admits nothing (names no grantable class) until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
     ],
     "lines": [
       "checkout /Users/wido/GitHub/agentic-tools-m1e",
@@ -61,7 +61,7 @@ exit 0
       "untracked pid 2878 claude claude --allow-dangerously-skip-permissions: running",
       "untracked pid 10947 codex codex app-server: running"
     ],
-    "powerOfAttorney": "POWER OF ATTORNEY: m1e acts for wido until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
+    "powerOfAttorney": "POWER OF ATTORNEY: wido's grant admits nothing (names no grantable class) until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
   }
 }
 

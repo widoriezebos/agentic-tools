@@ -228,7 +228,7 @@ func grantListLayoutBed(count int, revoke bool) func(t *testing.T) layoutBed {
 				at, err := b.commandNow(root)
 				return at.Add(time.Duration(index-count+1) * time.Minute), err
 			}
-			code, result := b.runJSON(acting, "grant", "add", "--acts", "everything", "--for", spell)
+			code, result := b.runJSON(acting, "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", spell)
 			if code != 0 || len(result.Targets) != 1 {
 				t.Fatalf("grant add = %d %+v", code, result)
 			}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -78,12 +79,14 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 			next: withoutOption(retry, "tiers")})
 	}
 	var classes []string
+	if !inv.input.has("classes") || strings.TrimSpace(inv.input.text("classes")) == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "a general grant names its classes: --classes LIST",
+			Details: []string{strings.Join(goal.AttorneyClasses, ", ")},
+			next:    append(withoutOption(retry, "classes"), "--classes", "ordering"), nextReason: "choose the classes of act you mean"})
+	}
 	if inv.input.has("classes") {
 		next := append(withoutOption(retry, "classes"), "--classes", "ordering")
-		if strings.TrimSpace(inv.input.text("classes")) == "" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--classes names at least one class; nothing was done",
-				next: next, nextReason: "an example; choose the classes of act you mean"})
-		}
 		var err error
 		classes, err = goal.ParseAttorneyClasses(inv.input.text("classes"))
 		if err != nil {
@@ -258,19 +261,19 @@ func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
 // attorneyLine is a live general grant as --json's status carries it.
 func attorneyLine(entry goal.PowerOfAttorneyEntry, zone *time.Location) string {
 	until, _ := time.Parse(time.RFC3339, entry.Until)
-	scope := ""
-	if len(entry.Classes) != 0 {
-		scope = " in " + attorneyActs(entry)
+	subject := entry.For + " acts for " + strings.TrimPrefix(entry.By, "human:") + " in " + attorneyActs(entry)
+	if !slices.ContainsFunc(goal.AttorneyClasses, entry.Carries) {
+		subject = strings.TrimPrefix(entry.By, "human:") + "'s grant " + attorneyActs(entry)
 	}
-	return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s%s until %s (grant %s) — metasystem grant revoke %s ends it",
-		entry.For, strings.TrimPrefix(entry.By, "human:"), scope, until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+	return fmt.Sprintf("POWER OF ATTORNEY: %s until %s (grant %s) — metasystem grant revoke %s ends it",
+		subject, until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
 }
 
 func attorneyActs(entry goal.PowerOfAttorneyEntry) string {
-	if len(entry.Classes) != 0 {
-		return strings.Join(entry.Classes, ", ")
+	if !slices.ContainsFunc(goal.AttorneyClasses, entry.Carries) {
+		return "admits nothing (names no grantable class)"
 	}
-	return goal.GeneralAct
+	return strings.Join(entry.Classes, ", ")
 }
 
 // grantAttention is a live general grant in the banner: informational,

@@ -263,12 +263,12 @@ func intentPlanningCommands() []intentCommand {
 		},
 		{
 			object: "grant", action: "add", audience: "human", summary: "record a power of attorney a seat acts under",
-			usage: []string{"metasystem grant add --acts everything --for 24h [--reason TEXT]", "metasystem grant add --tiers LIST --acts LIST --until DATE"},
+			usage: []string{"metasystem grant add --acts everything --classes LIST --for 24h [--reason TEXT]", "metasystem grant add --tiers LIST --acts LIST --until DATE"},
 			details: []string{
-				"--acts everything: the main session holding this checkout's lease acts for you in every person's act, bar granting, enrolling and taking the helm, until the end.",
+				"--acts everything: the main session holding this checkout's lease acts for you in the named classes until the end.",
 				"Its end is --for 8h, 24h, 7d or 1w (elapsed), or --until 18:00 (today, or tomorrow once passed), --until tomorrow or --until YYYY-MM-DD (the end of that day), at most one week.",
 				"Only you at the enrolled terminal grant it. Rebuild every seat's engine before the first: older engines refuse a ledger that holds one.",
-				"--classes narrows it to classes of act; rebuild every seat's engine and the lane's before the first grant with classes: older engines refuse a ledger that holds one.",
+				"--classes is required and names the classes of act; rebuild every seat's engine and the lane's before the first grant with classes: older engines refuse a ledger that holds one.",
 				"--reason keeps why you grant everything; left empty, it reads \"no reason given\".",
 				"--acts from approve, budget and resume-parked: a seat then acts with --under GRANT on approve, budget and resume of a parked goal.",
 				"There --until is the last day covered, YYYY-MM-DD, at most seven days out. The grant's id is printed.",
@@ -276,7 +276,7 @@ func intentPlanningCommands() []intentCommand {
 			flags: withFlags([]intentFlag{
 				{name: "tiers", value: "LIST", usage: "the tiers covered, for example 1 or 1,2"},
 				{name: "acts", value: "LIST", usage: "everything, or the acts covered: approve, budget, resume-parked"},
-				{name: "classes", value: "LIST", usage: "with everything: only these classes of act: mechanical, recovery, ordering, acks, stale-releases"},
+				{name: "classes", value: "LIST", usage: "with everything: only these classes of act: " + strings.Join(goal.AttorneyClasses, ", ")},
 				{name: "reason", value: "TEXT", usage: "with everything: why you grant it, kept with the grant"},
 				intentByFlag,
 				{name: "lineage", value: "LINEAGE", usage: "with everything: seat binds the grant to the steward's seat sessions"},
@@ -285,7 +285,7 @@ func intentPlanningCommands() []intentCommand {
 				{name: "until", aliases: []string{"expires"}, value: "DATE", usage: "the end: HH:MM, tomorrow or YYYY-MM-DD"},
 			}, intentRelayFlags),
 			maxArgs:  0,
-			examples: []string{"metasystem grant add --acts everything --for 24h", "metasystem grant add --acts everything --until 18:00", "metasystem grant add --tiers 1 --acts approve,budget --until 2026-10-01"},
+			examples: []string{"metasystem grant add --acts everything --classes ordering --for 24h", "metasystem grant add --acts everything --classes ordering --until 18:00", "metasystem grant add --tiers 1 --acts approve,budget --until 2026-10-01"},
 			run:      runIntentGrant,
 		},
 		{
@@ -2596,6 +2596,9 @@ func runIntentGrantList(inv *intentInvocation) int {
 			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
 				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
 			views[len(views)-1]["reason"] = entry.Reason
+			if !slices.ContainsFunc(goal.AttorneyClasses, entry.Carries) {
+				views[len(views)-1]["coverage"] = attorneyActs(entry)
+			}
 			if len(entry.Classes) != 0 {
 				views[len(views)-1]["classes"] = entry.Classes
 			}
