@@ -1,0 +1,80 @@
+{
+  "canonicalRead": {
+    "id": "20261113t100141-15a2b2a60e-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "6d643180840fd4a2118b670a8dedde75df7b154e6eaa9ef60840d9d27cbc9dd5",
+      "diffDigest": "6d643180840fd4a2118b670a8dedde75df7b154e6eaa9ef60840d9d27cbc9dd5"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261113t100141-15a2b2a60e-r2-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "ReadBatch's delegated branch still does not check Kind == \"selection\" or a non-zero CheckedAt, while the person branch checks both.",
+        "evidence": "batch.go:306 checks Grant, Decision, Session, Hold.BarrenAt, Class, Destination and Subject. Only RecordedDelegatedBatch (batch.go:251) checks Kind. B1 does not require either check, and nothing produces delegated records until U1b1b.",
+        "where": "metasystem/internal/landing/plain/batch.go",
+        "change": "Optional: check Kind == \"selection\" and a non-zero CheckedAt in the delegated branch of ReadBatch.",
+        "relation": "R-124: a corner that the slice's first use does not need; same-rule-as 2"
+      },
+      {
+        "id": "20261113t100141-15a2b2a60e-r2-s3:2",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "The fold changes batch_verbs.go and giveback.go, which are outside the unit's owner files (batch.go, restart.go). The test file adds 184 lines against a doubled test allowance of 140.",
+        "evidence": "git diff --stat 8a1386e9e3 lists batch_verbs.go (+1) and giveback.go (+1). The brief's U1b1a section names only batch.go and restart.go as owner files. delegated_record_test.go adds 184 lines. Round 1 asked the steward to widen the boundary or record an OPEN item.",
+        "where": "metasystem/internal/landing/plain/batch_verbs.go",
+        "change": "The steward records the widened boundary (two one-line clears of Delegated) with the unit's review. No code change.",
+        "relation": "new"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261113t100141-15a2b2a60e-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "9d0cb753a0bac666803f45ab82c12d47efe021da17c6cca8e89b70f38ab790a7",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1b1a",
+  "subject": {
+    "commit": "88a47e863d31bf0629862100c70c7f0a463cbe27",
+    "parent": "8a1386e9e3be9d53469771efd496753dcb01f2ac",
+    "tree": "b678856f7f9feedfa991b1f8f1a37ab3ba7e3305",
+    "patchDigest": "6d643180840fd4a2118b670a8dedde75df7b154e6eaa9ef60840d9d27cbc9dd5",
+    "unitDigest": "89c4471c6c16568723ad76bbf1323ad4d6d90e6814747e90b9c3143a4c47b780"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261113t100141-15a2b2a60e-r2-s3",
+    "closureSha256": "c9cce4387c18ab969a53f6519328c2043f0bfc0ba0204741d0bffde7d13b9cff"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b678856f7f9feedfa991b1f8f1a37ab3ba7e3305",
+    "runId": "goal-read-gate-20261113t133745z-12e33ee7e966ab2a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "8067d001d1c31a31a2882d5a5182f9a46b57d078",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "f0b16f81ab92dcb3f1a8d4343719c18b94e7cd4f",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "8a1386e9e3be9d53469771efd496753dcb01f2ac",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "053e5a45beed37b589d8e21f51a9c2d112e68dbd29173771970bf645ee4608a1"
+}
