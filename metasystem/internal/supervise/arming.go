@@ -885,6 +885,21 @@ func mergeTakeoverComponents(recorded, discovered []Held) ([]Held, error) {
 }
 
 func takeoverComponents(root, metasystemRoot, ownerTag string) ([]Held, error) {
+	var processes []census.Process
+	if ownerTag != "" {
+		var err error
+		processes, err = enumerateTakeoverProcesses(metasystemRoot)
+		if err != nil {
+			return nil, fmt.Errorf("enumerate tagged supervision components: %w", err)
+		}
+	}
+	return ReadTakeoverComponents(root, ownerTag, processes)
+}
+
+// ReadTakeoverComponents selects recorded components and owner-tagged processes
+// from the caller's census, retaining their tags for authentication before signals.
+// It performs no writes and sends no signals.
+func ReadTakeoverComponents(root, ownerTag string, processes []census.Process) ([]Held, error) {
 	held, err := recordedHeld(root)
 	if err != nil {
 		return nil, err
@@ -894,10 +909,6 @@ func takeoverComponents(root, metasystemRoot, ownerTag string) ([]Held, error) {
 	// crashed-owner path and are authenticated again beside every signal.
 	if ownerTag == "" {
 		return held, nil
-	}
-	processes, err := enumerateTakeoverProcesses(metasystemRoot)
-	if err != nil {
-		return nil, fmt.Errorf("enumerate tagged supervision components: %w", err)
 	}
 	discovered, err := taggedTakeoverComponents(root, ownerTag, processes)
 	if err != nil {
