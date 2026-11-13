@@ -82,7 +82,9 @@ type RefMove struct {
 }
 
 type UnitRound struct {
-	StartingResult string `json:"startingResult,omitempty"`
+	StartingResult     string `json:"startingResult,omitempty"`
+	ProductionLines    *int64 `json:"productionLines,omitempty"`
+	DeclaredProduction *int64 `json:"declaredProduction,omitempty"`
 
 	ExcludedDropped  []string           `json:"excludedDropped,omitempty"`
 	ExcludedRestored bool               `json:"excludedRestored,omitempty"`

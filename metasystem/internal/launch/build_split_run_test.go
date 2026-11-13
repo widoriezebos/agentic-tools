@@ -2,11 +2,75 @@ package launch
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestSplitBuildProductionEstimate(t *testing.T) {
+	t.Parallel()
+	for _, missing := range []string{"", "a", "c"} {
+		t.Run("missing="+missing, func(t *testing.T) {
+			t.Parallel()
+			f := threeUnitBuildFixture(t)
+			plan, err := ReadUnitPlan(f.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			page := "| Unit | Lines | Production lines |\n| --- | --- | --- |\n"
+			for i, unit := range []string{"a", "b", "c"} {
+				production := fmt.Sprint((i + 1) * 100)
+				if unit == missing {
+					production = "unknown"
+				}
+				page += fmt.Sprintf("| %s | 700 | %s |\n", unit, production)
+			}
+			if err := os.WriteFile(plan.Build.UnitsPage, []byte(page), 0600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			round := result.Record.Rounds[0]
+			if err != nil || round.Outcome != "green" || round.DeclaredLines != 2100 || (missing == "") != (round.DeclaredProduction != nil) || missing == "" && *round.DeclaredProduction != 600 {
+				t.Fatalf("split estimate: %+v %v", round, err)
+			}
+			for _, step := range round.Steps[:2] {
+				build, err := f.manager.Store.Read(step.LaunchID)
+				known := missing == "" || !slices.Contains(step.Units, missing)
+				if err != nil || known != (build.DeclaredProduction != nil) || known && *build.DeclaredProduction != 300 {
+					t.Fatalf("launch estimate: %+v %v", build, err)
+				}
+			}
+		})
+	}
+}
+
+func TestUnitProductionCeilingRequiresCommittedConfiguration(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"missing", "bad", "0", "-1", "5\ndesign.unit-lines-max=6"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			f := newUnitFixture(t, "")
+			f.manager.BuildPolicy.ConfPath = filepath.Join(t.TempDir(), "metasystem.conf")
+			if value != "missing" {
+				if err := os.WriteFile(f.manager.BuildPolicy.ConfPath, []byte("design.unit-lines-max="+value+"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.WriteFile(f.manager.BuildPolicy.ConfPath, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+				f.starter.onBuild = func(Record) error { return os.Remove(f.manager.BuildPolicy.ConfPath) }
+			}
+			_, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err == nil || !slices.Equal(f.starter.order, []string{"build"}) || !strings.Contains(err.Error(), "configuration") && !strings.Contains(err.Error(), "design.unit-lines-max") {
+				t.Fatalf("unreadable ceiling launched proof: %v %v", f.starter.order, err)
+			}
+		})
+	}
+}
 
 func TestOversizeBuildRunsSerialGroupsInOrder(t *testing.T) {
 	t.Parallel()

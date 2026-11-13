@@ -98,6 +98,7 @@ type Record struct {
 	Outputs             []Output                   `json:"outputs"`
 	AdapterData         map[string]json.RawMessage `json:"adapterData"`
 	DeclaredLines       int64                      `json:"declaredLines,omitempty"`
+	DeclaredProduction  *int64                     `json:"declaredProduction,omitempty"`
 	ReadMode            string                     `json:"readMode,omitempty"`
 	ReadPackage         string                     `json:"readPackage,omitempty"`
 	ReadFile            string                     `json:"readFile,omitempty"`

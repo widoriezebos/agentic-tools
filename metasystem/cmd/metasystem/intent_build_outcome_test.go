@@ -80,6 +80,127 @@ func outcomeBuild(t *testing.T, b *workBed) (int, intentResult, string) {
 	return b.work(append([]string{"work", "build", b.id, "outcome", "--brief", brief, "--lines", "1"}, workCheck...)...)
 }
 
+func outcomeCeiling(t *testing.T, b *workBed, value string) {
+	t.Helper()
+	layout, err := b.owners().resolver.ResolveLayout(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(intentConfPath(layout), []byte("design.unit-lines-max="+value+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func outcomeDiff(path string, lines int) string {
+	return fmt.Sprintf("diff --git a/%s b/%s\n--- /dev/null\n+++ b/%s\n", path, path, path) + strings.Repeat("+line\n", lines)
+}
+
+func outcomeStatus(b *workBed, run string) (int, string, string) {
+	owners := b.workOwners()
+	owners.processes.launches = func() *launch.Manager { return b.manager }
+	return b.run(owners, "work", "status", "run:"+run)
+}
+
+func TestIntentBuildProductionCeiling(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, diff, ceiling           string
+		production, total, allocation int64
+		estimate, hold                bool
+	}{
+		{"T1", outcomeDiff("a.go", 180) + outcomeDiff("a_test.go", 540), "250", 180, 720, 100, false, false},
+		{"T2", outcomeDiff("a.go", 260), "250", 260, 260, 300, false, true},
+		{"T3", outcomeDiff("a.go", 250), "250", 250, 250, 100, false, false},
+		{"T4", outcomeDiff("a.go", 6), "5", 6, 6, 100, false, true},
+		{"T5", outcomeDiff("a.go", 10) + outcomeDiff("x.test.tsx", 300) + outcomeDiff("testdata/a.go", 300) + outcomeDiff("a_test.go", 300) + outcomeDiff("x/tests/a.py", 300) + outcomeDiff("tests/a.go", 300) + outcomeDiff("a_test.py", 300) + outcomeDiff("a.bats", 300), "250", 10, 2110, 100, false, false},
+		{"T6", outcomeDiff("a.go", 180) + outcomeDiff("a_test.go", 540), "250", 180, 720, 800, true, false},
+		{"counted zero", outcomeDiff("x.test.ts", 300), "250", 0, 300, 100, false, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := outcomeBed(t, row.diff)
+			outcomeCeiling(t, b, row.ceiling)
+			page := fmt.Sprintf("Build it.\n\n| Unit | Lines |\n| --- | --- |\n| outcome | %d |\n", row.allocation)
+			if row.estimate {
+				page = "Build it.\n\n| Unit | Lines | Production lines |\n| --- | --- | --- |\n| outcome | 800 | 100 |\n| unselected | 200 | 50 |\n"
+			}
+			code, result, _ := b.work(append([]string{"work", "build", b.id, "outcome", "--brief", b.brief("production.md", page)}, workCheck...)...)
+			r := onlyRun(t, b)
+			round := r.Rounds[0]
+			if round.ProductionLines == nil || *round.ProductionLines != row.production || round.BuildLines != row.total || round.DeclaredLines != row.allocation || row.estimate != (round.DeclaredProduction != nil) || row.estimate && *round.DeclaredProduction != 100 {
+				t.Fatalf("wrong counts: %+v", round)
+			}
+			build, err := b.manager.Store.Read(round.Steps[0].LaunchID)
+			if err != nil || row.estimate != (build.DeclaredProduction != nil) || row.estimate && *build.DeclaredProduction != 100 {
+				t.Fatalf("launch dropped the estimate: %+v %v", build, err)
+			}
+			questions, unreadable := channel.WalkOpenQuestions(b.root())
+			if len(unreadable) != 0 {
+				t.Fatal(unreadable)
+			}
+			if row.hold {
+				if code != 1 || round.Outcome != "build-size" || round.Stop == nil || round.Stop.Class != "the builder passed the production ceiling of "+row.ceiling+" lines" || round.Stop.Measure.Name != "production lines" || !slices.Equal(round.Stop.Measure.Now, []string{fmt.Sprint(row.production)}) || !slices.Equal(round.Stop.Measure.Previous, []string{row.ceiling}) || len(questions) != 1 || !slices.Equal(questions[0].UnitStop.AcceptableActs, []string{"work-review-size"}) || !slices.Equal(b.starter.launched(), []string{"build"}) {
+					t.Fatalf("wrong hold: %d %+v %+v %+v", code, result, round, questions)
+				}
+			} else if code != 0 || round.Stop != nil || len(questions) != 0 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+				t.Fatalf("below the ceiling did not continue: %d %+v %+v", code, result, round)
+			}
+			status, out, stderr := outcomeStatus(b, r.ID)
+			fragment := fmt.Sprintf("%d production lines", row.production)
+			if row.estimate {
+				fragment += " (estimate 100)"
+			}
+			fragment += fmt.Sprintf(", %d with tests (allocation %d)", row.total, row.allocation)
+			if status != 0 || !slices.ContainsFunc(strings.Split(out, "\n"), func(line string) bool {
+				return strings.HasPrefix(line, "round 1: "+round.Outcome) && strings.HasSuffix(line, "; "+fragment)
+			}) {
+				t.Fatalf("status lost the size: %d %s %s", status, out, stderr)
+			}
+		})
+	}
+}
+
+func TestIntentBuildLegacySizeAcceptance(t *testing.T) {
+	t.Parallel()
+	b := outcomeBed(t, outcomeDiff("a.go", 287))
+	code, held, _ := b.work(append([]string{"work", "build", b.id, "outcome", "--brief", b.brief("legacy.md", "Build it.\n"), "--lines", "104"}, workCheck...)...)
+	if code != 1 {
+		t.Fatalf("size did not hold: %d %+v", code, held)
+	}
+	r := onlyRun(t, b)
+	round := &r.Rounds[0]
+	round.ProductionLines, round.DeclaredProduction = nil, nil
+	round.Stop.Class = "the builder exceeded twice its declared size"
+	round.Stop.Measure.Name, round.Stop.Measure.Now, round.Stop.Measure.Previous = "changed lines", []string{"287"}, []string{"104"}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.unitRoot, r.ID, "run.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	questions, _ := channel.WalkOpenQuestions(b.root())
+	for _, q := range questions {
+		if err := os.Remove(filepath.Join(b.root(), "artifacts", "agents", "channel", "questions", q.ID+".json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.work("work", "wait", "run:"+r.ID)
+	questions, unreadable := channel.WalkOpenQuestions(b.root())
+	fragment := "production lines were not counted, 287 with tests (allocation 104)"
+	if len(unreadable) != 0 || len(questions) != 1 || questions[0].Plain == nil || !strings.Contains(questions[0].Plain.Decision, fragment) || !slices.Contains(questions[0].Facts, fragment) || !strings.Contains(channel.ActCommand(questions[0]), "--reason 'accepted at 287 lines'") || strings.Contains(questions[0].Text, "0 production lines") {
+		t.Fatalf("legacy question invented a count: %+v %v", questions, unreadable)
+	}
+	if code, out, stderr := outcomeStatus(b, r.ID); code != 0 || !strings.Contains(out, fragment) {
+		t.Fatalf("legacy status invented a count: %d %s %s", code, out, stderr)
+	}
+	var stderr bytes.Buffer
+	code, accepted := outcomeReview(t, b, true, &stderr)
+	if code != 0 || !strings.Contains(stderr.String(), "Impact: accept "+fragment) || strings.Contains(stderr.String(), "0 production lines") || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) || onlyRun(t, b).Rounds[0].SizeAcceptedBy != "Wido" {
+		t.Fatalf("legacy acceptance changed: %d %+v %s", code, accepted, &stderr)
+	}
+}
+
 func outcomeReview(t *testing.T, b *workBed, person bool, stderr *bytes.Buffer) (int, intentResult) {
 	t.Helper()
 	owners := b.workOwners()
@@ -161,13 +282,14 @@ func TestIntentBuildSizeAcceptanceResumesProofAfterRecordedImpact(t *testing.T) 
 	t.Parallel()
 	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n"
 	b := outcomeBed(t, diff)
+	outcomeCeiling(t, b, "1")
 	code, result, _ := outcomeBuild(t, b)
 	if code != 1 || !slices.Equal(b.starter.launched(), []string{"build"}) {
 		t.Fatalf("oversized build started proof: %d %+v %v", code, result, b.starter.launched())
 	}
 
 	questions, unreadable := channel.WalkOpenQuestions(b.root())
-	if len(unreadable) != 0 || len(questions) != 1 || questions[0].UnitStop == nil || !strings.Contains(channel.ActCommand(questions[0]), "work review") || !strings.Contains(channel.ActCommand(questions[0]), "--reason 'accepted at 3 lines' --by NAME") || !slices.Equal(questions[0].UnitStop.AcceptableActs, []string{"work-review-size"}) {
+	if len(unreadable) != 0 || len(questions) != 1 || questions[0].UnitStop == nil || !strings.Contains(channel.ActCommand(questions[0]), "work review") || !strings.Contains(channel.ActCommand(questions[0]), "--reason 'accepted at 2 production lines' --by NAME") || !slices.Equal(questions[0].UnitStop.AcceptableActs, []string{"work-review-size"}) {
 		t.Fatalf("size question has no person's act: %+v %v", questions, unreadable)
 	}
 	run := resultData(t, result)["run"].(string)
@@ -191,7 +313,7 @@ func TestIntentBuildSizeAcceptanceResumesProofAfterRecordedImpact(t *testing.T) 
 		t.Fatalf("agent accepted the size: %d %+v", code, denied)
 	}
 	b.manager.Supervisor = outcomeStarter{bed: b, proof: func() {
-		if !strings.Contains(stderr.String(), "Impact: accept 3 changed lines against 1 declared") {
+		if !strings.Contains(stderr.String(), "Impact: accept 2 production lines, 3 with tests (allocation 1)") {
 			t.Error("proof started before impact was printed")
 		}
 		impacts, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
@@ -204,13 +326,13 @@ func TestIntentBuildSizeAcceptanceResumesProofAfterRecordedImpact(t *testing.T) 
 				Goal, Kind, Reason, Impact, Who string
 				At                              time.Time
 			}
-			if err != nil || json.Unmarshal(data, &impact) != nil || impact.Goal != b.id || impact.Kind != "work-review-size" || impact.Who != "Wido" || impact.Reason != "Accept the complete change" || impact.At.IsZero() || !strings.Contains(impact.Impact, "3 changed lines against 1 declared") {
+			if err != nil || json.Unmarshal(data, &impact) != nil || impact.Goal != b.id || impact.Kind != "work-review-size" || impact.Who != "Wido" || impact.Reason != "Accept the complete change" || impact.At.IsZero() || !strings.Contains(impact.Impact, "2 production lines, 3 with tests (allocation 1)") {
 				t.Errorf("incomplete impact: %s %v", data, err)
 			}
 		}
 	}}
 	code, accepted := outcomeReview(t, b, true, &stderr)
-	if code != 0 || !strings.Contains(stderr.String(), "Impact: accept 3 changed lines against 1 declared") || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+	if code != 0 || !strings.Contains(stderr.String(), "Impact: accept 2 production lines, 3 with tests (allocation 1)") || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
 		t.Fatalf("acceptance rebuilt or skipped impact: %d %+v %q %v", code, accepted, stderr.String(), b.starter.launched())
 	}
 	closed, err := channel.ReadQuestion(b.root(), questions[0].ID)
@@ -252,6 +374,7 @@ func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 	t.Parallel()
 	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n+one\n+two\n+three\n"
 	b := outcomeBed(t, diff)
+	outcomeCeiling(t, b, "1")
 	code, held, _ := outcomeBuild(t, b)
 	if code != 1 || !slices.Equal(b.starter.launched(), []string{"build"}) {
 		t.Fatalf("size did not hold: %d %+v %v", code, held, b.starter.launched())
@@ -323,6 +446,7 @@ func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 func TestIntentBuildSizeAcceptanceIgnoresReadRecordsGitAdapter(t *testing.T) {
 	t.Parallel()
 	b := realOutcomeBed(t)
+	outcomeCeiling(t, b, "1")
 	for _, path := range []string{"records/reads/g/old.json", "metasystem/records/reads/g/old.json", "other.go"} {
 		full := filepath.Join(b.worktree, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
@@ -361,6 +485,7 @@ func TestIntentBuildSizeAcceptanceIgnoresReadRecordsGitAdapter(t *testing.T) {
 func TestIntentBuildSizeMovedChangeStaysHeldGitAdapter(t *testing.T) {
 	t.Parallel()
 	b := realOutcomeBed(t)
+	outcomeCeiling(t, b, "1")
 	b.manager.Supervisor = outcomeStarter{bed: b, build: func() {
 		if err := os.WriteFile(filepath.Join(b.worktree, "unit.go"), []byte("one\ntwo\nthree\n"), 0600); err != nil {
 			t.Fatal(err)
@@ -479,6 +604,7 @@ func TestIntentBuildSizeCorrectionRecordsRevisionWithoutAcceptance(t *testing.T)
 			t.Parallel()
 			diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n+one\n+two\n+three\n"
 			b := outcomeBed(t, diff)
+			outcomeCeiling(t, b, "1")
 			code, held, _ := outcomeBuild(t, b)
 			if code != 1 {
 				t.Fatalf("size did not hold: %d %+v", code, held)

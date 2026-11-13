@@ -286,6 +286,7 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 		// A retried builder turn is counted afresh when it passes.
 		if step.Kind == "build" || step.Kind == "correction" {
 			round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
+			round.ProductionLines, round.DeclaredProduction = nil, nil
 		}
 		for later := index + 1; later < len(round.Steps); later++ {
 			if round.Steps[later].State == StepSkipped {

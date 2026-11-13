@@ -77,12 +77,13 @@ func TestUnitStopQuestionsOfferSolutions(t *testing.T) {
 	t.Run("a size stop", func(t *testing.T) {
 		t.Parallel()
 		b := outcomeBed(t, "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n")
+		outcomeCeiling(t, b, "1")
 		outcomeBuild(t, b)
 		qs, _ := channel.WalkOpenQuestions(b.root())
-		if len(qs) != 1 || !strings.Contains(qs[0].UnitStop.Needs, "--reason 'accepted at 3 lines' --by NAME") {
+		if len(qs) != 1 || !strings.Contains(qs[0].UnitStop.Needs, "--reason 'accepted at 2 production lines' --by NAME") {
 			t.Fatalf("the size act is not filled: %+v", qs)
 		}
-		solution(t, qs[0], "Accept the size", fmt.Sprintf("%s: the build of unit outcome grew to 3 changed lines against the 1 planned, at %s.", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04")),
+		solution(t, qs[0], "Accept the size", fmt.Sprintf("%s: the build of unit outcome grew to 2 production lines, 3 with tests (allocation 1), at %s (the builder passed the production ceiling of 1 lines).", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04")),
 			"the checks and the review go on with this size")
 	})
 	t.Run("a check deadline", func(t *testing.T) {
@@ -478,12 +479,13 @@ func TestChannelAnswerReviewActsReplayAsThePerson(t *testing.T) {
 			}
 		}
 		b.manager.Supervisor = outcomeStarter{bed: b}
+		outcomeCeiling(t, b, "1")
 		enrol(t, b, "Wido")
 		channelFor(t, b.root())
 		outcomeBuild(t, b)
 		setMinutes(t, b, 1)
 		q, held := heldReview(t, b, "M2")
-		if state, hold := answerState(t, held); state != "accepted" || hold != "the goal's budget is used up" || q.Options[0].Label != "Accept the size" || !slices.Contains(q.Options[0].Act, "accepted at 3 lines") {
+		if state, hold := answerState(t, held); state != "accepted" || hold != "the goal's budget is used up" || q.Options[0].Label != "Accept the size" || !slices.Contains(q.Options[0].Act, "accepted at 2 production lines") {
 			t.Fatalf("the size acceptance under a spent budget: %+v %+v", held, q.Options)
 		}
 		impacts := func() int {
@@ -518,6 +520,7 @@ func TestAReviewAnswerBindsItsOwnAct(t *testing.T) {
 		}
 	})
 	b := outcomeBed(t, "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n")
+	outcomeCeiling(t, b, "1")
 	enrol(t, b, "Wido")
 	channelFor(t, b.root())
 	outcomeBuild(t, b)

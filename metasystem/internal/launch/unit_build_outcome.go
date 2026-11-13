@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
@@ -56,7 +58,15 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 			gap = len(strings.TrimSpace(string(diff))) == 0
 		}
 	}
-	oversized := round.BuildLines > round.DeclaredLines && round.BuildLines-round.DeclaredLines > round.DeclaredLines
+	value, _, err := config.CommittedLookup(runner.Manager.BuildPolicy.ConfPath, "design.unit-lines-max")
+	if err != nil {
+		return false, err
+	}
+	ceiling, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || ceiling < 1 {
+		return false, fmt.Errorf("design.unit-lines-max must be a positive integer, got %q", value)
+	}
+	oversized := round.ProductionLines != nil && *round.ProductionLines > ceiling
 	if !gap && (!oversized || round.SizeAcceptedBy != "") {
 		if len(record.Rounds) > 1 {
 			previous := record.Rounds[len(record.Rounds)-2]
@@ -72,9 +82,12 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	}
 	round.Outcome, round.Cause, round.Material, record.State = "build-size", "unclassified", -1, "awaiting-judgement"
 	s := loopstop.Stop{Loop: "unit-build", Subject: record.Goal + "/" + record.Unit + "/" + record.ID, Attempt: round.Number,
-		Decision: "stop", Handoff: "hold size", Class: "the builder exceeded twice its declared size", Evidence: path,
+		Decision: "stop", Handoff: "hold size", Class: fmt.Sprintf("the builder passed the production ceiling of %d lines", ceiling), Evidence: path,
 		At: runner.Manager.Now().UTC().Format(time.RFC3339Nano)}
 	s.Measure.Name, s.Measure.Now, s.Measure.Previous = "changed lines", []string{fmt.Sprint(round.BuildLines)}, []string{fmt.Sprint(round.DeclaredLines)}
+	if oversized {
+		s.Measure.Name, s.Measure.Now, s.Measure.Previous = "production lines", []string{fmt.Sprint(*round.ProductionLines)}, []string{fmt.Sprint(ceiling)}
+	}
 	if gap {
 		round.Outcome, s.Handoff, s.Class = "build-gap", "stopped (gap)", "the builder left no change"
 		message, err := runner.builderMessage(*round, builds)
@@ -100,17 +113,51 @@ func (runner *UnitRunner) countBuildLines(round *UnitRound, plan UnitPlan, build
 	if err != nil {
 		return false, err
 	}
+	production, estimate := int64(0), int64(0)
+	knownEstimate := true
 	for _, step := range round.Steps[:builds] {
 		launch, err := runner.Manager.Store.Read(step.LaunchID)
 		if err != nil {
 			return false, err
 		}
 		round.DeclaredLines += launch.DeclaredLines
+		if launch.DeclaredProduction == nil {
+			knownEstimate = false
+		} else {
+			estimate += *launch.DeclaredProduction
+		}
 	}
 	for _, block := range parseDiff(diff) {
 		round.BuildLines += block.lines
+		if !isBuildTestPath(block.file) {
+			production += block.lines
+		}
+	}
+	round.ProductionLines, round.DeclaredProduction = &production, nil
+	if knownEstimate {
+		round.DeclaredProduction = &estimate
 	}
 	return len(strings.TrimSpace(string(diff))) == 0, nil
+}
+
+func isBuildTestPath(path string) bool {
+	clean := "/" + filepath.ToSlash(path)
+	base := filepath.Base(clean)
+	return strings.HasSuffix(base, "_test.go") || strings.HasSuffix(base, "_test.py") ||
+		strings.HasSuffix(base, ".bats") || strings.Contains(base, ".test.") ||
+		strings.Contains(clean, "/testdata/") || strings.Contains(clean, "/tests/")
+}
+
+// SizeSummary keeps an uncounted production size distinct from a counted zero.
+func (round UnitRound) SizeSummary() string {
+	production := "production lines were not counted"
+	if round.ProductionLines != nil {
+		production = fmt.Sprintf("%d production lines", *round.ProductionLines)
+		if round.DeclaredProduction != nil {
+			production += fmt.Sprintf(" (estimate %d)", *round.DeclaredProduction)
+		}
+	}
+	return fmt.Sprintf("%s, %d with tests (allocation %d)", production, round.BuildLines, round.DeclaredLines)
 }
 
 // countFailedBuild counts a stopped build's change for the person's question
@@ -120,6 +167,7 @@ func (runner *UnitRunner) countBuildLines(round *UnitRound, plan UnitPlan, build
 func (runner *UnitRunner) countFailedBuild(round *UnitRound, plan UnitPlan, builds int) {
 	directory := filepath.Join(round.Directory, "failed-build")
 	round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
+	round.ProductionLines, round.DeclaredProduction = nil, nil
 	err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(directory, "worktree.diff"))
 	if err == nil {
 		_, err = runner.countBuildLines(round, plan, builds, directory)
@@ -129,6 +177,7 @@ func (runner *UnitRunner) countFailedBuild(round *UnitRound, plan UnitPlan, buil
 	}
 	if err != nil {
 		round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
+		round.ProductionLines, round.DeclaredProduction = nil, nil
 	}
 }
 
