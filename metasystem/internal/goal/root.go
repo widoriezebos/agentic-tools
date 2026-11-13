@@ -65,6 +65,7 @@ type PowerOfAttorneyEntry struct {
 	Until    string // RFC3339 UTC, exclusive
 	// Classes optionally narrows a general entry to sorted, unique classes of act.
 	Classes []string
+	Reason  string // why the person granted it, in their words
 }
 
 // GeneralAct is the one act of a general power of attorney: every act a
@@ -285,6 +286,10 @@ func ParseTiers(value string) ([]uint8, error) {
 }
 
 func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
+	value, reason, hasReason, err := cutQuotedRecordField(value, "reason")
+	if err != nil {
+		return PowerOfAttorneyEntry{}, err
+	}
 	fields := strings.Fields(value)
 	if len(fields) < 6 || !validOpidShape(fields[0]) {
 		return PowerOfAttorneyEntry{}, errors.New("a grant line isn't in either recorded form (named acts with tiers, or everything for a machine)")
@@ -296,7 +301,7 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 	}
 	entry := PowerOfAttorneyEntry{ID: fields[0], By: rec["by"], Verbs: strings.Split(rec["verbs"], ","),
 		Since: rec["since"], Expires: rec["expires"], Revoked: rec["revoked"], RevokedBy: rec["revokedBy"],
-		For: rec["for"], Checkout: rec["checkout"], Lineage: rec["lineage"], Until: rec["until"]}
+		For: rec["for"], Checkout: rec["checkout"], Lineage: rec["lineage"], Until: rec["until"], Reason: reason}
 	if !strings.HasPrefix(entry.By, "human:") || !validStamp(entry.Since) {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("by= must name a human and since= must be RFC3339")
 	}
@@ -331,6 +336,9 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 		}
 		return entry, nil
 	}
+	if hasReason {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("reason= belongs to a general entry only")
+	}
 	for _, key := range []string{"for", "checkout", "lineage", "classes", "until"} {
 		if _, present := rec[key]; present {
 			return PowerOfAttorneyEntry{}, fmt.Errorf("%s= belongs to a general entry only", key)
@@ -355,6 +363,9 @@ func renderAttorneyEntry(e PowerOfAttorneyEntry) string {
 		line := fmt.Sprintf("- %s by=%s verbs=%s for=%s checkout=%s lineage=%s", e.ID, e.By, GeneralAct, e.For, e.Checkout, e.Lineage)
 		if len(e.Classes) != 0 {
 			line += " classes=" + strings.Join(e.Classes, ",")
+		}
+		if e.Reason != "" {
+			line += " reason=" + strconv.Quote(e.Reason)
 		}
 		line += " since=" + e.Since + " until=" + e.Until
 		if e.Revoked != "" {

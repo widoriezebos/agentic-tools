@@ -20,6 +20,7 @@ type GeneralGrant struct {
 	Checkout string
 	Lineage  string
 	Classes  []string
+	Reason   string
 	Until    time.Time
 }
 
@@ -52,12 +53,12 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 		return PublishResult{}, fmt.Errorf("a general power of attorney ends after now and at most one week later (by %s)", since.Add(GeneralAttorneyMax).Format(time.RFC3339))
 	}
 	entry := PowerOfAttorneyEntry{ID: r.opid(), By: r.Actor.historyActor(), Verbs: []string{GeneralAct},
-		For: g.Machine, Checkout: g.Checkout, Lineage: g.Lineage, Classes: g.Classes, Since: since.Format(time.RFC3339), Until: until.Format(time.RFC3339)}
+		For: g.Machine, Checkout: g.Checkout, Lineage: g.Lineage, Classes: g.Classes, Reason: g.Reason, Since: since.Format(time.RFC3339), Until: until.Format(time.RFC3339)}
 	if within, why := entry.WithinBounds(); !within {
 		return PublishResult{}, fmt.Errorf("a general power of attorney outside its bounds: %s", why)
 	}
 	reason := "verbs=" + GeneralAct + " for=" + g.Machine + " checkout=" + g.Checkout + " until=" + entry.Until
-	args := map[string]string{"verbs": GeneralAct, "for": g.Machine, "checkout": g.Checkout, "lineage": g.Lineage, "until": entry.Until}
+	args := map[string]string{"verbs": GeneralAct, "for": g.Machine, "checkout": g.Checkout, "lineage": g.Lineage, "until": entry.Until, "reason": g.Reason}
 	if len(g.Classes) != 0 {
 		args["classes"] = strings.Join(g.Classes, ",")
 		reason += " classes=" + args["classes"]
@@ -82,7 +83,8 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 				if live, _ := standing.LiveAt(r.Now); !live {
 					continue
 				}
-				if standing.By == entry.By && standing.Lineage == entry.Lineage && standing.Until == entry.Until && slices.Equal(standing.Classes, entry.Classes) {
+				if standing.By == entry.By && standing.Lineage == entry.Lineage && standing.Until == entry.Until &&
+					standing.Reason == entry.Reason && slices.Equal(standing.Classes, entry.Classes) {
 					return nil, AlreadyHolds{Reason: fmt.Sprintf("power of attorney %s already grants exactly this (until %s)", standing.ID, standing.Until)}
 				}
 				standing.Revoked = r.stamp()
