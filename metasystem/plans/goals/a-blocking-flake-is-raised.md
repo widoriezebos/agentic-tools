@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build one unit (50, --last) from the design section G1: the count on the incident record, the routed row, its suggested act goal prioritize under the ordering class; tests for one run (no row), two runs in 24 hours (row), two runs further apart (no row).
 - OpenedAt: 2026-11-13T09:16:57Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=1JJQEWQ13DFFC9M8E7F5D0826X-m1e-16ea023a minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-13T09:16:57Z H7V2EWVX62CHKAN30RX9NDW51K-m1e-16ea023a open actor=human:Wido targets=a-blocking-flake-is-raised
 - 2026-11-13T09:17:16Z 1JJQEWQ13DFFC9M8E7F5D0826X-m1e-16ea023a approve actor=human:Wido targets=a-blocking-flake-is-raised
-Integrity: sha256=95184ae2405f38e2574cf4c7e1722d28a400b678f1aed23569faac6d4b8c90e2
+- 2026-11-13T09:17:37Z VD55RBJX3G75CPXKEXRPHJCYX8-m1e-16ea023a set-pin actor=human:Wido targets=a-blocking-flake-is-raised
+Integrity: sha256=cb4a3da9bd8d2082ffac5ade0e8453c14900b47a2f5cda668004a50a849ecaf3
