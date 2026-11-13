@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 22
+- Sequence: 21
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Split from the deputy goal so its first delivery (lane recovery with overrule and report) lands on its own (Astra F10)."
 - Tier: 2
 - Intent: The second delivery of the accepted design the-deputy-acts-under-a-recorded-delegation: the delegated run release of a round whose read is published and the delegated one more day of an elapsed budget, each with delegated provenance, checked at the mutation, overrulable and reported (its units U2b1, U2b2, U2a1a to U2a2c and its decision (c) on budget-writing acts).
 - Origin: main
 - Next step: Build U2b1 32, U2b2 86, U2a1a, U2a1b, U2a2a, U2a2b, U2a2c (--last) from the accepted page metasystem/plans/designs/the-deputy-acts-under-a-recorded-delegation.md; one brief and one Astra round each; after the first delivery lands; design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-owner-decides-the-machine-does-the-rest.md decision E3.
 - OpenedAt: 2026-11-12T22:39:18Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -33,4 +33,5 @@ History:
 - 2026-11-13T09:08:08Z J5YD80NT96T8D0PG9FA2FFFAQY-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work reason=priority-order subject=a-seat-and-a-lane-recover-under-delegation from=1:20 to=1:19 requested-sequence=22
 - 2026-11-13T09:09:10Z H6KXN2E2HPFWBFP4WHKNWQ9H0Y-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work reason=priority-order subject=a-deputy-budget-and-run-release from=1:19 to=1:23 requested-sequence=23
 - 2026-11-13T09:10:38Z FMVD1Z0GQ4KR011RARJVRJG2W6-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,one-host-admits-heavy-work reason=priority-order subject=one-host-admits-heavy-work from=1:23 to=1:22 requested-sequence=24
-Integrity: sha256=6a65e3f22bd07eaa799be830a136e1ef201b2f276d584f06e875c5482af478a0
+- 2026-11-13T09:11:46Z NRF6JDSBYKBHSAP7ZBHN1E681Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-landed-goal-concludes-itself from=1:22 to=1:21 requested-sequence=25
+Integrity: sha256=77ce1a48073f3a930f3504edd066b037b7560a82dc16a41c34bf2ab177775f71
