@@ -8,10 +8,10 @@
 - Intent: The size hold stops a unit only above the production ceiling of 250 production lines (decision 56); the production estimate of the units row is a signal that is reported, and the total allocation with tests is reported, never a stop (finding 554: today the hold stops above twice the declared changed lines with tests, internal/launch/unit_build_outcome.go:59-75, so an underestimate is a person act)
 - Origin: human
 - DesignGate: off
-- Next step: Build without a design from finding 554 and the week review F7: measure production lines (tests excluded) against 250; report the estimate and the allocation; a unit at 1.8x its estimate below 250 continues, a unit at 260 stops; about 30 production lines
+- Next step: Build without a design from finding 554 and the week review F7: measure production lines (tests excluded) against 250; report the estimate and the allocation; a unit at 1.8x its estimate below 250 continues, a unit at 260 stops; about 30 production lines; ASKED 2EC274SH6CKF8REE57CFDH3XA3 (other): Unit U1 of the size-hold goal needs one small test fix before it can finish. May it run that correction round?
 - OpenedAt: 2026-11-07T16:14:07Z
 - FirstClaimAt: 2026-11-12T17:19:35Z
-- Revision: 53
+- Revision: 54
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -73,4 +73,5 @@ History:
 - 2026-11-12T17:07:13Z B26EY07NERDFBD0XV5ZDFC973P-m1e-5a087708 set-priority actor=human:Wido targets=a-publication-consumes-the-units-check,a-round-ends-without-its-caller,a-run-holds-its-worktree,a-unit-check-runs-the-importers-too,builder-proves-each-rule-by-mutation,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,required-test-file-selectors-are-understood,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-carry-check-classifies-a-flake,the-lane-batches-goals-and-proves-once,the-lane-session-owns-its-merge,the-ratchet-counts-what-a-change-adds,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=the-size-hold-stops-at-the-production-ceiling from=1:14 to=1:1 requested-sequence=1
 - 2026-11-12T17:19:35Z 4VNYK542G9G71GW2RX8DT49K7T-ui-71c5cb39 claim actor=ui+steward-seat targets=the-size-hold-stops-at-the-production-ceiling reason=areas unknown for goal the-size-hold-stops-at-the-production-ceiling: no accepted design declares areas
 - 2026-11-12T22:42:46Z XQ4PBBP6BBGJTXAX5024ZJZ93C-m1e-f5de59ff set-priority actor=human:Wido targets=the-lane-session-owns-its-merge,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=the-lane-session-owns-its-merge from=1:1 to=1:2 requested-sequence=1
-Integrity: sha256=6c633c7fa6e9c93f48003a8ed4f80e1615bb91e650f7d8537749457b12a9fd8e
+- 2026-11-13T02:23:35Z BFZDY6NE3XWXTBS1YMKBR5Y3W3-ui-71c5cb39 ask actor=ui+steward-seat targets=the-size-hold-stops-at-the-production-ceiling
+Integrity: sha256=6560638fab85fed5060570e25807e2065118d7602aeca8d5dec27a8d1bfbbf6f
