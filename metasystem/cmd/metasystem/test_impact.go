@@ -696,7 +696,16 @@ func writeImpactSelection(path, installation, description string, selection laun
 	selection.PackageTests, selection.BuildTags = map[string][]string{}, map[string][]string{}
 	data, _ := json.Marshal(full)
 	selection.ContractDigest = bytesSHA256(data)
-	selection.EnvironmentSHA256 = bytesSHA256([]byte(strings.Join(environment, "\x00")))
+	environment = slices.DeleteFunc(slices.Clone(environment), func(entry string) bool {
+		value, found := strings.CutPrefix(entry, launch.CheckEnvironmentVariable+"=")
+		if found {
+			selection.EnvironmentSHA256 = value
+		}
+		return found
+	})
+	if selection.EnvironmentSHA256 == "" {
+		selection.EnvironmentSHA256 = bytesSHA256([]byte(strings.Join(environment, "\x00")))
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return err

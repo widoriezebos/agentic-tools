@@ -146,6 +146,9 @@ func (runner *UnitRunner) applicableRoundCheck(review UnitReview, plan UnitPlan,
 		if plan.Check != nil && runner.PublicationCheck != nil && err == nil {
 			need.Check = *plan.Check
 			need.Context, need.Requirements, err = runner.PublicationCheck(worktree, parent, *plan.Check, record.Selection)
+			if err != nil {
+				return CheckDecision{Field: "current context unavailable"}
+			}
 		} else if err == nil {
 			return CheckDecision{Field: "current context unavailable"}
 		}
