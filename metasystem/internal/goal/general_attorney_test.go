@@ -91,6 +91,49 @@ func generalGrantBed(t *testing.T) (Endpoint, VerbRequest, *humanauthority.Proof
 	return endpoint, human, testHumanAuthority(t, endpoint.Root, human.Now)
 }
 
+func TestGeneralGrantsRequireGrantableClasses(t *testing.T) {
+	t.Parallel()
+	_, human, proof := generalGrantBed(t)
+	for _, classes := range [][]string{nil, {"mechanical"}, {"stale-releases"}} {
+		g := GeneralGrant{Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "lin-main",
+			Classes: classes, Until: human.Now.Add(time.Hour).Truncate(time.Minute)}
+		_, err := GrantGeneral(human, proof, g)
+		want := "a general grant names its classes: --classes LIST"
+		if len(classes) != 0 {
+			want = "class " + classes[0] + " is not one of"
+		}
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), strings.Join(AttorneyClasses, ", ")) {
+			t.Fatalf("grant with classes %v: %v", classes, err)
+		}
+	}
+}
+
+func TestRetiredGrantClassesRemainReadableButAdmitNothing(t *testing.T) {
+	t.Parallel()
+	_, human, _ := generalGrantBed(t)
+	root := &RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 1}
+	for i, class := range []string{"mechanical", "stale-releases"} {
+		entry := generalEntry(human.Now, human.Now.Add(time.Hour).Truncate(time.Minute))
+		entry.ID = withUlid(human, 50+i).opid()
+		entry.Classes = []string{class}
+		if live, why := entry.LiveAt(human.Now); !live {
+			t.Fatalf("recorded retired grant cannot be read: %s", why)
+		}
+		for _, act := range append(slices.Clone(AttorneyClasses), "", "mechanical", "stale-releases") {
+			if entry.Carries(act) {
+				t.Fatalf("retired grant %s carries %q", class, act)
+			}
+		}
+		entry.Revoked, entry.RevokedBy = human.Now.Format(time.RFC3339), "human:Wido"
+		root.PowerOfAttorney = append(root.PowerOfAttorney, entry)
+	}
+	before := RenderRoot(root)
+	parsed, problems := ParseRoot(before)
+	if len(problems) != 0 || string(RenderRoot(parsed)) != string(before) {
+		t.Fatalf("closed retired grants changed on reread: %v", problems)
+	}
+}
+
 // W5 and W8 at the owner: the person's own proof records one general grant
 // per checkout; a repeat holds, a new end replaces, a proof admitted by the
 // helm or a grant never grants, and a scoped --under never uses it.
@@ -98,7 +141,7 @@ func TestGrantGeneralRecordsOneGrantPerCheckout(t *testing.T) {
 	t.Parallel()
 	endpoint, human, proof := generalGrantBed(t)
 	until := human.Now.Add(24 * time.Hour).Truncate(time.Minute)
-	grant := GeneralGrant{Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "lin-main", Until: until}
+	grant := GeneralGrant{Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "lin-main", Classes: []string{"ordering"}, Until: until}
 	res, err := GrantGeneral(human, proof, grant)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant: %+v %v", res, err)
@@ -175,7 +218,7 @@ func TestAnActUnderAGrantRechecksItAtTheEffect(t *testing.T) {
 	t.Parallel()
 	endpoint, human, proof := generalGrantBed(t)
 	until := human.Now.Add(time.Hour).Truncate(time.Minute)
-	res, err := GrantGeneral(human, proof, GeneralGrant{Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "lin-main", Until: until})
+	res, err := GrantGeneral(human, proof, GeneralGrant{Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "lin-main", Classes: []string{"ordering"}, Until: until})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant: %+v %v", res, err)
 	}
@@ -250,7 +293,7 @@ func TestAGeneralGrantNamesItsClasses(t *testing.T) {
 	}
 	for _, bad := range [][]string{{"values"}, {"ordering", "acks"}, {"acks", "acks"}} {
 		entry.Classes = bad
-		if ok, why := entry.WithinBounds(); ok || bad[0] == "values" && !strings.Contains(why, "class values is not one of acks, budget, lane-recovery, mechanical, ordering, recovery, run-release, stale-releases") {
+		if ok, why := entry.WithinBounds(); ok || bad[0] == "values" && !strings.Contains(why, "class values is not one of acks, budget, lane-recovery, ordering, recovery, run-release") {
 			t.Errorf("bounds %v: %v %s", bad, ok, why)
 		}
 		if live, _ := entry.LiveAt(human.Now); live {

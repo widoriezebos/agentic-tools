@@ -87,7 +87,7 @@ func TestGrantEverythingAtTheEnrolledTerminal(t *testing.T) {
 	t.Parallel()
 	b := newGrantEverythingBed(t)
 	now, _ := b.commandNow(b.root())
-	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h")
 	if code != 0 || result.Outcome != intentConfirmed || len(result.Targets) != 1 {
 		t.Fatalf("grant everything = %d %+v", code, result)
 	}
@@ -108,20 +108,20 @@ func TestGrantEverythingAtTheEnrolledTerminal(t *testing.T) {
 		t.Fatalf("the ledger entry = %+v", entry)
 	}
 
-	code, result = b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	code, result = b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h")
 	if code != 0 || result.Outcome != intentUnchanged {
 		t.Fatalf("the same grant again = %d %+v", code, result)
 	}
 
 	code, stdout, _ := b.run(b.owners(), "grant", "list")
-	if listed := strings.Join(strings.Fields(stdout), " "); code != 0 || !strings.Contains(listed, "● everything · by Wido · until tomorrow") ||
+	if listed := strings.Join(strings.Fields(stdout), " "); code != 0 || !strings.Contains(listed, "● ordering · by Wido · until tomorrow") ||
 		!strings.Contains(listed, "(24h00m left) for the main session of mac-cli ("+checkout+") id "+id) {
 		t.Fatalf("grant list = %d %q", code, stdout)
 	}
 
 	inv := &intentInvocation{owners: b.owners(), stateRoot: b.root()}
 	inv.owners.attorney.entries = func(string) ([]goal.PowerOfAttorneyEntry, error) { return b.rootRecord().PowerOfAttorney, nil }
-	if line := inv.attorneyStatusLine(b.root()); !strings.HasPrefix(line, "POWER OF ATTORNEY: ") || !strings.Contains(line, "acts for Wido until") ||
+	if line := inv.attorneyStatusLine(b.root()); !strings.HasPrefix(line, "POWER OF ATTORNEY: ") || !strings.Contains(line, "acts for Wido in ordering until") ||
 		!strings.HasSuffix(line, "(grant "+id+") — metasystem grant revoke "+id+" ends it") {
 		t.Fatalf("status line = %q", line)
 	}
@@ -142,12 +142,12 @@ func TestGrantEverythingAtTheEnrolledTerminal(t *testing.T) {
 func TestGrantAddNamesClassesAndTheSeatLineage(t *testing.T) {
 	t.Parallel()
 	b := newGrantEverythingBed(t)
-	code, ordinary := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	code, ordinary := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h")
 	if code != 0 || ordinary.Outcome != intentConfirmed {
 		t.Fatalf("ordinary grant = %d %+v", code, ordinary)
 	}
-	if _, present := ordinary.Data.(map[string]any)["classes"]; present {
-		t.Fatal("an unrestricted grant reports classes")
+	if classes := ordinary.Data.(map[string]any)["classes"]; classes == nil {
+		t.Fatal("a general grant did not report its classes")
 	}
 	b.holder = lease.CurrentHolderView{}
 	owners := b.owners()
@@ -212,10 +212,13 @@ func TestGrantAddNamesClassesAndTheSeatLineage(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--acts", "everything", "--for", "24h", "--classes", "values"}, "class values is not one of acks, budget, lane-recovery, mechanical, ordering, recovery, run-release, stale-releases"},
+		{[]string{"--acts", "everything", "--for", "24h"}, "a general grant names its classes: --classes LIST"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", "mechanical"}, "class mechanical is not one of"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", "stale-releases"}, "class stale-releases is not one of"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", "values"}, "class values is not one of acks, budget, lane-recovery, ordering, recovery, run-release"},
 		{[]string{"--acts", "everything", "--for", "24h", "--classes", "acks,"}, "class  is not one of"},
-		{[]string{"--acts", "everything", "--for", "24h", "--classes", ""}, "--classes names at least one class; nothing was done"},
-		{[]string{"--acts", "everything", "--for", "24h", "--lineage", "other"}, "--lineage takes seat: the steward's seat sessions; nothing was done"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", ""}, "a general grant names its classes: --classes LIST"},
+		{[]string{"--acts", "everything", "--classes", "ordering", "--for", "24h", "--lineage", "other"}, "--lineage takes seat: the steward's seat sessions; nothing was done"},
 		{[]string{"--tiers", "1", "--acts", "approve", "--until", "2026-09-05", "--classes", "ordering"}, "--classes narrows --acts everything; nothing was done"},
 	} {
 		code, refused := b.runJSON(owners, append([]string{"grant", "add"}, row.args...)...)
@@ -235,10 +238,10 @@ func TestGrantEverythingRefusals(t *testing.T) {
 	b := newGrantEverythingBed(t)
 	before := len(b.rootRecord().PowerOfAttorney)
 	for _, args := range [][]string{
-		{"--acts", "everything"},
-		{"--acts", "everything", "--for", "8d"},
-		{"--acts", "everything", "--for", "24h", "--until", "18:00"},
-		{"--acts", "everything", "--for", "24h", "--tiers", "1"},
+		{"--acts", "everything", "--classes", "ordering"},
+		{"--acts", "everything", "--classes", "ordering", "--for", "8d"},
+		{"--acts", "everything", "--classes", "ordering", "--for", "24h", "--until", "18:00"},
+		{"--acts", "everything", "--classes", "ordering", "--for", "24h", "--tiers", "1"},
 		{"--acts", "everything,approve", "--for", "24h"},
 		{"--acts", "approve", "--tiers", "1", "--for", "24h"},
 	} {
@@ -253,11 +256,11 @@ func TestGrantEverythingRefusals(t *testing.T) {
 	}
 	fixture := b.owners()
 	fixture.prove = fixedFixtureGoalAuthority
-	if code, result := b.runJSON(fixture, "grant", "add", "--acts", "everything", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "this terminal isn't enrolled") {
+	if code, result := b.runJSON(fixture, "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "this terminal isn't enrolled") {
 		t.Errorf("a fixture proof granted: %d %+v", code, result)
 	}
 	b.holder = lease.CurrentHolderView{}
-	if code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "no session holds this checkout's lease") {
+	if code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "no session holds this checkout's lease") {
 		t.Errorf("no holder granted: %d %+v", code, result)
 	}
 	if after := len(b.rootRecord().PowerOfAttorney); after != before {
@@ -345,7 +348,7 @@ func TestSettingsSetAnAuthorityKeyNeedsTheDirectPerson(t *testing.T) {
 func TestGrantEverythingReadsInText(t *testing.T) {
 	t.Parallel()
 	b := newGrantEverythingBed(t)
-	code, added, _ := b.run(b.owners(), "grant", "add", "--acts", "everything", "--for", "8h")
+	code, added, _ := b.run(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "8h")
 	if code != 0 || !strings.Contains(added, "granted ") || !strings.Contains(added, "ends it") {
 		t.Fatalf("add = %d %q", code, added)
 	}
@@ -383,7 +386,7 @@ func TestAGrantAnsweredActIsCheckedAtItsEffectAndRefusalsAreLogged(t *testing.T)
 	if code, result := b.runJSON(b.owners(), "goal", "prioritize", bedGoal, "1"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("the person's own act = %d %+v", code, result)
 	}
-	code, result = b.runJSON(owners, "grant", "add", "--acts", "everything", "--for", "8h")
+	code, result = b.runJSON(owners, "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "8h")
 	if code == 0 || result.Outcome != intentRefused {
 		t.Fatalf("a grant add under a grant = %d %+v", code, result)
 	}
@@ -403,7 +406,7 @@ func TestAGrantAnsweredActIsCheckedAtItsEffectAndRefusalsAreLogged(t *testing.T)
 func TestGrantStatusLineReadsTheLedgerWhereGrantListDoes(t *testing.T) {
 	t.Parallel()
 	b := newGrantEverythingBed(t)
-	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h")
 	if code != 0 || result.Outcome != intentConfirmed || len(result.Targets) != 1 {
 		t.Fatalf("grant everything = %d %+v", code, result)
 	}
@@ -496,7 +499,7 @@ func TestBudgetUnderAGeneralGrantActsAsWithoutUnder(t *testing.T) {
 	}
 	b := &grantEverythingBed{intentBed: bed, prove: enrolledPersonProver(t, bed.root(), now),
 		holder: lease.CurrentHolderView{MainId: "main-1", OwnerLineage: "lin-main"}}
-	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "8h")
+	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "8h")
 	if code != 0 || len(result.Targets) != 1 {
 		t.Fatalf("grant everything = %d %+v", code, result)
 	}

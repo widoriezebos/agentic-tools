@@ -78,12 +78,14 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 			next: withoutOption(retry, "tiers")})
 	}
 	var classes []string
+	if !inv.input.has("classes") || strings.TrimSpace(inv.input.text("classes")) == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "a general grant names its classes: --classes LIST",
+			Details: []string{strings.Join(goal.AttorneyClasses, ", ")},
+			next:    append(withoutOption(retry, "classes"), "--classes", "ordering"), nextReason: "choose the classes of act you mean"})
+	}
 	if inv.input.has("classes") {
 		next := append(withoutOption(retry, "classes"), "--classes", "ordering")
-		if strings.TrimSpace(inv.input.text("classes")) == "" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--classes names at least one class; nothing was done",
-				next: next, nextReason: "an example; choose the classes of act you mean"})
-		}
 		var err error
 		classes, err = goal.ParseAttorneyClasses(inv.input.text("classes"))
 		if err != nil {
