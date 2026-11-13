@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -1223,7 +1224,7 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 			}
 		}
 		environment = fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=1"))
-		if err := retirePendingWaitOwner(t, root); err != nil {
+		if err := retirePendingWaitSupervision(t, root); err != nil {
 			return err
 		}
 		var failures []error
@@ -1472,38 +1473,327 @@ fi`)
 	fleetWriteJSON(t, filepath.Join(root, "artifacts", "agents", "steward", "runner.json"), record)
 }
 
-// retirePendingWaitOwner ends the fixture's recorded producer before the
-// installed shutdown sweeps its components. The scaled production shutdown
-// budget cannot prove a real process has exited on a loaded host; this fixture
-// waits for that exact identity on the test's own deadline instead.
-func retirePendingWaitOwner(t *testing.T, root string) error {
+// retirePendingWaitSupervision ends the fixture's producers before the installed
+// shutdown. The scaled shutdown budget cannot prove real processes have exited
+// on a loaded host; the fixture waits on the test binary's deadline instead.
+func retirePendingWaitSupervision(t *testing.T, root string) error {
 	t.Helper()
 	owner, err := supervise.ReadArmingOwner(root)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read the recorded supervision owner before shutdown: %w", err)
 	}
-	prober := identity.KernelProber{}
-	ref := identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt, StartTicks: owner.PidStartTicks, BootID: owner.BootID}
-	var state identity.Liveness
-	if err := testenv.AwaitError(t, fmt.Sprintf("fixture supervision owner %s (pid %d) identity", owner.InstanceTag, owner.Pid), func() bool {
-		state = identity.AliveTaggedRef(prober, ref, owner.InstanceTag)
-		return state != identity.Unknown
-	}); err != nil {
+	signal := func(target int64, signal syscall.Signal) error {
+		return syscall.Kill(int(target), signal)
+	}
+	return retireRecordedSupervision(retireSupervisionSeams{
+		prober: identity.KernelProber{}, signal: signal,
+		groupAbsent: func(pgid int64) (bool, error) { return pendingWaitGroupAbsent(signal, pgid) },
+		await:       func(what string, observed func() bool) error { return testenv.AwaitError(t, what, observed) },
+	}, owner, func() ([]supervise.Held, error) {
+		return pendingWaitTakeoverSelection(root, owner.InstanceTag, census.EnumerateConfiguredProcesses)
+	})
+}
+
+func pendingWaitTakeoverSelection(root, ownerTag string, enumerate func(string) ([]census.Process, error)) ([]supervise.Held, error) {
+	var processes []census.Process
+	if ownerTag != "" {
+		var err error
+		processes, err = enumerate(root)
+		if err != nil {
+			return nil, fmt.Errorf("enumerate fixture supervision components: %w", err)
+		}
+	}
+	return supervise.ReadTakeoverComponents(root, ownerTag, processes)
+}
+
+type retireSupervisionSeams struct {
+	prober      identity.Prober
+	signal      func(int64, syscall.Signal) error
+	groupAbsent func(int64) (bool, error)
+	await       func(string, func() bool) error
+}
+
+// Keep the observation that authenticated the tag so a dead leader and a
+// reused pid are distinguished without racing a second kernel inspection.
+type retireTaggedProbe struct {
+	identity.Prober
+	exact identity.Exact
+	state identity.Liveness
+}
+
+func (probe *retireTaggedProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	var err error
+	probe.exact, probe.state, err = probe.Prober.Probe(pid)
+	return probe.exact, probe.state, err
+}
+
+func pendingWaitGroupAbsent(signal func(int64, syscall.Signal) error, pgid int64) (bool, error) {
+	switch err := signal(-pgid, 0); err {
+	case nil, syscall.EPERM:
+		return false, nil
+	case syscall.ESRCH:
+		return true, nil
+	default:
+		return false, err
+	}
+}
+
+func retireRecordedSupervision(seams retireSupervisionSeams, owner supervise.ArmingOwner, components func() ([]supervise.Held, error)) error {
+	// Select components only after the owner exits: it may launch another
+	// component before publishing that component's identity in state.json.
+	if owner.Pid > 0 {
+		ref := identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt, StartTicks: owner.PidStartTicks, BootID: owner.BootID}
+		var state identity.Liveness
+		if err := seams.await(fmt.Sprintf("fixture supervision owner %s (pid %d) identity", owner.InstanceTag, owner.Pid), func() bool {
+			state = identity.AliveTaggedRef(seams.prober, ref, owner.InstanceTag)
+			return state != identity.Unknown
+		}); err != nil {
+			return err
+		}
+		if state == identity.Alive {
+			if err := seams.signal(owner.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+				return fmt.Errorf("end the fixture supervision owner %s (pid %d): %w", owner.InstanceTag, owner.Pid, err)
+			}
+			if err := seams.await(fmt.Sprintf("fixture supervision owner %s (pid %d) to exit", owner.InstanceTag, owner.Pid), func() bool {
+				exact, state, err := seams.prober.Probe(ref.Pid)
+				return err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie))
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	held, err := components()
+	if err != nil {
 		return err
 	}
-	if state == identity.Dead {
-		return nil
+	for _, component := range held {
+		ref := component.Identity
+		what := fmt.Sprintf("fixture %s process group %d", component.Component, ref.Pid)
+		probe := &retireTaggedProbe{Prober: seams.prober}
+		var state identity.Liveness
+		if err := seams.await(what+" identity", func() bool {
+			state = identity.AliveTaggedRef(probe, ref, component.Tag)
+			return state != identity.Unknown
+		}); err != nil {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		if state == identity.Alive {
+			if err := seams.signal(-ref.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+				return fmt.Errorf("end %s: %w", what, err)
+			}
+		} else {
+			// A dead leader may leave its group behind. A live replacement
+			// must never authorize a signal or count as a clean retirement.
+			if probe.state == identity.Alive && !probe.exact.Zombie && !probe.exact.Exiting {
+				return fmt.Errorf("%s identity mismatch", what)
+			}
+		}
+		if err := seams.await(what+" to be absent", func() bool {
+			absent, err := seams.groupAbsent(ref.Pid)
+			return err == nil && absent
+		}); err != nil {
+			return fmt.Errorf("%s: %w", what, err)
+		}
 	}
-	if err := syscall.Kill(int(owner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-		return fmt.Errorf("end the fixture supervision owner %s (pid %d): %w", owner.InstanceTag, owner.Pid, err)
+	return nil
+}
+
+type retireSupervisionObservation struct {
+	exact identity.Exact
+	state identity.Liveness
+}
+
+type retireSupervisionProber struct {
+	observations map[int64][]retireSupervisionObservation
+}
+
+func (prober *retireSupervisionProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	rows := prober.observations[pid]
+	if len(rows) == 0 {
+		return identity.Exact{}, identity.Dead, nil
 	}
-	return testenv.AwaitError(t, fmt.Sprintf("fixture supervision owner %s (pid %d) to exit", owner.InstanceTag, owner.Pid), func() bool {
-		exact, state, err := prober.Probe(ref.Pid)
-		return err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie))
-	})
+	if len(rows) > 1 {
+		prober.observations[pid] = rows[1:]
+	}
+	return rows[0].exact, rows[0].state, nil
+}
+
+func TestRetireRecordedSupervision(t *testing.T) {
+	t.Parallel()
+	awaitFailure := errors.New("fake await exhausted")
+	for _, tc := range []struct {
+		name            string
+		owner           bool
+		recorded        []int64
+		censusOnly      bool
+		emptyState      bool
+		dead            bool
+		zombie          bool
+		deadThenUnknown bool
+		wrongTag        bool
+		wrongStart      bool
+		unknown         bool
+		groupResults    []error
+		wantSignals     []int64
+		wantSteps       map[int64]int
+		wantError       string
+		wantAwaitFail   bool
+	}{
+		{name: "a_owner_then_two_groups", owner: true, recorded: []int64{71, 72},
+			groupResults: []error{nil, nil, syscall.ESRCH}, wantSignals: []int64{41, -71, -72}, wantSteps: map[int64]int{71: 3, 72: 3}},
+		{name: "b_dead_leader_surviving_group", recorded: []int64{71}, dead: true,
+			groupResults: []error{nil, syscall.ESRCH}, wantSteps: map[int64]int{71: 2}},
+		{name: "b_zombie_leader_surviving_group", recorded: []int64{71}, zombie: true,
+			groupResults: []error{nil, syscall.ESRCH}, wantSteps: map[int64]int{71: 2}},
+		{name: "b_dead_leader_needs_no_second_inspection", recorded: []int64{71}, dead: true, deadThenUnknown: true,
+			groupResults: []error{syscall.ESRCH}, wantSteps: map[int64]int{71: 1}},
+		{name: "c_reused_pid_tag", recorded: []int64{71}, wrongTag: true, wantError: "process group 71 identity mismatch"},
+		{name: "c_reused_pid_start", recorded: []int64{71}, wrongStart: true, wantError: "process group 71 identity mismatch"},
+		{name: "d_unknown_then_alive", recorded: []int64{71}, unknown: true,
+			groupResults: []error{syscall.ESRCH}, wantSignals: []int64{-71}, wantSteps: map[int64]int{71: 1}},
+		{name: "e_group_never_absent", recorded: []int64{71}, groupResults: []error{nil},
+			wantSignals: []int64{-71}, wantSteps: map[int64]int{71: 5}, wantError: "process group 71", wantAwaitFail: true},
+		{name: "f_no_state_or_components"},
+		{name: "g_permission_denied_then_absent", recorded: []int64{71},
+			groupResults: []error{syscall.EPERM, syscall.ESRCH}, wantSignals: []int64{-71}, wantSteps: map[int64]int{71: 2}},
+		{name: "h_census_without_state", owner: true, censusOnly: true,
+			groupResults: []error{nil, syscall.ESRCH}, wantSignals: []int64{41, -71}, wantSteps: map[int64]int{71: 2}},
+		{name: "h_census_before_component_publication", owner: true, censusOnly: true, emptyState: true,
+			groupResults: []error{nil, syscall.ESRCH}, wantSignals: []int64{41, -71}, wantSteps: map[int64]int{71: 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			owner := supervise.ArmingOwner{InstanceTag: "fixture-owner"}
+			prober := &retireSupervisionProber{observations: map[int64][]retireSupervisionObservation{}}
+			if tc.owner {
+				owner.Pid, owner.PidStartedAt = 41, 100
+				prober.observations[41] = []retireSupervisionObservation{{state: identity.Alive, exact: identity.Exact{
+					Pid: 41, StartedAt: time.Unix(100, 0), ArgvKnown: true, Argv: []string{owner.InstanceTag},
+				}}}
+			}
+			selectedPids := append([]int64(nil), tc.recorded...)
+			if tc.censusOnly {
+				selectedPids = append(selectedPids, 71)
+			}
+			records := map[string]any{}
+			var processes []census.Process
+			for _, pid := range selectedPids {
+				component := "watcher"
+				if pid == 72 {
+					component = "reaper"
+				}
+				tag := owner.InstanceTag + "-" + component + "-1"
+				exact := identity.Exact{Pid: pid, StartedAt: time.Unix(100, 0), ArgvKnown: true, Argv: []string{"--tag", tag}}
+				exact.Zombie = tc.zombie
+				if tc.wrongTag {
+					exact.Argv = []string{"--tag", "replacement"}
+				}
+				if tc.wrongStart {
+					exact.StartedAt = time.Unix(101, 0)
+				}
+				state := identity.Alive
+				if tc.dead {
+					state = identity.Dead
+				}
+				prober.observations[pid] = []retireSupervisionObservation{{state: state, exact: exact}}
+				if tc.deadThenUnknown {
+					prober.observations[pid] = append(prober.observations[pid], retireSupervisionObservation{state: identity.Unknown})
+				}
+				if tc.unknown {
+					prober.observations[pid] = append([]retireSupervisionObservation{{state: identity.Unknown}}, prober.observations[pid]...)
+				}
+				if tc.censusOnly {
+					processes = append(processes, census.Process{Pid: pid, PGID: pid, Started: 100, Alive: true,
+						Argv: "/engine supervise component --component " + component + " --tag " + tag + " --generation 1 --repo " + root})
+				} else {
+					records[component] = map[string]any{"pid": pid, "pidStartedAt": 100, "instanceTag": tag}
+				}
+			}
+			if len(records) != 0 || tc.emptyState {
+				fleetWriteJSON(t, filepath.Join(supervise.SupervisionDir(root), "state.json"), map[string]any{"generation": 1, "components": records})
+			}
+			type signalCall struct {
+				target int64
+				signal syscall.Signal
+			}
+			var signals []signalCall
+			groupSteps := map[int64]int{}
+			signal := func(target int64, signal syscall.Signal) error {
+				if signal == 0 {
+					pgid := -target
+					step := groupSteps[pgid]
+					groupSteps[pgid]++
+					if len(tc.groupResults) == 0 {
+						t.Fatalf("unexpected group probe %d", pgid)
+					}
+					return tc.groupResults[min(step, len(tc.groupResults)-1)]
+				}
+				signals = append(signals, signalCall{target: target, signal: signal})
+				pid := target
+				if pid < 0 {
+					pid = -pid
+				}
+				prober.observations[pid] = nil
+				return nil
+			}
+			awaitSteps := map[string]int{}
+			seams := retireSupervisionSeams{
+				prober: prober, signal: signal,
+				groupAbsent: func(pgid int64) (bool, error) { return pendingWaitGroupAbsent(signal, pgid) },
+				await: func(what string, observed func() bool) error {
+					for range 5 {
+						awaitSteps[what]++
+						if observed() {
+							return nil
+						}
+					}
+					return fmt.Errorf("%s: %w", what, awaitFailure)
+				},
+			}
+			selected := false
+			err := retireRecordedSupervision(seams, owner, func() ([]supervise.Held, error) {
+				selected = true
+				if tc.owner && len(prober.observations[owner.Pid]) != 0 {
+					t.Fatal("selected components before the owner exited")
+				}
+				return pendingWaitTakeoverSelection(root, owner.InstanceTag, func(string) ([]census.Process, error) {
+					return processes, nil
+				})
+			})
+			if !selected {
+				t.Error("component selection was skipped")
+			}
+			if tc.wantError == "" && !tc.wantAwaitFail {
+				if err != nil {
+					t.Fatalf("retire supervision: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Errorf("error = %v, want %q", err, tc.wantError)
+			}
+			if errors.Is(err, awaitFailure) != tc.wantAwaitFail {
+				t.Errorf("await error = %v, want propagated failure %t", err, tc.wantAwaitFail)
+			}
+			var wantSignals []signalCall
+			for _, target := range tc.wantSignals {
+				wantSignals = append(wantSignals, signalCall{target: target, signal: syscall.SIGKILL})
+			}
+			if !slices.Equal(signals, wantSignals) {
+				t.Errorf("signals = %v, want %v", signals, wantSignals)
+			}
+			if len(groupSteps) != len(tc.wantSteps) {
+				t.Errorf("group observations = %v, want %v", groupSteps, tc.wantSteps)
+			}
+			for pgid, want := range tc.wantSteps {
+				if groupSteps[pgid] != want {
+					t.Errorf("group %d observations = %d, want %d", pgid, groupSteps[pgid], want)
+				}
+			}
+			if tc.unknown && awaitSteps["fixture watcher process group 71 identity"] != 2 {
+				t.Errorf("unknown identity await observations = %v, want two", awaitSteps)
+			}
+		})
+	}
 }
 
 // pendingWaitHealthyPreview is the healthy hook preview the installed wait
