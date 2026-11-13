@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 15
+- Sequence: 14
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="The agent return is bound to the existing evidence rule (newest proof red, cause own, same goal, same sha); the rest is refusal text, stop text and the keeper's order of two acts it already performs; no verb gains authority"
 - Tier: 2
 - Intent: The landing lane's agent returns a goal proven red by its own defect without a person, a refused lane fix build names the lane precondition that failed, the keeper's stop names the proof's cause and the one command and does not flap, a proven-green batch is pushed before a due clock proof, and the lane's questions say the cause in the contract's form (findings 430 and 434; design plans/designs/the-stewards-act-on-what-they-see.md (accepted, revision 4) D4, D5, D11, D12, G3)
 - Origin: main
 - Next step: On ui's machine route after decision 73's queue: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 95 production lines: cmd/metasystem/intent_landing_return.go, intent_lane_fix.go, landing_fix.go, landing/plain/stop.go, the keeper's wake order, landing/plain/policy_question.go; the lane-question obligation (acts) stays open until a-lane-act-runs-from-the-phone lands
 - OpenedAt: 2026-10-27T15:22:42Z
-- Revision: 149
+- Revision: 150
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -166,4 +166,5 @@ History:
 - 2026-11-13T09:04:04Z ZH5ZHVWEC055PQ488VKED7Z3QA-m1e-85ee26c5 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,red-names-what-failed,the-lane-returns-its-own-red reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:14 to=1:13 requested-sequence=14
 - 2026-11-13T09:04:43Z MSNJYX466D1WSQMQD9QWBM8M8C-m1e-85ee26c5 set-priority actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries,a-unit-stop-asks-its-steward-first,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=the-lane-returns-its-own-red from=1:13 to=1:16 requested-sequence=16
 - 2026-11-13T09:05:10Z 9EX7RF95MRB3021P9YAQJJQG70-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=seat-recovers-a-dead-session from=1:16 to=1:15 requested-sequence=17
-Integrity: sha256=82b4d4b241326d6cbf394bffdedda5e5c4a61af9536be58cbf64cbe74318632a
+- 2026-11-13T09:05:38Z CPV39VD6R6THVA8VFZK6QAHEB1-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:15 to=1:14 requested-sequence=18
+Integrity: sha256=7d2a7f98cad498653f5c8b2402837b91f5aa444de824017858c581adac39e801
