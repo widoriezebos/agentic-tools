@@ -607,6 +607,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 				batchID = batch.ID
 			}
 			if found && seams.acceptsGreen(install, checkout, result) && batchGreenReusable(install, batchID, result, seams) {
+				if result, err = seams.bindGate(install, checkout, result); err != nil {
+					return err
+				}
 				started, already = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
 				return sealBatchLocked(install, batchID, seams)
 			}
@@ -800,6 +803,9 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			if found {
 				_, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
 				if err == nil {
+					settled, err = seams.bindGate(install, checkout, settled)
+				}
+				if err == nil {
 					err = sealBatchLocked(install, batchID, seams)
 				}
 			}
@@ -965,7 +971,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			return err
 		}
 		if !running.Trunk && found && seams.acceptsGreen(install, checkout, previous) && batchGreenReusable(install, running.BatchID, previous, seams) {
-			result, already = previous, true
+			if result, err = seams.bindGate(install, checkout, previous); err != nil {
+				return err
+			}
+			already = true
 			return sealBatchLocked(install, running.BatchID, seams)
 		}
 		if seams.FenceCheck != nil {

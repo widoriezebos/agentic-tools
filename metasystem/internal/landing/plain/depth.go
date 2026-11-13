@@ -76,11 +76,12 @@ func overdueBatch(install, batchID string, seams ProveSeams) (string, time.Time)
 }
 
 func batchGreenReusable(install, batchID string, result Result, seams ProveSeams) bool {
+	if seams.Gate {
+		// A skipped gate with a green static check stands for its tree too (finding 556).
+		return result.reusableGreen(seams.now()) || result.Result == Skipped && result.Static == Green
+	}
 	if !result.reusableGreen(seams.now()) {
 		return false
-	}
-	if seams.Gate {
-		return true
 	}
 	if reason, since := overdueBatch(install, batchID, seams); reason != "" {
 		return fullSince(result, since)

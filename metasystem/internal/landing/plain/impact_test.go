@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -103,6 +107,114 @@ func TestReadImpactPlanRejectsUnreadableEnvelope(t *testing.T) {
 			decision := scopeDecision{scopeRecord: scopeRecord{BaseCommit: "base"}}
 			if err := decision.impactPlan(seams, "fixture"); err == nil || decision.PlanHash != "" || !strings.Contains(err.Error(), "impact") {
 				t.Fatalf("invalid plan authorized hash=%q error=%v", decision.PlanHash, err)
+			}
+		})
+	}
+}
+
+// TestAGateStandsForASecondMergeOfItsTree merges one member again on the same
+// base, as after an abandoned resolution: the gate recorded for the first
+// merge commit is taken for the second, and another base or a changed impact
+// plan runs the gate again (finding 556).
+func TestAGateStandsForASecondMergeOfItsTree(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, verdict, parents, selection string
+		reused                            bool
+	}{
+		{"skipped", Skipped, "main tip", "internal/a=TestA", true},
+		{"green", Green, "main tip", "internal/a=TestA", true},
+		{"another base", Skipped, "other tip", "internal/a=TestA", false},
+		{"another plan", Skipped, "main tip", "internal/a=TestB", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			install := t.TempDir()
+			notAncestor := exec.Command("/usr/bin/false").Run()
+			selection := "internal/a=TestA"
+			seams := ProveSeams{
+				Gate:       true,
+				Now:        func() time.Time { return bedNow },
+				BudgetHome: t.TempDir(),
+				Executable: func() (string, error) { return "fixture-engine", nil },
+				Launch:     func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil },
+				Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
+				Command: func(command *exec.Cmd) error {
+					if !slices.Contains(command.Args, "--plan") || !slices.Contains(command.Env, "LANDING_PROOF_SCOPE=gate") {
+						t.Errorf("unexpected command: %v", command.Args)
+					}
+					data, err := json.Marshal(verbresult.FromError("test impact", 0, nil, ImpactPlan{Base: "main", Subject: "batch base", Selections: []string{selection}}))
+					if err == nil {
+						_, err = command.Stdout.Write(data)
+					}
+					ended := exec.Command("/usr/bin/true")
+					if err == nil {
+						err = ended.Run()
+					}
+					command.ProcessState = ended.ProcessState
+					return err
+				},
+				Git: func(_ string, args ...string) (string, error) {
+					switch args[0] {
+					case "cat-file":
+						return "", nil
+					case "show":
+						return row.parents, nil
+					case "rev-parse":
+						if args[len(args)-1] == "HEAD^{commit}" {
+							return "candidate", nil
+						}
+						if args[len(args)-1] == "HEAD^{tree}" {
+							return "tree", nil
+						}
+						return "main", nil
+					case "rev-list":
+						return "candidate main tip", nil
+					case "merge-base":
+						if args[3] == "candidate" && (args[2] == "main" || args[2] == "tip") {
+							return "", nil
+						}
+						return "", notAncestor
+					default:
+						return "", fmt.Errorf("unexpected Git: %v", args)
+					}
+				},
+			}
+			if _, _, err := HandIn(install, Line{Goal: "goal", SHA: "tip"}); err != nil {
+				t.Fatal(err)
+			}
+			batch := &Batch{ID: "batch", Base: "main", State: BatchPrepared, Open: true, Selector: PolicyValue{Value: "auto"}, Lane: lane.Record{Root: install, Install: install, CustodyEpoch: 1}, Members: []GoalSHA{{Goal: "goal", SHA: "tip"}}}
+			if err := writeBatch(install, batch); err != nil {
+				t.Fatal(err)
+			}
+			planned := scopeDecision{scopeRecord: scopeRecord{Scope: "gate", BaseCommit: "main"}}
+			if err := planned.impactPlan(seams, install); err != nil {
+				t.Fatal(err)
+			}
+			first := Result{Attempt: "first-gate", Requested: "first-merge", Attributed: "first-merge", Commit: "first-merge", Tree: "tree", Result: row.verdict, Static: Green, Depth: "impact",
+				Scope: "gate", BaseCommit: "main", PlanHash: planned.PlanHash, At: bedNow.Format(time.RFC3339)}
+			if err := appendLine(gatesPath(install), first); err != nil {
+				t.Fatal(err)
+			}
+			selection = row.selection
+			settled, ok, err := Settled(install, install, seams)
+			if err != nil || ok != row.reused {
+				t.Fatalf("second merge of the tree settled=%v err=%v, want %v", ok, err, row.reused)
+			}
+			if row.reused {
+				// The reused gate is recorded for the second merge, where status,
+				// batch progress and the waiting agent look for it.
+				gate, _, gateErr := LastGate(install)
+				progress, _, progressErr := batchProofProgress(install, batch, "candidate", "tree")
+				if gateErr != nil || progressErr != nil || !reflect.DeepEqual(gate, settled) || gate.Requested != "candidate" || gate.Commit != "candidate" || gate.Attempt != first.Attempt || !acceptableGate(progress) {
+					t.Fatalf("reused gate not bound to the second merge: %+v progress=%+v %v %v", gate, progress, gateErr, progressErr)
+				}
+			}
+			lines, _ := readLines[Result](gatesPath(install))
+			started, already, err := Start(install, install, seams)
+			again, _ := readLines[Result](gatesPath(install))
+			if err != nil || already != row.reused || row.reused && (started.Attempt != first.Attempt || started.Commit != "candidate" || len(again) != len(lines)) {
+				t.Fatalf("second merge of the tree: running=%+v already=%v err=%v gates %d then %d, want reused=%v", started, already, err, len(lines), len(again), row.reused)
 			}
 		})
 	}

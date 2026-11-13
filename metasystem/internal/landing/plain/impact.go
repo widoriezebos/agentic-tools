@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
@@ -97,16 +98,62 @@ func ReadImpactPlan(seams ProveSeams, dir, base, scope string) (string, error) {
 }
 
 func (s ProveSeams) acceptsGreen(install, checkout string, result Result) bool {
-	if s.Fresh || !result.reusableGreen(s.now()) {
+	if s.Fresh {
 		return false
 	}
 	if s.Gate {
-		commit, _, err := s.subject(checkout)
-		return err == nil && result.Requested == commit && result.Static == Green
+		return s.acceptsGate(install, checkout, result)
+	}
+	if !result.reusableGreen(s.now()) {
+		return false
 	}
 	if s.Impact {
 		d := impactScope(install, checkout, s)
 		return result.Scope == "impact" && d.Base != "" && result.Base == d.Base && result.BaseCommit == d.BaseCommit
 	}
 	return result.Scope != "impact"
+}
+
+// acceptsGate reuses a recorded green or skipped gate whose static check was
+// green: for its own commit, and for any commit of the same tree merged on
+// the same base with the same impact plan, so merging a member again after an
+// abandoned resolution does not run the gate twice (finding 556).
+func (s ProveSeams) acceptsGate(install, checkout string, result Result) bool {
+	commit, tree, err := s.subject(checkout)
+	if err != nil || result.Static != Green || !result.reusableGreen(s.now()) && result.Result != Skipped {
+		return false
+	}
+	if result.Requested == commit {
+		return true
+	}
+	if result.Tree != tree || result.Depth != "impact" || result.BaseCommit == "" || result.PlanHash == "" {
+		return false
+	}
+	parents, err := s.git(checkout, "show", "-s", "--format=%P", commit)
+	if fields := strings.Fields(parents); err != nil || len(fields) != 2 || fields[0] != result.BaseCommit {
+		return false
+	}
+	d := scopeDecision{scopeRecord: scopeRecord{Scope: result.Scope, BaseCommit: result.BaseCommit}}
+	return d.impactPlan(s, install) == nil && d.PlanHash == result.PlanHash
+}
+
+// bindGate records a gate accepted for another commit of its tree as this
+// commit's gate in the current batch, so the lane's status, its batch
+// progress and the waiting agent read it for the merge they see.
+func (s ProveSeams) bindGate(install, checkout string, result Result) (Result, error) {
+	commit, _, err := s.subject(checkout)
+	if err != nil || !s.Gate || result.Requested == commit {
+		return result, err
+	}
+	batch, err := ReadBatch(install)
+	if err != nil {
+		return result, err
+	}
+	bound := result
+	bound.Requested, bound.Attributed, bound.Commit, bound.At = commit, commit, commit, s.now().UTC().Format(time.RFC3339)
+	bound.Reason = strings.TrimPrefix(result.Reason+"; ", "; ") + "the gate of " + Short(result.Commit) + ", the same tree merged on the same base"
+	if batch != nil {
+		bound.BatchID, bound.BatchMembers = batch.ID, batch.Members
+	}
+	return bound, appendLine(gatesPath(install), bound, s)
 }
