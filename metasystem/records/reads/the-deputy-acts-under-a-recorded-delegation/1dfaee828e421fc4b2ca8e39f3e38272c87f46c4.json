@@ -1,0 +1,147 @@
+{
+  "canonicalRead": {
+    "id": "20261113t062407-566708fbba-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "7eeb24a47bcd88281d93f8a0f8d813817f5e758a22a005fd7f2d3a925438ca89",
+      "diffDigest": "7eeb24a47bcd88281d93f8a0f8d813817f5e758a22a005fd7f2d3a925438ca89"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261113t062407-566708fbba-r2-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A live grant that names both grantable and retired classes still lists the retired ones as if they were in force. Separately, grant list --all shows a closed historical unclassed grant as 'admits nothing', which misstates what it admitted while it was in force.",
+        "evidence": "intent_grant_everything.go:272-277: attorneyActs returns strings.Join(entry.Classes) as soon as Carries admits any one class. A live entry naming acks,mechanical,ordering,recovery,stale-releases reads 'acts for wido in acks, mechanical, ordering, recovery, stale-releases'. Carries refuses mechanical and stale-releases, so admission fails safe.",
+        "where": "metasystem/cmd/metasystem/intent_grant_everything.go",
+        "change": "Later: list only the classes Carries admits, and mark retired ones as retired.",
+        "relation": "same-rule-as 3 (R-143-m1e: the person understands the impact first)"
+      },
+      {
+        "id": "20261113t062407-566708fbba-r2-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The status layout fixture still injects an unclassed entry. The status goldens therefore show the degenerate 'admits nothing' banner as the live grant.",
+        "evidence": "audit_output_layout_test.go:203-205 builds an entry with no Classes. testdata/layout/status.txt reads 'wido's grant is live: admits nothing (names no grantable class)'. The classed status line is asserted at intent_grant_everything_test.go:124.",
+        "where": "metasystem/cmd/metasystem/audit_output_layout_test.go",
+        "change": "Later: give the fixture Classes: []string{\"ordering\"}, as the grant-list fixture already has.",
+        "relation": "new (rule: a layout golden shows the representative case)"
+      },
+      {
+        "id": "20261113t062407-566708fbba-r2-s3:3",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "Test lines exceed the unit row's budget, though production lines are within it.",
+        "evidence": "git diff --stat against f0b16f81ab: production 85 lines (row: 90); tests about 358 plus 29 golden lines (row: 200); total 472 (row: 290).",
+        "where": "metasystem/cmd/metasystem/intent_decision_test.go",
+        "change": "None required. The growth is the AM4 fixture migration and the two audit tests.",
+        "relation": "new"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261113t062407-566708fbba-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "f0b9ad934a5228273665dad483d9c2c197b5b228223befa2ed340a78c79c4a99",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1a3",
+  "subject": {
+    "commit": "1dfaee828e421fc4b2ca8e39f3e38272c87f46c4",
+    "parent": "f0b16f81ab92dcb3f1a8d4343719c18b94e7cd4f",
+    "tree": "64cf67cc7cf9a8eb68e76f2b66321a7fcec88bfb",
+    "patchDigest": "7eeb24a47bcd88281d93f8a0f8d813817f5e758a22a005fd7f2d3a925438ca89",
+    "unitDigest": "262e539471d62199c3e5f160973a087d760c814c81ebacb0eda1e28b05ed0e2e"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261113t062407-566708fbba-r2-s3",
+    "closureSha256": "888cb7f2a0b6388359507ad5ab2959a71f0149da6ab02cb66b60ad7ab4b82660"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "64cf67cc7cf9a8eb68e76f2b66321a7fcec88bfb",
+    "runId": "goal-read-gate-20261113t095704z-c4839e01f14e74c8"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "8067d001d1c31a31a2882d5a5182f9a46b57d078",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "f0b16f81ab92dcb3f1a8d4343719c18b94e7cd4f",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/attorney_admits_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/attorney_class_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_decision_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_grant_everything_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/message_person_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/grant-list-all.json",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/grant-list-all.txt",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/grant-list.json",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/grant-list.txt",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/status-verbose.json",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/status-verbose.txt",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/status.json",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/status.txt",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/goal/general_attorney_test.go",
+      "readerWord": "reviewed by unit read 20261113t062407-566708fbba-r2-s3"
+    }
+  ],
+  "sha256": "30fa5d7d1f60fc9dc83f9ceb2e0907de5242b08930bc12448e42c9b4277c4e03"
+}
