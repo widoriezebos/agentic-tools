@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 34
+- Sequence: 33
 - Risk: severity=2 novelty=1 exposure=2 accumulation=3 basis="finding 470 (2026-11-01, a1): runner.log ticks 14 to 16 of the landing steward and ps cputime; host load 29 refused a build at the load gate."
 - Tier: 2
 - Intent: A steward tick costs seconds, not a minute: the tick line times each duty, the tick reads the ledger once, and the claim-quota role sends one note per blocking occurrence; the landing steward no longer burns a core.
 - Origin: human
 - Next step: Measure first: a design page that names each duty cost from the tick line (finding 470: the landing steward used 67 CPU minutes in 3 hours, duties 60 to 80 s per 120 s tick); then one unit per owner.
 - OpenedAt: 2026-11-01T14:42:55Z
-- Revision: 135
+- Revision: 136
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -152,4 +152,5 @@ History:
 - 2026-11-13T09:15:43Z HDPH4T59TE7F48SQCEM8Q7SRTP-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=builder-proves-each-rule-by-mutation from=1:32 to=1:31 requested-sequence=34
 - 2026-11-13T09:15:59Z Y2X813HM1WZ01GFNNMZKWJ25DG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,lane-steward-2 reason=priority-order subject=a-steward-tick-costs-seconds from=1:31 to=1:35 requested-sequence=35
 - 2026-11-13T09:16:18Z 2M7BHFWPD0461KVWSDQ29YEX5A-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,builder-proves-each-rule-by-mutation,lane-steward-2,the-lane-batches-goals-and-proves-once reason=priority-order subject=attempts-are-bounded-per-unit from=1:35 to=1:34 requested-sequence=36
-Integrity: sha256=df6bcdfbd314cdcc315228200c4200a869dbcefc4ee46c897b2e040c03287cb0
+- 2026-11-13T09:16:36Z ZNZC6SHEPVMD668J3H6FVW3NGQ-m1e-85ee26c5 set-priority actor=human:Wido targets=a-run-holds-its-worktree,a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,lane-steward-2,the-lane-batches-goals-and-proves-once reason=priority-order subject=lane-steward-2 from=1:34 to=1:33 requested-sequence=37
+Integrity: sha256=bb76c47932ac1463819c178e84f87dd0a3f7b2866224b9785a66860a886dfe72

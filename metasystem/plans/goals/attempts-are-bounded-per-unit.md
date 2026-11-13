@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 36
+- Sequence: 35
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="It changes the admission path every goal passes through (exposure), and a wrong bound either blocks a healthy goal or lets a unit loop (severity); it reshapes counters and caps that exist today rather than adding a mechanism (novelty); it leaves no record that grows (accumulation)."
 - Tier: 2
 - Intent: The goal budget box bounds what the machine spends, not how big a goal is: the attempts member bounds the reservations of one unit (its rounds, retries and corrections) and closes admission for that unit alone; the per-goal total stays visible as spend; a goal never stops for having many units; and a person budget act keeps the goal counts (Wido ruling of 2026-10-03, folded here on the design critic finding of round 1), so the unit one recovery command grants exactly the attempts it names (the-steward-sees spent 12 of 12 attempts on eight normal reads and stood 12 h for a raise, 2026-10-31; decision 102(e); design plans/designs/attempts-are-bounded-per-unit.md revision 2)
@@ -10,7 +10,7 @@
 - Next step: Design through the engine: metasystem design write attempts-are-bounded-per-unit --brief agentic-tools-evidence/lane-test-20261009/designs/attempts-are-bounded-per-unit-request.md, then design review rounds (Astra is the design critic) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e behind the-steward-sees and the-steward-decides Revision 2 of the page folds design review round 1 (2 material, 1 minor); a fresh design review examines it.
 - OpenedAt: 2026-10-31T20:49:44Z
 - FirstClaimAt: 2026-10-31T21:19:44Z
-- Revision: 155
+- Revision: 156
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -176,4 +176,5 @@ History:
 - 2026-11-13T09:15:43Z HDPH4T59TE7F48SQCEM8Q7SRTP-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=builder-proves-each-rule-by-mutation from=1:34 to=1:33 requested-sequence=34
 - 2026-11-13T09:15:59Z Y2X813HM1WZ01GFNNMZKWJ25DG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,lane-steward-2 reason=priority-order subject=a-steward-tick-costs-seconds from=1:33 to=1:32 requested-sequence=35
 - 2026-11-13T09:16:18Z 2M7BHFWPD0461KVWSDQ29YEX5A-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,builder-proves-each-rule-by-mutation,lane-steward-2,the-lane-batches-goals-and-proves-once reason=priority-order subject=attempts-are-bounded-per-unit from=1:32 to=1:36 requested-sequence=36
-Integrity: sha256=490cd5ed2ca95a89d9a98a9d2270909631df46f2a6bd5cfe24df2eb5a742e431
+- 2026-11-13T09:16:36Z ZNZC6SHEPVMD668J3H6FVW3NGQ-m1e-85ee26c5 set-priority actor=human:Wido targets=a-run-holds-its-worktree,a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,lane-steward-2,the-lane-batches-goals-and-proves-once reason=priority-order subject=lane-steward-2 from=1:36 to=1:35 requested-sequence=37
+Integrity: sha256=ba71c30d02239d4b2ecfdb1e3fc3a8cac96dbe2137859df15beb2ca1f4e373da
