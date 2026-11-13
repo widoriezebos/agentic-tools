@@ -62,6 +62,7 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree, parent s
 				return "", err
 			}
 			brief := filepath.Join(review.Round.Directory, "publication-check-"+id+".json")
+			command.Env = append(command.Env, "METASYSTEM_PUBLICATION_BASE="+parent)
 			if err := writeUnitJSON(brief, PlainBrief{command.Argv, command.Dir, command.Env}, runner.root()); err != nil {
 				return "", err
 			}

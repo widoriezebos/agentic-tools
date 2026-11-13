@@ -150,11 +150,11 @@ func TestLandingCheckRealRecordShapes(t *testing.T) {
 	}
 	_, err = repairCheckCache(root, check, true)
 	helmMust(t, err)
-	if reused, err := repairCheckCache(root, check, false); err != nil || !reused {
-		t.Fatalf("real record cannot be reused: %v %v", reused, err)
+	if decision, err := repairCheckCache(root, check, false); err != nil || decision.Reuse != nil {
+		t.Fatalf("legacy record without completed evidence was reused: %+v %v", decision, err)
 	}
 	check.Base = "another-base"
-	if reused, _ := repairCheckCache(root, check, false); reused {
+	if decision, _ := repairCheckCache(root, check, false); decision.Reuse != nil {
 		t.Fatal("real record reused for another base")
 	}
 	data, err = os.ReadFile("testdata/landing-check/merge-fix.json")

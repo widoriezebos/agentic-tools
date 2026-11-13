@@ -27,6 +27,10 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool, candidate .
 	connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
 	writeUnitCarryFile(t, filepath.Join(repo, ".gitignore"), "artifacts/\n")
 	if declaration != "absent file" {
+		if strings.Contains(declaration, "testing.contract=testing.json") {
+			installCarrySelectionProducer(t, repo)
+			connectionGit(t, repo, "add", "testing.json", "go.mod")
+		}
 		declaration += "proof.full=printf full-suite\n"
 		writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
 		connectionGit(t, repo, "add", "metasystem.conf")
@@ -96,7 +100,7 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool, candidate .
 
 func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"green", "cached gate", "cached missing", "missing", "unreadable", "bad deadline", "cheap red", "audit red", "edited tree", "committed edit", "record write failure", "changed declaration"} {
+	for _, state := range []string{"green", "cached gate", "cached missing", "missing", "unreadable", "bad deadline", "cheap red", "audit red", "edited tree", "committed edit", "record write failure", "changed declaration", "changed declaration no selection", "changed declaration unaudited"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			script := filepath.Join(t.TempDir(), "check")
@@ -107,7 +111,11 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 			if state == "audit red" {
 				audit = 17
 			}
+			changedDeclaration := strings.HasPrefix(state, "changed declaration")
 			body := fmt.Sprintf("#!/bin/sh\nprintf '%%s|%%s|%%s\\n' \"$1\" \"$PWD\" \"$PATH\"\ncase $1 in cheap) exit %d;; audits) exit %d;; esac\n", cheap, audit)
+			if changedDeclaration && state != "changed declaration no selection" {
+				body = strings.Replace(body, "case $1 in", "case $1 in cheap|changed) "+carrySelectionProducerCommand(t)+" || exit $?;; esac\ncase $1 in", 1)
+			}
 			if err := testexec.WriteFile(script, []byte(body), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -128,7 +136,11 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 				declaration = "absent file"
 			}
 			var candidate []string
-			if state == "changed declaration" {
+			if changedDeclaration {
+				declaration += "testing.contract=testing.json\n"
+				if state == "changed declaration unaudited" {
+					declaration = strings.Replace(declaration, shellCommand([]string{script, "audits"}), "true", 1)
+				}
 				candidate = []string{strings.Replace(declaration, shellCommand([]string{script, "cheap"}), shellCommand([]string{script, "changed"}), 1) + "proof.full=printf full-suite\n"}
 			}
 			b, owners, main, original := declaredCarryBed(t, declaration, state == "cached gate" || state == "cached missing", candidate...)
@@ -142,7 +154,7 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 			if err != nil || json.Unmarshal(data, &rebased) != nil {
 				t.Fatalf("result: %+v %v", result, err)
 			}
-			if state == "changed declaration" {
+			if changedDeclaration {
 				acts := checkActs(t, b)
 				executions, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*"))
 				if code != 0 || !slices.Equal(rebased.NeedsReview, []string{"u1"}) || len(acts) != 1 || acts[0].Status != "proposed" || len(executions) != 0 {
@@ -153,14 +165,23 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 				if code, result := checkActBuild(t, b, owners, "work", "review", "--commit", subject, "--goal", b.id, "--repo", b.root(), "--check-only", "--act", acts[0].ID); code != 0 {
 					t.Fatalf("real carry remedy: %d %+v", code, result)
 				}
+				executions, err := filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*", "result.json"))
+				if err != nil || len(executions) != 1 {
+					t.Fatalf("approved check executions: %v %v", executions, err)
+				}
+				assertCarrySelectionEvidence(t, executions[0], state != "changed declaration no selection", state == "changed declaration")
 				code, result = b.runJSON(owners, "work", "rebase", b.id)
 				data, _ = json.Marshal(result.Data)
 				if json.Unmarshal(data, &rebased) != nil || code != 0 || !slices.Equal(rebased.Carried, []string{"u1"}) || len(rebased.NeedsReview) != 0 {
 					t.Fatalf("real carry did not consume its admission: %d %+v", code, result)
 				}
 				executions, _ = filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*", "result.json"))
-				if len(executions) != 1 {
-					t.Fatalf("real carry duplicated check: %v", executions)
+				want := 1
+				if state != "changed declaration" {
+					want++
+				}
+				if len(executions) != want {
+					t.Fatalf("real carry executions: got %d want %d: %v", len(executions), want, executions)
 				}
 				return
 			}

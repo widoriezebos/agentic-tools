@@ -166,6 +166,11 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				if lookup == nil {
 					lookup = os.LookupEnv
 				}
+				if base, ok := lookup("METASYSTEM_PUBLICATION_BASE"); ok && base != "" {
+					check := *plan.Check
+					check.Base = base
+					plan.Check = &check
+				}
 				kind, _ := lookup(launch.KindEnv)
 				if role == "attestation" || kind == "proof" {
 					records = round
@@ -414,7 +419,7 @@ func (inv *intentInvocation) publicationCheckContext(worktree, parent string, ch
 	if err != nil {
 		return current, nil, err
 	}
-	closure, err := testpolicy.WithPrerequisiteClosure(contract, testpolicy.Plan{SelectedGroups: ids})
+	closure, err := testpolicy.WithPrerequisiteClosure(contract, testpolicy.Plan{SelectedGroups: ids, Stages: []testpolicy.Stage{{ID: "publication", Groups: ids}}})
 	if err != nil {
 		return current, nil, err
 	}

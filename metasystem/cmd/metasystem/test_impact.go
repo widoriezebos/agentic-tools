@@ -95,6 +95,7 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 	}
 	started := time.Now()
 	identity := repairCheck{Reason: "impact"}
+	cacheable := selectionPath == "" && *check && !*plan && !replay && !*publicationOnly
 	timed := false
 	finishTiming := func() {
 		if !*plan && !timed {
@@ -124,17 +125,17 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 		}()
 	}
 
-	if selectionPath == "" && *check && !*plan && !replay && !*publicationOnly {
-		identity, err = repairCheckIdentity(installation, *base)
+	if cacheable {
+		identity, err = repairCheckIdentity(installation, *base, sources.git)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		defer func() {
-			if code != 0 {
+			if code != 0 || identity.Evidence == nil {
 				return
 			}
-			after, err := repairCheckIdentity(installation, *base)
+			after, err := repairCheckIdentity(installation, *base, sources.git)
 			if err != nil {
 				fmt.Fprintln(stderr, err)
 				code = 1
@@ -146,6 +147,8 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 			}
 			identity.DurationMS = time.Since(started).Milliseconds()
 			identity.Minutes = time.Since(started).Minutes()
+			identity.Evidence.Content.Before, identity.Evidence.Content.After = identity.Tree, after.Tree
+			identity.Evidence.Strength.Cheap, identity.Evidence.Strength.Complete = true, true
 			if _, err := repairCheckCache(installation, identity, true); err != nil {
 				fmt.Fprintln(stderr, err)
 				code = 1
@@ -185,7 +188,7 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 			return 1
 		}
 		output.Base, output.Subject = sha, subject
-		if selectionPath != "" {
+		if selectionPath != "" || cacheable {
 			selection.BaseTree, err = sources.git(installation, "rev-parse", sha+"^{tree}")
 			if err != nil {
 				fmt.Fprintln(stderr, err)
@@ -368,7 +371,37 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 		fmt.Fprintln(stdout, "LANDING-CHECKED\t0")
 		return 0
 	}
+	if cacheable {
+		closure, problem := testpolicy.WithPrerequisiteClosure(contract, testpolicy.Plan{SelectedGroups: ids, Stages: []testpolicy.Stage{{ID: "impact", Groups: ids}}})
+		if problem != nil {
+			fmt.Fprintln(stderr, problem)
+			return 1
+		}
+		_, _, workers := publicationCheckEnvironment(launch.UnitCheck{Environment: environment}, output.Base)
+		for _, id := range closure.SelectedGroups {
+			results = append(results, proofrun.NamedGroupResult{ID: id, Workers: workers})
+		}
+		identity.Evidence = &launch.CheckEvidence{Version: 1, Manual: true, Source: "test impact " + started.UTC().Format(time.RFC3339Nano)}
+		selection.Base, selection.NotRunnable, selection.Mode = output.Base, output.NotRunnable, output.Check
+		if err := writeImpactSelection("", installation, description, selection, contract, fullContract, results, units, environment, &identity.Evidence.Selection); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		decision, _ := repairCheckCache(installation, identity, false)
+		if decision.Reuse != nil {
+			fmt.Fprintf(stdout, "check reused: %s (%s)\n", decision.Reuse.Source, decision.Reuse.Path)
+			identity.Evidence = nil
+			return 0
+		}
+		fmt.Fprintln(stdout, "check runs: "+decision.Field+" differs")
+	}
 	code, results = runNamedTestGroups(installation, contract, ids, environment, units, stdout, stderr, finishTiming)
+	if cacheable && code == 0 {
+		if err := writeImpactSelection("", installation, description, selection, contract, fullContract, results, units, environment, &identity.Evidence.Selection); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+	}
 	return code
 }
 
@@ -591,23 +624,28 @@ type repairCheck struct {
 	DurationMS         int64
 	Minutes            float64
 	AuditMinutes       float64
+	Evidence           *launch.CheckEvidence
 }
 
-func repairCheckIdentity(install, base string) (repairCheck, error) {
-	base, err := plain.Git(install, "rev-parse", "--verify", base+"^{commit}")
+func repairCheckIdentity(install, base string, runners ...func(string, ...string) (string, error)) (repairCheck, error) {
+	git := plain.Git
+	if len(runners) != 0 {
+		git = runners[0]
+	}
+	base, err := git(install, "rev-parse", "--verify", base+"^{commit}")
 	if err != nil {
 		return repairCheck{}, err
 	}
-	tree, err := plain.Git(install, "write-tree")
+	tree, err := git(install, "write-tree")
 	if err != nil {
 		return repairCheck{}, err
 	}
 	return repairCheck{Tree: tree, Base: base}, nil
 }
 
-func repairCheckCache(install string, check repairCheck, save bool) (bool, error) {
+func repairCheckCache(install string, check repairCheck, save bool) (launch.CheckDecision, error) {
 	if check.Tree == "" {
-		return false, nil
+		return launch.CheckDecision{Field: "tree"}, nil
 	}
 	path := filepath.Join(plain.Dir(install), "repair-check.json")
 	if save {
@@ -616,11 +654,18 @@ func repairCheckCache(install string, check repairCheck, save bool) (bool, error
 		if err == nil {
 			_, err = atomicfile.WriteFile(path, data, 0600, plain.Dir(install))
 		}
-		return false, err
+		return launch.CheckDecision{}, err
 	}
 	data, err := os.ReadFile(path)
 	var previous repairCheck
-	return err == nil && json.Unmarshal(data, &previous) == nil && previous.Tree == check.Tree && previous.Base == check.Base, nil
+	if err == nil {
+		err = json.Unmarshal(data, &previous)
+	}
+	var current launch.CheckSelection
+	if check.Evidence != nil {
+		current = check.Evidence.Selection
+	}
+	return launch.ApplicableCheck(previous.Evidence, path, err, launch.CheckNeed{Tree: check.Tree, Base: check.Base, Strength: "cheap", Context: current, Requirements: current.Groups}), nil
 }
 
 // committedImpactCheck retains the impact decision made for this unit's candidate.
@@ -690,7 +735,7 @@ type impactSources struct {
 	getenv      func(string) string
 }
 
-func writeImpactSelection(path, installation, description string, selection launch.CheckSelection, contract, full testpolicy.Contract, results []proofrun.NamedGroupResult, units map[string]string, environment []string) error {
+func writeImpactSelection(path, installation, description string, selection launch.CheckSelection, contract, full testpolicy.Contract, results []proofrun.NamedGroupResult, units map[string]string, environment []string, capture ...*launch.CheckSelection) error {
 	selection.Version, selection.VerdictPolicyVersion = 1, 1
 	selection.Groups, selection.GroupDigests = []string{}, map[string]string{}
 	selection.PackageTests, selection.BuildTags = map[string][]string{}, map[string][]string{}
@@ -733,5 +778,11 @@ func writeImpactSelection(path, installation, description string, selection laun
 	if _, err := impactSelectionForm(installation, contract, selection.Groups, units, selection.PackageTests); err != nil {
 		return err
 	}
-	return selection.Write(path)
+	if len(capture) != 0 {
+		*capture[0] = selection
+	}
+	if path != "" {
+		return selection.Write(path)
+	}
+	return nil
 }
