@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 31
+- Sequence: 30
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A stricter gate on every check path; base transport must not degrade to absolute-only silently; the lane proves it."
 - Tier: 2
 - Intent: The parallel ratchet refuses every newly non-exempt serial test a change adds against its own base (set difference, each tree's exemptions), carried through unit check, publication, work commit and lane, keeping the absolute ceiling as a backstop (root cause 5).
 - Origin: main
 - Next step: Build D4-U1 (175) then D4-U2 (85, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D4).
 - OpenedAt: 2026-11-11T18:06:56Z
-- Revision: 43
+- Revision: 44
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -60,4 +60,5 @@ History:
 - 2026-11-13T09:14:07Z NMNH3YQCGSSPRAJEXRDVC507TG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-refresh-leaves-a-busy-checkout-alone from=1:29 to=1:28 requested-sequence=29
 - 2026-11-13T09:14:29Z 5W1R46J9R0EQ8TCFD9NM0CD0KE-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-unit-check-runs-the-importers-too from=1:28 to=1:27 requested-sequence=30
 - 2026-11-13T09:14:50Z NM87SRQVRVQ7QY1EBJZ6RCA5KX-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-unit-check-runs-the-importers-too,briefs-carry-their-rules,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=the-ratchet-counts-what-a-change-adds from=1:27 to=1:31 requested-sequence=31
-Integrity: sha256=1f2806a3fc276cf3bcbb5a17a7d8674a03229caa5450e37168f1ef2b6d530140
+- 2026-11-13T09:15:10Z 0KP0BPGFTQ884AEY2W8Q6GCAD9-m1e-85ee26c5 set-priority actor=human:Wido targets=a-unit-check-runs-the-importers-too,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=scenario-beds-compose-the-facts-their-path-needs from=1:31 to=1:30 requested-sequence=32
+Integrity: sha256=c5e40f564a968bf8650345215f2a0c7ff3747fc3424228e7b6a3fa7ce4688954
