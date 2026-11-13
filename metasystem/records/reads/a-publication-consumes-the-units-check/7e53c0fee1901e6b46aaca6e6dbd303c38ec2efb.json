@@ -1,0 +1,60 @@
+{
+  "coveredUnits": [
+    "D2-U1",
+    "D2-U2",
+    "D2-U3",
+    "D2-U3c1"
+  ],
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [],
+    "id": "code-critic-bd8ca170750cc5a894d50f92",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-publication-consumes-the-units-check/metasystem/artifacts/agents/code-critic-bd8ca170750cc5a894d50f92/rounds/1/return.md",
+    "subject": {
+      "commit": "7e53c0fee1901e6b46aaca6e6dbd303c38ec2efb",
+      "diffDigest": "c7dc68254e2761392d1a3b80ba5ae933ff0ad0d138cd93e81706b9bca971c69d",
+      "kind": "commit",
+      "parent": "fa8da90353aedd72fb80bc95017e73203eb91a57",
+      "tree": "32d0019880cfa6ade8fe057559c70a16114eb0ee"
+    }
+  },
+  "readDigest": "5efd0cc40bdabcd3451aabbe01ab2ca5e8dc9dff6cc69c6149de92335cdb0e20",
+  "schemaVersion": 1,
+  "goal": "a-publication-consumes-the-units-check",
+  "unit": "D2-U3c2",
+  "subject": {
+    "commit": "7e53c0fee1901e6b46aaca6e6dbd303c38ec2efb",
+    "parent": "fa8da90353aedd72fb80bc95017e73203eb91a57",
+    "tree": "32d0019880cfa6ade8fe057559c70a16114eb0ee",
+    "patchDigest": "c7dc68254e2761392d1a3b80ba5ae933ff0ad0d138cd93e81706b9bca971c69d",
+    "unitDigest": "ff9884a9edef82de5d03f09e8c3c401f2e83cf455adb4aa98905acb5d8996004"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-bd8ca170750cc5a894d50f92",
+    "round": 1,
+    "closureSha256": "0853d07cfcf7d428343d83b10d45d00029abc0a5023a24f4b21b1771f4aaa87a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "32d0019880cfa6ade8fe057559c70a16114eb0ee",
+    "runId": "goal-read-gate-20261113t192224z-ff5a18ac782389c1"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "46c1b647ff4322a4ebd901e95918ca126fcf1a17",
+      "digest": "006479f85c0af660a5ab9a6a00494ce726bdc795c73b14a1075a4966e5ae3b59"
+    },
+    {
+      "kind": "read",
+      "commit": "a2786e3716d7a3c4c56e065ad84b77e11ea665ba",
+      "digest": "e7c30a2f4c3504761f3cc07e62ae06df4476534f755aa632eb314c25db22cd53"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "a3ddacbeee080af85872ec62c9fda09b3dcc79b3bc5c1f319437f5f76a9f29de"
+}
