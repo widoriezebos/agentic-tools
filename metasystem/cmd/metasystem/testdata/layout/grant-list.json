@@ -14,6 +14,9 @@ exit 0
         ],
         "by": "human:Wido",
         "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+        "classes": [
+          "ordering"
+        ],
         "for": "mac-cli",
         "grant": "YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a",
         "lineage": "lin-main",

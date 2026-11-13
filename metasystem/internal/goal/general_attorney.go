@@ -36,6 +36,12 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(r.Endpoint.Root) {
 		return PublishResult{}, errors.New("a general grant is added by the person at their own terminal, not at the helm or under a grant")
 	}
+	if len(g.Classes) == 0 {
+		return PublishResult{}, fmt.Errorf("a general grant names its classes: --classes LIST (%s)", strings.Join(AttorneyClasses, ", "))
+	}
+	if _, err := ParseAttorneyClasses(strings.Join(g.Classes, ",")); err != nil {
+		return PublishResult{}, err
+	}
 	for label, value := range map[string]string{"machine": g.Machine, "checkout": g.Checkout, "lineage": g.Lineage} {
 		if value == "" || strings.ContainsAny(value, " \t\r\n") {
 			return PublishResult{}, fmt.Errorf("a general power of attorney needs a %s with no whitespace, not %q", label, value)

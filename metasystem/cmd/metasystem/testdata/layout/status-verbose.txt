@@ -6,7 +6,8 @@
 ! wido's terminal is not enrolled, so a person's acts there are refused
   → metasystem system enroll --name wido  run it at that terminal
     that terminal: session leader login (pid 34285); the enrolled one is another
-● wido's grant is live: everything, until tomorrow 10:56 (23h58m left)
+● wido's grant is live: admits nothing (names no grantable class), until tomorrow 10:56 (23h58m
+  left)
     for the main session of m1e · grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a
 
 m1e is running · 5 helpers · no jobs

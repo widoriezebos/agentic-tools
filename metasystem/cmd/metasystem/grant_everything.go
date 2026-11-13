@@ -12,7 +12,7 @@ import (
 
 // grantEndExamples are the easy forms of a general grant's end, the detail of
 // every refusal of one.
-const grantEndExamples = "metasystem grant add --acts everything --for 24h (or 8h, 7d, 1w), --until 18:00, --until tomorrow, or a date within the next 7 days, --until YYYY-MM-DD"
+const grantEndExamples = "metasystem grant add --acts everything --classes ordering --for 24h (or 8h, 7d, 1w), --until 18:00, --until tomorrow, or a date within the next 7 days, --until YYYY-MM-DD"
 
 // grantEndOthers are the other easy ends, beside the --for 24h a refusal
 // names.

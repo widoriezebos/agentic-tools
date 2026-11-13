@@ -443,6 +443,9 @@ func (r VerbRequest) requireHuman(row humanAuthorityRow, grade string) error {
 	if r.Authority == nil {
 		return humanAuthorityRequired{row: row, grade: grade, detail: fmt.Sprintf("goal %s: --by named %s for %s, but no human authority proof accompanied it", row.Verb, r.Actor.Human, row.Name)}
 	}
+	if row.Verb == "release" && r.Authority.Helm != nil && r.Authority.Helm.Grant != "" {
+		return errors.New("goal release: only you may release a goal held by another agent")
+	}
 	got := r.Authority.AuthorityGrade()
 	if grade == humanauthority.GradeTerminal && r.Authority.TerminalValidFor(r.Endpoint.Root) {
 		return nil

@@ -85,24 +85,30 @@ func (e PowerOfAttorneyEntry) General() bool {
 var AttorneyVerbs = []string{"approve", "set-budget", "unpark"}
 
 // AttorneyClasses are the classes a general grant may name.
-var AttorneyClasses = []string{"acks", "budget", "lane-recovery", "mechanical", "ordering", "recovery", "run-release", "stale-releases"}
+var AttorneyClasses = []string{"acks", "budget", "lane-recovery", "ordering", "recovery", "run-release"}
+
+// Retired classes remain readable in recorded grants, but admit no act.
+var retiredAttorneyClasses = []string{"mechanical", "stale-releases"}
 
 // DelegatedClasses are acts a grant carries only when it names them, and
 // only for a child of decision record.
 var DelegatedClasses = []string{"budget", "lane-recovery", "run-release"}
 
-// Carries reports whether the entry admits class: a delegated class only when
-// named; any other class when named or when the entry names none.
+// Carries reports whether the entry names a class that may still be granted.
 func (e PowerOfAttorneyEntry) Carries(class string) bool {
-	return slices.Contains(e.Classes, class) || len(e.Classes) == 0 && !slices.Contains(DelegatedClasses, class)
+	return slices.Contains(AttorneyClasses, class) && slices.Contains(e.Classes, class)
 }
 
 // ParseAttorneyClasses reads a comma list, trimming, deduplicating and sorting it.
 func ParseAttorneyClasses(value string) ([]string, error) {
+	return parseAttorneyClasses(value, false)
+}
+
+func parseAttorneyClasses(value string, recorded bool) ([]string, error) {
 	var classes []string
 	for _, part := range strings.Split(value, ",") {
 		part = strings.TrimSpace(part)
-		if !slices.Contains(AttorneyClasses, part) {
+		if !slices.Contains(AttorneyClasses, part) && !(recorded && slices.Contains(retiredAttorneyClasses, part)) {
 			return nil, fmt.Errorf("class %s is not one of %s", part, strings.Join(AttorneyClasses, ", "))
 		}
 		classes = append(classes, part)
@@ -192,7 +198,7 @@ func (e PowerOfAttorneyEntry) LiveAt(now time.Time) (bool, string) {
 // checkout and a named machine and lineage.
 func (e PowerOfAttorneyEntry) generalWithinBounds() (bool, string) {
 	for i, class := range e.Classes {
-		if !slices.Contains(AttorneyClasses, class) {
+		if !slices.Contains(AttorneyClasses, class) && !slices.Contains(retiredAttorneyClasses, class) {
 			return false, fmt.Sprintf("class %s is not one of %s", class, strings.Join(AttorneyClasses, ", "))
 		}
 		if i > 0 && e.Classes[i-1] >= class {
@@ -328,7 +334,7 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 	}
 	if entry.General() {
 		if value, present := rec["classes"]; present {
-			entry.Classes, err = ParseAttorneyClasses(value)
+			entry.Classes, err = parseAttorneyClasses(value, true)
 			if err != nil {
 				return PowerOfAttorneyEntry{}, err
 			}
