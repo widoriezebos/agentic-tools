@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 17
+- Sequence: 16
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A wrongly withheld act delays a person's decision until he reads status (severity 2, recoverable); the funnel, episodes and question route exist and are reused (novelty 2); every message a person ever gets passes through it (exposure 3); one new question kind and one result state (accumulation 2)"
 - Tier: 2
 - Intent: Only two things reach a person on any transport (Telegram, Mac banner, browser toast): an act that is his, in one plain sentence with the command or answer that carries it and what happens if he does nothing; and a goal delivered, said as what changed for him; everything else stays in alert list and status; a machine that cannot heal itself asks him
@@ -10,7 +10,7 @@
 - Next step: Design plans/designs/a-persons-channel-carries-only-acts-and-deliveries.md accepted at the stop 2026-10-19 (Astra 11 material folded); U1 groundwork (result contract, decision identity, ~112 lines), U2 the words (~205), U3 activation: withhold and ask (~217); brief obligations BO-1..BO-9 on the page; hand route until the lane lands hand-built units Program the-route-holds-when-something-deviates (2026-11-12, D21; Wido: no Telegram question a steward or agent could have answered, and each question short with why/what, for, against, recommendation): first an inventory of this design's remaining obligations against main; then G1 (120) one eligibility function at every question delivery (AskOrFind, split approvals, their retries, pending re-posts) with a stored closed-list reason, withholding nothing yet; G3 (120) the frame: what and why his, For, Against, Recommended, options and reply buttons kept, about 600 characters, audit on every producer fixture, wording never withholds an act; G2 (80, last) the steward route for questions with no reason, its fail-safe, and the activation of withholding. an-agent-refusal-reaches-a-person-once U1 builds after G2. Program the-owner-decides-the-machine-does-the-rest (2026-11-12, E5): its audit also requires that every question kind posted to a person has an executable answer for each option or is on the terminal-only list (system enroll, grant add and revoke, the helm, settings and authority).
 - OpenedAt: 2026-10-19T11:41:52Z
 - FirstClaimAt: 2026-10-20T16:11:18Z
-- Revision: 199
+- Revision: 200
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -217,4 +217,5 @@ History:
 - 2026-11-13T09:05:10Z 9EX7RF95MRB3021P9YAQJJQG70-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=seat-recovers-a-dead-session from=1:15 to=1:14 requested-sequence=17
 - 2026-11-13T09:05:38Z CPV39VD6R6THVA8VFZK6QAHEB1-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:14 to=1:18 requested-sequence=18
 - 2026-11-13T09:06:19Z 296FJVH34YQZQXKK70HYJPN7S4-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,an-agent-refusal-reaches-a-person-once,seat-recovers-a-dead-session reason=priority-order subject=a-lane-act-runs-from-the-phone from=1:18 to=1:17 requested-sequence=19
-Integrity: sha256=00052f89c3a14c1c3b7555ab9f0e07bf2f7cb2d164c5345086ec0c2409419be5
+- 2026-11-13T09:06:48Z 37KDRVKR0W6E1F3GTJ4V10NGM7-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=a-reserved-decision-executes-from-its-answer from=1:17 to=1:16 requested-sequence=20
+Integrity: sha256=e39868013296960ca72a770de2b52884ff38c7a967d3ef40e619b28b3e378253
