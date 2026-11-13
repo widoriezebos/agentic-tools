@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 32
+- Sequence: 31
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Every build reads its brief (exposure 3); a wrong scaffold produces a worse build, caught by the read, no damage (severity 2); composition from existing records (novelty 2); several units (accumulation 2)"
 - Tier: 2
 - Intent: Every builder brief is composed by the scaffold from the design and the records: the declared check, the readers, the public-verb section, and the top recurring finding classes from the read records as rules to avoid; a hand-written check block no longer exists
 - Origin: main
 - Next step: Design from plans/briefs-carry-their-rules-design-brief.md (units at most 250 production lines, at most 5), then build by hand with delegates
 - OpenedAt: 2026-10-07T20:19:56Z
-- Revision: 24
+- Revision: 25
 - BlockedBy: design-round-convergence-and-exits
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
@@ -41,4 +41,5 @@ History:
 - 2026-11-13T09:15:10Z 0KP0BPGFTQ884AEY2W8Q6GCAD9-m1e-85ee26c5 set-priority actor=human:Wido targets=a-unit-check-runs-the-importers-too,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=scenario-beds-compose-the-facts-their-path-needs from=1:30 to=1:29 requested-sequence=32
 - 2026-11-13T09:15:26Z H8EGCWN7N9N89ZS4YE6DD62N5W-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=briefs-carry-their-rules from=1:29 to=1:33 requested-sequence=33
 - 2026-11-13T09:15:43Z HDPH4T59TE7F48SQCEM8Q7SRTP-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=builder-proves-each-rule-by-mutation from=1:33 to=1:32 requested-sequence=34
-Integrity: sha256=3b3dd447bf509c6b0eb8b0b3b46b9cf77ef20cc852db2263cff8937694608bb1
+- 2026-11-13T09:15:59Z Y2X813HM1WZ01GFNNMZKWJ25DG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,lane-steward-2 reason=priority-order subject=a-steward-tick-costs-seconds from=1:32 to=1:31 requested-sequence=35
+Integrity: sha256=6cd296e68f918eac8eae9c211ca8e3ee8c80b6ba57df7542885cb576e17cb994
