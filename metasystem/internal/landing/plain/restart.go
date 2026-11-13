@@ -217,6 +217,8 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 	switch {
 	case batch.Person != nil:
 		commonWhy = "this batch was selected by " + batch.Person.Person
+	case batch.Delegated != nil:
+		commonWhy = "this batch was selected under decision " + batch.Delegated.Decision
 	case fixProving:
 		commonWhy = landingstate.Phrase("the-fix-of-main-is-proving")
 	case classifying && cancel == nil:

@@ -81,6 +81,7 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 		if batch.Person != nil {
 			batch.Person.Subject = slices.Clone(batch.Members)
 		}
+		batch.Delegated = nil
 		batch.Actions[index].Pending = false
 		batch.Actions[index].Impact = landingstate.Phrase("returned-to-the-seat-rebuild-the-merge-without-this")
 		if err := writeBatch(install, batch, s); err != nil {
