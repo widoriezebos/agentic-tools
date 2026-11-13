@@ -1,0 +1,130 @@
+{
+  "canonicalRead": {
+    "id": "20261112t190010-f167dc5be4-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-size-hold-stops-at-the-production-ceiling",
+      "reviewedProjectTree": "dbc6776e97c69cf9ada7b9d52101da362abb0ce6b0ecadfe6381d55c9f806d82",
+      "diffDigest": "dbc6776e97c69cf9ada7b9d52101da362abb0ce6b0ecadfe6381d55c9f806d82"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261112t190010-f167dc5be4-r2-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The uncounted SizeSummary fragment is a clause but its three callers splice it where a noun phrase belongs, so legacy texts are ungrammatical",
+        "evidence": "SizeSummary returns 'production lines were not counted, N with tests (allocation M)'; intent_unit_questions.go:244 'has %s', :282 'grew to %s', intent_unit_review.go:90 'accept %s'",
+        "where": "metasystem/internal/launch/unit_build_outcome.go",
+        "change": "Make the uncounted fragment a noun phrase, e.g. 'N changed lines with tests (allocation M; production lines not counted)'",
+        "relation": "new: one size fragment must read as a noun phrase in every caller"
+      },
+      {
+        "id": "20261112t190010-f167dc5be4-r2-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "isBuildTestPath omits the -fixtures.sh suffix that isExistingTestPath includes",
+        "evidence": "internal/goal/branch/attest.go:232 has strings.HasSuffix(base, \"-fixtures.sh\"); isBuildTestPath does not; the brief's enumerated list also omits it",
+        "where": "metasystem/internal/launch/unit_build_outcome.go",
+        "change": "Optionally add -fixtures.sh; over-counting only makes the hold stricter",
+        "relation": "new: the test-path list mirrors isExistingTestPath"
+      },
+      {
+        "id": "20261112t190010-f167dc5be4-r2-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A hold whose question was asked under the old wording gets a second open question at the next sync, since askOrFind matches on facts",
+        "evidence": "internal/channel/unit_stop.go askUnitStop -\u003e askOrFind; reconcileUnitStopQuestions closes by subject/attempt/finding on an act; T7 deletes the old question before re-sync",
+        "where": "metasystem/cmd/metasystem/intent_unit_questions.go",
+        "change": "None required; one acceptance closes both; transitional",
+        "relation": "new: a changed unit-stop wording re-asks an open question"
+      },
+      {
+        "id": "20261112t190010-f167dc5be4-r2-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The ceiling parse error names neither the conf file nor a next act",
+        "evidence": "fmt.Errorf(\"design.unit-lines-max must be a positive integer, got %q\", value); CommittedLookup error returned unwrapped",
+        "where": "metasystem/internal/launch/unit_build_outcome.go",
+        "change": "Optionally name the committed conf path and the fix",
+        "relation": "new: refusals name their next act"
+      },
+      {
+        "id": "20261112t190010-f167dc5be4-r2-s3:5",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The new reset check calls t.Fatal(err) when err may be nil, so a reset failure prints \u003cnil\u003e",
+        "evidence": "if err != nil || reset.Record.Rounds[0].ProductionLines != nil || ... { t.Fatal(err) }",
+        "where": "metasystem/internal/launch/unit_check_retry_test.go",
+        "change": "Report the round in the failure message",
+        "relation": "new: test failures say what failed"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261112t190010-f167dc5be4-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "ee6617cd47c5753fbcc5cc999ca587e8ac91f96eeefdb0f0beacd4f2808f2f04",
+  "schemaVersion": 1,
+  "goal": "the-size-hold-stops-at-the-production-ceiling",
+  "unit": "U1",
+  "subject": {
+    "commit": "baab8fc42dc9b33d495972b2443be2355678e057",
+    "parent": "f205b63c69b1e0cd7855e573a43e8612bff139f7",
+    "tree": "10c072ccf4ed3c22a6f286bc364e790be7c9888a",
+    "patchDigest": "dbc6776e97c69cf9ada7b9d52101da362abb0ce6b0ecadfe6381d55c9f806d82",
+    "unitDigest": "912732c1ce368f0804fb4c0b7d4abc26703fce502a7a33b5d7c98111b26a016d"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261112t190010-f167dc5be4-r2-s3",
+    "closureSha256": "1132ff7c3b3ea0cbf671806b1d5b0a24969dac43a6faec9522263f018deebd1b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "10c072ccf4ed3c22a6f286bc364e790be7c9888a",
+    "runId": "goal-read-gate-20261113t040135z-d6b65e203e5dfef0"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_answer_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_build_outcome_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_check_host_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_retry_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/question_plain_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/launch/build_split_run_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_check_retry_test.go",
+      "readerWord": "reviewed by unit read 20261112t190010-f167dc5be4-r2-s3"
+    }
+  ],
+  "sha256": "fb9bfc4d68090fafdaebdc3c3786e6b4287a932c090143a78884f65ba416c21b"
+}
