@@ -1313,6 +1313,9 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			if round.Cause != "" {
 				line += " cause=" + round.Cause
 			}
+			if round.BuildLines > 0 {
+				line += "; " + round.SizeSummary()
+			}
 			lines = append(lines, line)
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,

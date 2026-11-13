@@ -261,9 +261,19 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		setString(record.AdapterData, "fenceRoot", fenceRoot)
 	}
 	if spec.Kind == "build" {
-		_, record.DeclaredLines, err = buildSize(spec)
+		var units []UnitSize
+		units, record.DeclaredLines, err = buildSize(spec)
 		if err != nil {
 			return Record{}, err
+		}
+		production := int64(0)
+		record.DeclaredProduction = &production
+		for _, unit := range units {
+			if unit.Production == nil {
+				record.DeclaredProduction = nil
+				break
+			}
+			production += *unit.Production
 		}
 	}
 	var diff []byte

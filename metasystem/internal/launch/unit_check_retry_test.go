@@ -228,13 +228,14 @@ func TestRetriedFailedBuildIsCountedAfresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	round = failed.Record.Rounds[0]
-	if round.Cause != "environment" || round.BuildLines != 1 || round.DeclaredLines == 0 || filepath.Dir(round.GapMessage) != state {
+	if round.Cause != "environment" || round.BuildLines != 1 || round.ProductionLines == nil || *round.ProductionLines != 1 || round.DeclaredLines == 0 || filepath.Dir(round.GapMessage) != state {
 		t.Fatalf("the failed build was not counted: %+v", round)
 	}
 	if _, err := os.Stat(filepath.Join(round.Directory, "worktree.diff")); !os.IsNotExist(err) {
 		t.Fatalf("the failed build wrote the round's frozen diff: %v", err)
 	}
-	if _, err := f.runner.RetryFailedStep(first.Record.ID, "Wido", "retry the builder turn", func() error { return nil }); err != nil {
+	reset, err := f.runner.RetryFailedStep(first.Record.ID, "Wido", "retry the builder turn", func() error { return nil })
+	if err != nil || reset.Record.Rounds[0].ProductionLines != nil || reset.Record.Rounds[0].DeclaredProduction != nil {
 		t.Fatal(err)
 	}
 	turn = "one\ntwo\nthree\n"
@@ -244,7 +245,7 @@ func TestRetriedFailedBuildIsCountedAfresh(t *testing.T) {
 	}
 	round = retried.Record.Rounds[0]
 	diff, err := os.ReadFile(filepath.Join(round.Directory, "worktree.diff"))
-	if err != nil || !strings.Contains(string(diff), "+three") || round.BuildLines != 3 || round.Outcome == "build-gap" || round.GapMessage != "" {
+	if err != nil || !strings.Contains(string(diff), "+three") || round.BuildLines != 3 || round.ProductionLines == nil || *round.ProductionLines != 3 || round.Outcome == "build-gap" || round.GapMessage != "" {
 		t.Fatalf("the retried build kept the failed turn's count: lines=%d declared=%d outcome=%s diff=%s err=%v (repo %s)", round.BuildLines, round.DeclaredLines, round.Outcome, diff, err, repo)
 	}
 }

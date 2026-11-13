@@ -79,6 +79,7 @@ func TestIntentPersonReviewStartsTheCheckOnALoadedHost(t *testing.T) {
 	t.Run("size", func(t *testing.T) {
 		t.Parallel()
 		b := outcomeBed(t, "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n+one\n+two\n+three\n")
+		outcomeCeiling(t, b, "1")
 		code, held, _ := outcomeBuild(t, b)
 		if code != 1 || resultData(t, held)["outcome"] != "build-size" {
 			t.Fatalf("size did not hold: %d %+v", code, held)

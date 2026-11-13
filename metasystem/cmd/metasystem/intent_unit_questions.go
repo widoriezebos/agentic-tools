@@ -200,7 +200,11 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		}
 		subject := record.Goal + "/" + record.Unit + "/" + record.ID
 		act := "work-review-size"
-		next := inv.workArgv(record, "review", "--reason", fmt.Sprintf("accepted at %d lines", round.BuildLines), "--by", "NAME")
+		reason := fmt.Sprintf("accepted at %d lines", round.BuildLines)
+		if round.ProductionLines != nil {
+			reason = fmt.Sprintf("accepted at %d production lines", *round.ProductionLines)
+		}
+		next := inv.workArgv(record, "review", "--reason", reason, "--by", "NAME")
 		if kind == "build-gap" {
 			act = "work-revise"
 			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
@@ -237,11 +241,11 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		decision := fmt.Sprintf("Unit %s of goal %s stopped after build round %d: a build step failed", record.Unit, record.Goal, round.Number)
 		switch kind {
 		case "build-size":
-			decision = fmt.Sprintf("Unit %s of goal %s changed %d lines against the %d it declared", record.Unit, record.Goal, round.BuildLines, round.DeclaredLines)
+			decision = fmt.Sprintf("Unit %s of goal %s has %s (%s)", record.Unit, record.Goal, round.SizeSummary(), round.Stop.Class)
 		case "build-gap":
 			decision = fmt.Sprintf("Unit %s of goal %s stopped after build round %d: the builder reported a gap", record.Unit, record.Goal, round.Number)
 		}
-		facts := []string{round.Stop.Class, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines), "Retained builder message: " + round.GapMessage}
+		facts := []string{round.Stop.Class, round.SizeSummary(), "Retained builder message: " + round.GapMessage}
 		if failure {
 			decision, facts, next = inv.failureAsk(record, round, act, next)
 		}
@@ -275,7 +279,7 @@ func correctionChoice(request channel.AskRequest, record launch.UnitRunRecord, r
 	consequence := "the builder corrects and finishes the unit from the prepared brief; one more round of the goal's budget."
 	switch {
 	case act == "work-review-size":
-		label, decision = "Accept the size", fmt.Sprintf("%s: the build of unit %s grew to %d changed lines against the %d planned, at %s.", words, record.Unit, round.BuildLines, round.DeclaredLines, at)
+		label, decision = "Accept the size", fmt.Sprintf("%s: the build of unit %s grew to %s, at %s (%s).", words, record.Unit, round.SizeSummary(), at, round.Stop.Class)
 		consequence = "the checks and the review go on with this size; nothing else changes."
 	case act == "work-review-retry" && retriesBuilder(round):
 		label, decision = "Retry", fmt.Sprintf("%s: the build of unit %s could not finish at %s (%s).", words, record.Unit, at, round.Stop.Class)
@@ -305,7 +309,7 @@ func (inv *intentInvocation) failureAsk(record launch.UnitRunRecord, round launc
 	decision := fmt.Sprintf("Unit %s of goal %s stopped after build round %d: %s", record.Unit, record.Goal, round.Number, round.Stop.Class)
 	var facts []string
 	if round.DeclaredLines > 0 {
-		facts = append(facts, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines))
+		facts = append(facts, round.SizeSummary())
 	}
 	if round.GapMessage != "" {
 		facts = append(facts, "The builder's last words: "+lastParagraph(round.GapMessage))

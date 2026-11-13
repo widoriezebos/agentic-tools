@@ -522,7 +522,7 @@ func TestFailedBuildQuestionSaysWhatHappened(t *testing.T) {
 			if q.Plain == nil || q.Plain.Decision != decision || slices.Contains(q.Facts, r.Rounds[0].Stop.Class) {
 				t.Fatalf("the decision does not name the class: %+v", q)
 			}
-			if !slices.Contains(q.Facts, "474 changed lines against 750 declared") || !slices.Contains(q.Facts, last) {
+			if !slices.Contains(q.Facts, "474 production lines, 474 with tests (allocation 750)") || !slices.Contains(q.Facts, last) {
 				t.Fatalf("the facts do not count or quote the build: %q", q.Facts)
 			}
 			words := shellWords(command)

@@ -269,6 +269,7 @@ func TestUnitAsksNameTheUnit(t *testing.T) {
 					diff = "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n"
 				}
 				b = outcomeBed(t, diff)
+				outcomeCeiling(t, b, "1")
 				code, result, _ := outcomeBuild(t, b)
 				if code != 1 {
 					t.Fatalf("build: %d %+v", code, result)
@@ -277,7 +278,7 @@ func TestUnitAsksNameTheUnit(t *testing.T) {
 			}
 			qs, unread := channel.WalkOpenQuestions(b.root())
 			if name == "build-size" {
-				want = fmt.Sprintf("%s: the build of unit outcome grew to 3 changed lines against the 1 planned, at %s.", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04"))
+				want = fmt.Sprintf("%s: the build of unit outcome grew to 2 production lines, 3 with tests (allocation 1), at %s (the builder passed the production ceiling of 1 lines).", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04"))
 				if len(unread) != 0 || len(qs) != 1 || !qs[0].Contract || qs[0].Plain.Decision != want || !strings.HasPrefix(qs[0].Text, "S"+want[1:]+"\n\n★ Accept the size — ") {
 					t.Fatalf("the size ask names no solution for the unit: %+v", qs)
 				}

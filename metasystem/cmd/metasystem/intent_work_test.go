@@ -518,8 +518,14 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	bed.starter = &workStarter{m: bed.manager, fail: map[string]bool{}}
 	bed.manager.Supervisor = bed.starter
 	bed.unitRoot = filepath.Join(parent, "unit")
-	if _, err := bed.owners().resolver.ResolveLayout(bed.root()); err != nil {
+	layout, err := bed.owners().resolver.ResolveLayout(bed.root())
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(intentConfPath(layout)); os.IsNotExist(err) {
+		if err := os.WriteFile(intentConfPath(layout), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	bed.manager.Templates = protocol.Templates()
 	return bed
