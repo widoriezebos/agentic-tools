@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 25
+- Sequence: 24
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="One shared function for the batch mutation that give-back already performs; a wrong removal is visible in the batch record and the next proof's members; no authority change; under 110 production lines"
 - Tier: 2
 - Intent: When the landing lane returns one member of a batch (the lane steward's own-red return, landing return, or a person's landing give-back), that member leaves the batch in the same act and the next proof runs without it; the lane's return and a person's give-back share one batch mutation (finding 512)
 - Origin: human
 - Next step: Build U1 from the brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-returned-member-leaves-the-batch-U1-brief.md after one Astra round, on m1e's build lane; carry check and read; the lane lands it
 - OpenedAt: 2026-11-04T02:35:17Z
-- Revision: 111
+- Revision: 112
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
@@ -127,4 +127,5 @@ History:
 - 2026-11-13T09:11:46Z NRF6JDSBYKBHSAP7ZBHN1E681Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-landed-goal-concludes-itself from=1:23 to=1:22 requested-sequence=25
 - 2026-11-13T09:12:28Z 314B0ASBAKGV2919Y1E3TJFS3Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-returned-member-leaves-the-batch from=1:22 to=1:26 requested-sequence=26
 - 2026-11-13T09:13:08Z YTMCYCXMSQ36GK12ZZHZ2RVF09-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,the-lane-carries-one-work-subject reason=priority-order subject=the-lane-carries-one-work-subject from=1:26 to=1:25 requested-sequence=27
-Integrity: sha256=ed52ebaa2b963eeff4ac08efcf8455223d0eb222ebf2dd70ce6111cf337aa635
+- 2026-11-13T09:13:39Z 0SVAHK4C6YX3RYW7GJDFMPN659-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject reason=priority-order subject=a-tier-raise-keeps-its-approval from=1:25 to=1:24 requested-sequence=28
+Integrity: sha256=f278f2186433e2d0dd80c0cc32cf63a31e8acf99e7dd909dee2df0c491f069aa
