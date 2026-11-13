@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 4
+- Sequence: 5
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="an engine defect in one owner, root cause read in a recorded finding (556, 557); the unit check and the lane proof gate it"
 - Tier: 2
 - Intent: The disk use census does not read its own disk.json gap list as an ownership record: a bare pid without a start is no record, so a process proved unrelated resolves and sweeps are not held by the census own output (finding 557; internal/steward/disk_role.go:726-730, internal/diskstore/ours.go:49,85-97, census.go:150-151)
@@ -11,7 +11,7 @@
 - Next step: Build without a design from finding 557: leave disk.json out of recordedProcesses (or ignore a bare pid without a start in scan); a test with a gap list as the only record resolves the process; owned processes with pidStartedAt stay protected; about 20 lines
 - OpenedAt: 2026-11-07T15:03:04Z
 - FirstClaimAt: 2026-11-13T13:22:02Z
-- Revision: 84
+- Revision: 85
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -106,4 +106,5 @@ History:
 - 2026-11-13T13:22:02Z BAJEHXDVH3CE3CARAP99TF8JPH-ui-71c5cb39 claim actor=ui+steward-seat targets=the-census-ignores-its-own-report reason=areas unknown for goal the-census-ignores-its-own-report: no accepted design declares areas
 - 2026-11-13T15:04:01Z NKK6YAHDFMCF2SYA5AGFS4ZR58-ui-71c5cb39 slice-start actor=ui+steward-seat targets=the-census-ignores-its-own-report
 - 2026-11-13T21:36:46Z R1RKWRS08K76G274F36MAAXDXK-ui-71c5cb39 land-ready actor=ui+steward-seat targets=the-census-ignores-its-own-report
-Integrity: sha256=47bbbffd7c4a8035fdc593e2f472ace1ae9351986d89fa77ed0d32e6c5f0cbf2
+- 2026-11-13T22:04:32Z NMKQ9CMF2FW3MCWZ7QW2PSTY29-m1e-fd759238 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-blocking-flake-is-raised,a-boundary-waits-only-on-its-own-questions,a-continuation-job-may-write-the-stewards-state,a-deputy-budget-and-run-release,a-done-goals-branch-is-swept,a-flake-has-an-owner-from-its-first-sighting,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-host-is-ready-before-it-joins,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-channel-carries-only-acts-and-deliveries,a-persons-lane-act-is-not-overdue,a-publication-consumes-the-units-check,a-publication-refuses-only-what-it-adds,a-real-act-is-not-barren,a-refresh-leaves-a-busy-checkout-alone,a-register-append-is-published-by-its-writer,a-remedy-names-who-acts,a-reserved-decision-executes-from-its-answer,a-retained-read-brief-keeps-its-context,a-returned-conflict-can-be-resolved,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-run-holds-its-worktree,a-seat-and-a-lane-recover-under-delegation,a-selected-batch-is-proving,a-settled-unit-is-not-in-flight,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-steward-tick-costs-seconds,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-name-is-one-word-everywhere,a-unit-reservation-carries-its-deadline,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-agent-refusal-reaches-a-person-once,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,every-critic-reads-in-one-form,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-launch-testlanefixlaunchdeadlinerealprocess,lane-steward-2,one-host-admits-heavy-work,one-question-per-refused-admission,red-names-what-failed,required-test-file-selectors-are-understood,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-carry-check-classifies-a-flake,the-census-ignores-its-own-report,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-lane-carries-one-work-subject,the-lane-redoes-a-lost-merge,the-lane-returns-its-own-red,the-lane-session-owns-its-merge-2,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ratchet-counts-what-a-change-adds,the-ui-bundle-builds-again,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=a-slow-ledger-read-is-a-wait from=1:4 to=1:5 requested-sequence=1
+Integrity: sha256=21f12f097a6c261b94a1756a4e70f8fc4bba28cab35968b4ac32092c0d7e247a
