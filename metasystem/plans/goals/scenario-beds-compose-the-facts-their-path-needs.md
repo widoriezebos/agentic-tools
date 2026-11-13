@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 31
+- Sequence: 30
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Test-only change to existing beds and three migrated scenarios."
 - Tier: 1
 - Intent: Scenario test beds compose the production facts their path needs (enrolled person via the prover seam, checkout holder, subjects present in the scenario repository) as explicit per-scenario options, and the demonstrated failing scenarios use them (root cause 3).
 - Origin: main
 - Next step: Build D3-U1 (test-only, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (revision 5 section: reduced D3; per-instance Git isolation deferred).
 - OpenedAt: 2026-11-11T18:11:43Z
-- Revision: 44
+- Revision: 45
 - Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -61,4 +61,5 @@ History:
 - 2026-11-13T09:14:50Z NM87SRQVRVQ7QY1EBJZ6RCA5KX-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-unit-check-runs-the-importers-too,briefs-carry-their-rules,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=the-ratchet-counts-what-a-change-adds from=1:29 to=1:28 requested-sequence=31
 - 2026-11-13T09:15:10Z 0KP0BPGFTQ884AEY2W8Q6GCAD9-m1e-85ee26c5 set-priority actor=human:Wido targets=a-unit-check-runs-the-importers-too,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=scenario-beds-compose-the-facts-their-path-needs from=1:28 to=1:32 requested-sequence=32
 - 2026-11-13T09:15:26Z H8EGCWN7N9N89ZS4YE6DD62N5W-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=briefs-carry-their-rules from=1:32 to=1:31 requested-sequence=33
-Integrity: sha256=c5ad1914fc9a2eb69aefeb24d23ea8c605c29f475cb43ab57dd7142deb275684
+- 2026-11-13T09:15:43Z HDPH4T59TE7F48SQCEM8Q7SRTP-m1e-85ee26c5 set-priority actor=human:Wido targets=a-steward-tick-costs-seconds,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=builder-proves-each-rule-by-mutation from=1:31 to=1:30 requested-sequence=34
+Integrity: sha256=ca7dfccc529ba476074515338e229e075da995dab5baff5ac2a68cdbeebb5866
