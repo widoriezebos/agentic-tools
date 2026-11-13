@@ -66,6 +66,8 @@ type Batch struct {
 	ClosureReason string         `json:"closure-reason,omitempty"`
 	DepthClass    string         `json:"depth-class,omitempty"`
 	Person        *ActProvenance `json:"person,omitempty"`
+
+	Delegated *DelegatedProvenance `json:"delegated,omitempty"`
 }
 
 // ActProvenance records a person's act on its exact destination and subject.
@@ -81,6 +83,29 @@ type ActProvenance struct {
 	Subject            []GoalSHA                 `json:"subject"`
 	StandingPause      *lane.Pause               `json:"standing-pause,omitempty"`
 	BarrenStopAt       string                    `json:"barren-stop-at,omitempty"`
+}
+
+// DelegatedProvenance records a delegate's act under a general grant, inside
+// one decision record, on one barren hold. It is never a person's provenance.
+type DelegatedProvenance struct {
+	Kind         string        `json:"kind"`
+	Grant        string        `json:"grant"`
+	Decision     string        `json:"decision"`
+	Session      string        `json:"session"`
+	Class        string        `json:"class"`
+	Delegate     string        `json:"delegate"`
+	CheckedAt    time.Time     `json:"checked-at"`
+	Destination  lane.Record   `json:"destination"`
+	Subject      []GoalSHA     `json:"subject"`
+	Hold         DelegatedHold `json:"hold"`
+	BarrenStopAt string        `json:"barren-stop-at,omitempty"`
+}
+
+// DelegatedHold identifies the keeper's barren episode at selection.
+type DelegatedHold struct {
+	BarrenAt    string `json:"barren-at"`
+	Fingerprint string `json:"fingerprint"`
+	Launch      string `json:"launch"`
 }
 
 // SelectPersonBatch binds current waiting commits under the queue lock.
@@ -153,7 +178,7 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 		}
 		batch.Selector = policy
 		person.Kind, person.Destination, person.Subject = "selection", registered, members
-		batch.Person = &person
+		batch.Person, batch.Delegated = &person, nil
 		if s.Pause != nil && landingstate.Actor(landingstate.ActorFacts{Provenance: batch.Person != nil}).Word == landingstate.Person {
 			if pause, paused := s.Pause(); paused && !pause.Unreadable() {
 				batch.Person.StandingPause = &pause
@@ -217,6 +242,27 @@ func RecordedPersonBatch(install string, registered lane.Record, id string) (*Ba
 	return batch, nil
 }
 
+// RecordedDelegatedBatch checks a delegate's continuation against its recorded selection.
+func RecordedDelegatedBatch(install string, registered lane.Record, id string) (*Batch, error) {
+	batch, err := ReadBatch(install)
+	if err != nil {
+		return nil, err
+	}
+	if batch == nil || batch.State == BatchClosed || batch.Lane != registered || id != "" && batch.ID != id || batch.Delegated == nil || batch.Delegated.Kind != "selection" {
+		return nil, errors.New("no delegated selection was recorded; run metasystem landing run --goals GOALS")
+	}
+	entries, err := Entries(install)
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range batch.Members {
+		if slices.ContainsFunc(entries, func(e Entry) bool { return e.Goal == member.Goal && e.SHA == member.SHA && e.State == StateSuperseded }) {
+			return nil, fmt.Errorf("goal %s has a newer hand-in; run metasystem landing run --goals GOALS", member.Goal)
+		}
+	}
+	return batch, nil
+}
+
 // PersonBatchContinuation reads atomic snapshots without taking the queue lock.
 // A selection covers only the pause standing when the person selected it.
 func PersonBatchContinuation(install string, registered lane.Record, home string) string {
@@ -249,9 +295,17 @@ func ReadBatch(install string) (*Batch, error) {
 	if batch.ID == "" || batch.Base == "" || batch.Lane.Root == "" || batch.Lane.Install != install || batch.Lane.CustodyEpoch == 0 || !slices.Contains([]string{BatchPrepared, BatchRunning, BatchClosed}, batch.State) {
 		return nil, errors.New("the batch selection has an unknown identity or state")
 	}
+	if batch.Person != nil && batch.Delegated != nil {
+		return nil, errors.New("a batch cannot record both a person's selection and a delegate's")
+	}
 	if p := batch.Person; p != nil {
 		if p.Kind != "selection" || p.Person == "" || p.Root == "" || p.CheckedAt.IsZero() || p.TerminalGeneration == 0 || p.TerminalRef.PID < 1 || p.Destination != batch.Lane || len(batch.Members) == 0 || !slices.Equal(p.Subject, batch.Members) {
 			return nil, errors.New("the recorded person selection has incomplete provenance or a different subject")
+		}
+	}
+	if d := batch.Delegated; d != nil {
+		if d.Grant == "" || d.Decision == "" || d.Session == "" || d.Hold.BarrenAt == "" || d.Class != "lane-recovery" || d.Destination != batch.Lane || len(batch.Members) == 0 || !slices.Equal(d.Subject, batch.Members) {
+			return nil, errors.New("the recorded delegated selection has incomplete provenance or a different subject")
 		}
 	}
 	seen := map[string]bool{}
@@ -447,7 +501,7 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 				}
 			}
 		}
-		if batch != nil && batch.State != BatchClosed && (batch.Person != nil || batch.SealedAt != "") {
+		if batch != nil && batch.State != BatchClosed && (batch.Person != nil || batch.Delegated != nil || batch.SealedAt != "") {
 			selected = batch
 			return nil
 		}
@@ -683,7 +737,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			return batch, err
 		}
 	}
-	if batch.State == BatchPrepared && admit && landingstate.Admissibility(landingstate.AdmissionFacts{Selecting: true, PersonSeal: batch.Person != nil || batch.SealedAt != ""}).Word == "admissible" {
+	if batch.State == BatchPrepared && admit && landingstate.Admissibility(landingstate.AdmissionFacts{Selecting: true, PersonSeal: batch.Person != nil || batch.Delegated != nil || batch.SealedAt != ""}).Word == "admissible" {
 		policy, err := s.batchPolicy()
 		if err := PolicyDecision(policy, err); err != nil {
 			return batch, err
@@ -878,7 +932,9 @@ func memberAccounted(entries []Entry, member GoalSHA, checkout, main string, s P
 	return entry.State == StateReturned || entry.State == StateSuperseded || entry.Held && len(entry.After) > 0, nil
 }
 
-func automaticBatch(batch Batch) bool { return batch.Selector.Value == "auto" && batch.Person == nil }
+func automaticBatch(batch Batch) bool {
+	return batch.Selector.Value == "auto" && batch.Person == nil && batch.Delegated == nil
+}
 
 func batchAdmission(batch Batch, entry Entry) (string, string) {
 	decision := landingstate.Admissibility(admissionFacts(batch, entry))
@@ -887,7 +943,7 @@ func batchAdmission(batch Batch, entry Entry) (string, string) {
 
 func admissionFacts(batch Batch, entry Entry) landingstate.AdmissionFacts {
 	return landingstate.AdmissionFacts{
-		PersonSeal: batch.Person != nil || slices.ContainsFunc(batch.Actions, func(a BatchAction) bool { return a.Kind == "seal" && a.By != "" && a.At == batch.SealedAt }),
+		PersonSeal: batch.Person != nil || batch.Delegated != nil || slices.ContainsFunc(batch.Actions, func(a BatchAction) bool { return a.Kind == "seal" && a.By != "" && a.At == batch.SealedAt }),
 		CapReached: strings.TrimLeft(batch.Selector.Value, "0") == "1", Policy: batch.Selector.Value,
 		Selected: slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }),
 		Eligible: entry.SHA != "", EntryState: entry.State, Held: entry.Held, HoldReason: entry.Reason,
