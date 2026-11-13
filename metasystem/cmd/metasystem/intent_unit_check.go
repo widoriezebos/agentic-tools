@@ -445,23 +445,8 @@ func (inv *intentInvocation) publicationCheckContext(worktree, parent string, ch
 	if err != nil {
 		return current, nil, err
 	}
-	environment := commandenv.EngineEnvironmentInDirectory(check.Environment, filepath.Dir(engine))
-	environment = slices.DeleteFunc(environment, func(entry string) bool {
-		return strings.HasPrefix(entry, "METASYSTEM_CHECK_SELECTION=") || strings.HasPrefix(entry, "LANDING_ONLY=") || strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
-	})
-	environment = append(environment, "LANDING_ONLY=", "LANDING_PROOF_BASE="+parent)
-	current.EnvironmentSHA256 = bytesSHA256([]byte(strings.Join(environment, "\x00")))
-	current.Workers = runtime.GOMAXPROCS(0)
-	for _, name := range []string{"METASYSTEM_TESTING_WORKERS", proofrun.TestWorkersEnvironment} {
-		for _, entry := range environment {
-			if value, found := strings.CutPrefix(entry, name+"="); found && value != "" {
-				n, _ := strconv.Atoi(value)
-				if name == "METASYSTEM_TESTING_WORKERS" || n < current.Workers {
-					current.Workers = n
-				}
-			}
-		}
-	}
+	var environment []string
+	environment, current.EnvironmentSHA256, current.Workers = publicationCheckEnvironment(check, parent)
 	description, err := proofrun.LandingEnvironment(context.Background(), installation, environment)
 	if err != nil {
 		return current, nil, err
@@ -469,4 +454,25 @@ func (inv *intentInvocation) publicationCheckContext(worktree, parent string, ch
 	current.GoVersion, _, _ = strings.Cut(description, "; ")
 	_, err = fmt.Sscanf(strings.TrimPrefix(description, current.GoVersion+"; "), "GOOS=%q; GOARCH=%q;", &current.GOOS, &current.GOARCH)
 	return current, closure.SelectedGroups, err
+}
+
+func publicationCheckEnvironment(check launch.UnitCheck, parent string) (environment []string, digest string, workers int) {
+	environment = slices.Clone(check.Environment)
+	environment = slices.DeleteFunc(environment, func(entry string) bool {
+		return strings.HasPrefix(entry, "METASYSTEM_CHECK_SELECTION=") || strings.HasPrefix(entry, launch.CheckEnvironmentVariable+"=") || strings.HasPrefix(entry, "LANDING_ONLY=") || strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
+	})
+	environment = append(environment, "LANDING_ONLY=", "LANDING_PROOF_BASE="+parent)
+	digest = launch.CheckEnvironmentDigest(check.Environment, parent)
+	workers = runtime.GOMAXPROCS(0)
+	for _, name := range []string{"METASYSTEM_TESTING_WORKERS", proofrun.TestWorkersEnvironment} {
+		for _, entry := range environment {
+			if value, found := strings.CutPrefix(entry, name+"="); found && value != "" {
+				n, _ := strconv.Atoi(value)
+				if name == "METASYSTEM_TESTING_WORKERS" || n < workers {
+					workers = n
+				}
+			}
+		}
+	}
+	return environment, digest, workers
 }

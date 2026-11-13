@@ -195,6 +195,9 @@ func publicationFixture(t *testing.T, change string) (unitFixture, string, *Chec
 		if worktree != f.worktree || parent != need.Base {
 			t.Fatalf("publication context: %s %s", worktree, parent)
 		}
+		if change == "context read error" {
+			return CheckSelection{}, nil, errors.New("cannot read current context")
+		}
 		return need.Context, need.Requirements, nil
 	}
 	messages := &[]string{}
@@ -243,7 +246,8 @@ func TestPublicationReusesTheUnitsCompletedCheck(t *testing.T) {
 
 func TestPublicationRerunsWhenTheCheckDoesNotApply(t *testing.T) {
 	t.Parallel()
-	for _, row := range applicabilityRows {
+	rows := append([]struct{ name, field string }{{"context read error", "current context unavailable"}}, applicabilityRows...)
+	for _, row := range rows {
 		if row.name == "cheap consumer" || row.name == "unknown strength" {
 			continue
 		}
