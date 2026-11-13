@@ -704,8 +704,9 @@ func KernelCensusReader(processes identity.ProcessTable, home string, checkouts 
 // recordedProcesses indexes the processes the metasystem recorded: running
 // launches, the proof-admission leases and their managed processes, every
 // armed checkout's jobs, announced mains, sessions, steward and supervision
-// records and proof attempts and processes, and the host registry's open
-// owners and claims; plus any process running an engine binary.
+// records (never the census's own report) and proof attempts and processes,
+// and the host registry's open owners and claims; plus any process running
+// an engine binary.
 func recordedProcesses(home string, checkouts []string) *diskstore.RecordedProcesses {
 	recorded := &diskstore.RecordedProcesses{
 		StartOf: func(pid int64) (int64, bool) {
@@ -721,13 +722,24 @@ func recordedProcesses(home string, checkouts []string) *diskstore.RecordedProce
 		},
 	}
 	directories := []string{filepath.Join(home, "proof-admission")}
+	reports := map[string]bool{}
 	for _, checkout := range checkouts {
 		agents := filepath.Join(checkout, "artifacts", "agents")
 		for _, sub := range []string{"jobs", "mains", "sessions", "steward", "supervision", filepath.Join("proof-runs", "attempts"), filepath.Join("proof-runs", "processes")} {
 			directories = append(directories, filepath.Join(agents, sub))
 		}
+		// The census's own report names the processes it could not read by
+		// a bare pid: it records no process the metasystem started, and
+		// read as one it would keep every gap a gap (finding 557).
+		reports[diskstore.CheckoutReportPath(checkout)] = true
 	}
-	recorded.ScanFiles(diskstore.RecordFiles(directories, filepath.Join(home, "launch")))
+	var files []string
+	for _, file := range diskstore.RecordFiles(directories, filepath.Join(home, "launch")) {
+		if !reports[file] {
+			files = append(files, file)
+		}
+	}
+	recorded.ScanFiles(files)
 	if path, err := registry.DefaultPath(); err == nil {
 		if frames, err := registry.ReadFrames(path); err == nil {
 			if reduction, err := registry.Reduce(frames); err == nil {

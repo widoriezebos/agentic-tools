@@ -3,6 +3,7 @@ package steward
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,5 +150,45 @@ func TestDiskPassesReadTheProcessTableTheyAreGiven(t *testing.T) {
 	reader := KernelCensusReader(table, bed.home, nil)
 	if pids, err := reader.Pids(); err != nil || len(pids) != 1 || pids[0] != table[0] {
 		t.Fatalf("the census reader lists %v, %v; want only the table's process", pids, err)
+	}
+}
+
+// The census's own report is no record of a process (finding 557): a pid it
+// names only as a gap, without a start, is not the metasystem's, so the
+// next census can resolve it; a record that carries the process's start
+// keeps that process ours although the report names it too.
+func TestTheCensusReportIsNoRecordOfAProcess(t *testing.T) {
+	t.Parallel()
+	home, checkout := t.TempDir(), t.TempDir()
+	// Above every kernel's pid ceiling: only the report can name it.
+	const gap = int64(99_999_999)
+	self := int64(os.Getpid())
+	exact, state, err := identity.KernelProber{}.ReadStart(self)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("the test's own start reads %v, %v", state, err)
+	}
+	report := diskstore.Report{Schema: diskstore.ReportSchema, Kind: "checkout", Name: checkout, Census: &diskstore.UseCensus{Taken: true,
+		Unreadable: []diskstore.CensusGap{{Pid: gap, UID: uint32(os.Getuid()), Reason: "working directory unreadable"}, {Pid: self, UID: uint32(os.Getuid()), Reason: "working directory unreadable"}}}}
+	path := diskstore.CheckoutReportPath(checkout)
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	owned := []byte(fmt.Sprintf(`{"pid":%d,"pidStartedAt":%d}`, self, exact.StartedAt.Unix()))
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "owner.json"), owned, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorded := recordedProcesses(home, []string{checkout})
+	if recorded.Ours(gap) {
+		t.Errorf("pid %d, named only as a gap in %s, is ours; want the report read as no record", gap, path)
+	}
+	if !recorded.Ours(self) {
+		t.Errorf("pid %d, recorded with its start, is not ours; want it kept", self)
 	}
 }
