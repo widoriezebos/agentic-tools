@@ -32,14 +32,11 @@ func attorneyActClass(args []string, subject func([]string) (attorneySubject, er
 		return "ordering", true
 	case "alert ack", "question withdraw":
 		return "acks", true
-	case "goal approve", "goal release", "work stop":
+	case "goal approve", "work stop":
 	default:
 		return "", false
 	}
 	allowed := []string{"json", "verbose"}
-	if command.name == "goal release" {
-		allowed = append(allowed, "reason")
-	}
 	for flag := range input.values {
 		if !slices.Contains(allowed, flag) {
 			return "", false
@@ -54,16 +51,9 @@ func attorneyActClass(args []string, subject func([]string) (attorneySubject, er
 		}
 		return "recovery", len(input.args) == 1 && !strings.HasPrefix(input.args[0], "run:")
 	}
-	if command.name == "goal release" && len(input.args) != 1 {
-		return "", false
-	}
 	facts, err := subject(input.args)
 	if err != nil {
 		return "", false
-	}
-	if command.name == "goal release" {
-		claim := facts[input.args[0]]
-		return "stale-releases", claim.machine == machine && claim.lineage != lineage
 	}
 	for _, id := range input.args {
 		if !facts[id].flakeFix {

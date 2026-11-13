@@ -16,6 +16,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -37,7 +39,7 @@ func TestAGrantKeepsItsReason(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			b := newGrantEverythingBed(t)
-			args := []string{"grant", "add", "--acts", "everything", "--for", "24h"}
+			args := []string{"grant", "add", "--acts", "everything", "--classes", "ordering", "--for", "24h"}
 			if tc.reason != "" {
 				args = append(args, "--reason", tc.reason)
 			}
@@ -754,11 +756,18 @@ func TestADelegatedClassRunsOnlyInsideADecision(t *testing.T) {
 			if row.classes != "" {
 				args = append(args, "--classes", row.classes)
 			}
-			code, got := b.runJSON(b.grantEverythingBed.owners(), args...)
-			if code != 0 || got.Outcome != intentConfirmed {
-				t.Fatalf("delegated grant: %d %+v", code, got)
+			if row.classes == "" {
+				root := b.rootRecord()
+				root.PowerOfAttorney[0].Classes = nil
+				b.repo.commit(b.repo.accepted).files["plans/goals/backlog.md"] = goal.RenderRoot(root)
+			} else {
+				code, got := b.runJSON(b.grantEverythingBed.owners(), args...)
+				if code != 0 || got.Outcome != intentConfirmed {
+					t.Fatalf("delegated grant: %d %+v", code, got)
+				}
+				b.grant = got.Targets[0].ID
 			}
-			b.grant, b.lineage = got.Targets[0].ID, launch.SeatOwnerLineage
+			b.lineage = launch.SeatOwnerLineage
 			now, _ := b.commandNow(b.root())
 			act := []string{"work", "stop", "run:R"}
 			b.process.argv = append([]string{"ENGINE"}, act...)
@@ -785,7 +794,7 @@ func TestADelegatedClassRunsOnlyInsideADecision(t *testing.T) {
 			if row.class == "ordering" {
 				act = []string{"goal", "prioritize", bedGoal, "3"}
 			}
-			code, got = b.record([]string{"--class", row.class}, act)
+			code, got := b.record([]string{"--class", row.class}, act)
 			lines, bad, err := humanauthority.ReadDecisions(b.home)
 			if err != nil || bad != 0 {
 				t.Fatalf("decision log: %d %v", bad, err)
@@ -817,6 +826,120 @@ func TestADelegatedClassRunsOnlyInsideADecision(t *testing.T) {
 				t.Fatalf("delegated trace: %s\n%s", log, b.trace.String())
 			}
 			t.Logf("decision record --class run-release -- work stop run:R: decision=%s, proof=%+v, outcome=%s", id, proof, got.Outcome)
+		})
+	}
+}
+
+func TestNoGrantProofReachesAPersonOverride(t *testing.T) {
+	t.Parallel()
+	release := func(t *testing.T, b *decisionAgentBed, proof humanauthority.Proof, cascade bool) {
+		file := newGrantEverythingBed(t).goalFile(bedGoal)
+		file.Claimed.Lineage, file.Arc = "another-lineage", "override-audit"
+		b.addGoal(file)
+		endpoint, err := b.dependencies().endpoint(b.root())
+		helmMust(t, err)
+		now, _ := b.commandNow(b.root())
+		before := b.repo.accepted
+		act := goal.Release
+		if cascade {
+			act = goal.ReleaseArc
+		}
+		result, err := act(goal.VerbRequest{Endpoint: endpoint, Authority: &proof,
+			Actor: goal.Actor{Machine: "mac-cli", Lineage: launch.SeatOwnerLineage, Human: "Wido"},
+			Now:   now, Ulid: "01J5X00000000000000000TT03"}, bedGoal)
+		if err != nil || result.Outcome != goal.OutcomeRejected || !strings.Contains(result.Detail, "only you may release") || b.repo.accepted != before {
+			t.Fatalf("foreign release accepted a grant: %+v %v", result, err)
+		}
+	}
+	rows := []struct {
+		name string
+		run  func(*testing.T, *decisionAgentBed, humanauthority.Proof)
+	}{
+		{"revision skips correction limits", func(t *testing.T, b *decisionAgentBed, _ humanauthority.Proof) {
+			b.process.argv = []string{"ENGINE", "work", "revise", "run:R", "--brief", "fix.md", "--reason", "retry"}
+			inv := &intentInvocation{command: mustIntentCommand(t, "work revise"), cwd: b.root(),
+				stateRoot: b.root(), owners: b.owners, input: intentInput{values: map[string][]string{}}}
+			actor, proof, problem := inv.actingAs("revise", "run:R", actorHuman)
+			if problem == nil || proof != nil && proof.Helm != nil || slices.Contains(actor, "--by") {
+				t.Fatalf("grant supplied a person's revision: %v %+v %+v", actor, proof, problem)
+			}
+		}},
+		{"lane person selection", func(t *testing.T, _ *decisionAgentBed, proof humanauthority.Proof) {
+			b := newSelectionBed(t)
+			b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+				return humanauthority.HelmProof(root, *proof.Helm, at)
+			}
+			code, out := b.run(t, b.seat, "landing", "run", "--goals", "a,b", "--json")
+			batch, err := plain.ReadBatch(b.lane)
+			if code == 0 || !strings.Contains(out, "no direct enrolled-terminal proof") || batch != nil || err != nil || b.starts != 0 {
+				t.Fatalf("grant selected as a person: %d %s batch=%+v err=%v", code, out, batch, err)
+			}
+		}},
+		{"selection owner", func(t *testing.T, _ *decisionAgentBed, proof humanauthority.Proof) {
+			b := newSelectionBed(t)
+			proof, proofErr := humanauthority.HelmProof(b.seat, *proof.Helm, b.now)
+			helmMust(t, proofErr)
+			batch, err := plain.SelectPersonBatch(b.lane, b.lane, b.record, []string{"a", "b"},
+				proof, b.seat, "Wido", b.now, b.owners.landing.plainProve)
+			if err == nil || !strings.Contains(err.Error(), "terminal did not authorize") || batch != nil {
+				t.Fatalf("selection owner accepted a grant: %+v %v", batch, err)
+			}
+		}},
+		{"resume hold-clearing proof", func(t *testing.T, _ *decisionAgentBed, proof humanauthority.Proof) {
+			b := newSelectionBed(t)
+			helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.lane), "queue.jsonl"), nil, 0600))
+			writeQuestionFixture(t, lane.AgentStatePath(b.home), lane.AgentState{Barren: 2, BarrenFingerprint: "same"})
+			b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+				return humanauthority.HelmProof(root, *proof.Helm, at)
+			}
+			code, out := b.run(t, b.seat, "landing", "resume", "--json")
+			if code == 0 || !strings.Contains(out, "no direct enrolled-terminal proof") || b.trunkLaunches != 0 || b.starts != 0 {
+				t.Fatalf("grant reached hold-clearing proof: %d %s starts=%d proofs=%d", code, out, b.starts, b.trunkLaunches)
+			}
+		}},
+		{"foreign release owner", func(t *testing.T, b *decisionAgentBed, proof humanauthority.Proof) {
+			release(t, b, proof, false)
+		}},
+		{"foreign arc release owner", func(t *testing.T, b *decisionAgentBed, proof humanauthority.Proof) {
+			release(t, b, proof, true)
+		}},
+	}
+	// Count the override branches independently of the exercised rows.
+	sites := 0
+	for path, marker := range map[string]string{
+		"../../internal/launch/unit_revise.go":   "if request.Person == \"\" {",
+		"lane_person.go":                         "observed.Proof.Helm != nil",
+		"../../internal/landing/plain/batch.go":  "if proof.Helm != nil",
+		"../../internal/landing/plain/resume.go": "s.Person, s.FenceCheck = &person, nil",
+		"../../internal/goal/verbs.go":           "Name: \"foreign release\"",
+	} {
+		source, err := os.ReadFile(path)
+		helmMust(t, err)
+		sites += strings.Count(string(source), marker)
+	}
+	if sites != len(rows) {
+		t.Fatalf("%d person override sites need audit rows; found %d rows", sites, len(rows))
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := newDecisionAgentBed(t)
+			b.lineage = ""
+			code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything",
+				"--classes", strings.Join(goal.AttorneyClasses, ","), "--lineage", "seat", "--for", "24h")
+			if code != 0 || got.Outcome != intentConfirmed {
+				t.Fatalf("all-class grant: %d %+v", code, got)
+			}
+			b.lineage = launch.SeatOwnerLineage
+			b.process.argv = []string{"ENGINE", "goal", "prioritize", bedGoal, "3"}
+			now, _ := b.commandNow(b.root())
+			grant, ok := b.admitter.admit(b.root(), int64(os.Getppid()), now)
+			if !ok || grant.Grant != got.Targets[0].ID {
+				t.Fatal("live all-class grant did not admit its ordering act")
+			}
+			proof, err := humanauthority.HelmProof(b.root(), grant, now)
+			helmMust(t, err)
+			row.run(t, b, proof)
 		})
 	}
 }
@@ -894,17 +1017,20 @@ func TestAnAgentsDecisionRecordRunsUnderItsGrant(t *testing.T) {
 			t.Fatalf("history=%+v notice=%s", history, b.trace.String())
 		}
 	}
-	t.Run("unrestricted grant", func(t *testing.T) {
+	t.Run("historical unclassed grant", func(t *testing.T) {
 		t.Parallel()
 		b := newDecisionAgentBed(t)
-		b.lineage = ""
-		code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--lineage", "seat", "--for", "24h")
-		if code != 0 || got.Outcome != intentConfirmed {
-			t.Fatalf("unrestricted grant: %d %+v", code, got)
+		root := b.rootRecord()
+		root.PowerOfAttorney[0].Classes = nil
+		b.repo.commit(b.repo.accepted).files["plans/goals/backlog.md"] = goal.RenderRoot(root)
+		b.process.argv = []string{"ENGINE", "goal", "prioritize", bedGoal, "3"}
+		now, _ := b.commandNow(b.root())
+		if _, ok := b.admitter.admit(b.root(), int64(os.Getppid()), now); ok {
+			t.Fatal("historical unclassed grant admitted a direct act")
 		}
-		b.lineage = launch.SeatOwnerLineage
-		if code, got := b.record([]string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3"}); code != 0 || got.Outcome != intentConfirmed {
-			t.Fatalf("act under unrestricted grant: %d %+v", code, got)
+		if code, got := b.record([]string{"--class", "ordering"}, b.process.argv[1:]); code == 0 ||
+			!strings.Contains(got.Summary, "the grant does not carry ordering") || b.calls != 0 || b.locks != 0 || b.trace.Len() != 0 {
+			t.Fatalf("historical grant preflight: %d %+v calls=%d locks=%d", code, got, b.calls, b.locks)
 		}
 	})
 }

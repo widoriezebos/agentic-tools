@@ -42,8 +42,9 @@ func newAttorneyAdmitBed(t *testing.T) *attorneyAdmitBed {
 		t.Fatal(err)
 	}
 	entry := goal.PowerOfAttorneyEntry{ID: "01M-grant", By: "human:wido", Verbs: []string{goal.GeneralAct}, For: "m1e",
-		Checkout: canonical, Lineage: "lin-main", Since: "2026-09-30T06:00:00Z", Until: "2026-10-01T06:00:00Z"}
+		Checkout: canonical, Lineage: "lin-main", Classes: []string{"recovery"}, Since: "2026-09-30T06:00:00Z", Until: "2026-10-01T06:00:00Z"}
 	return &attorneyAdmitBed{root: root, entries: []goal.PowerOfAttorneyEntry{entry},
+		args: []string{"goal", "approve", "g1"}, subject: attorneySubject{"g1": {flakeFix: true}},
 		class:   lease.Classification{Class: lease.ClassMain, MainId: "main-1"},
 		holder:  lease.CurrentHolderView{MainId: "main-1", OwnerLineage: "lin-main"},
 		machine: "m1e"}
@@ -82,7 +83,7 @@ func TestTheAdmitterAdmitsOnlyTheGrantsClasses(t *testing.T) {
 		{"alert ack a1", "acks"}, {"question withdraw q1", "acks"},
 		{"work stop j2:j1", "recovery"}, {"work stop read:r1", "recovery"}, {"work stop G", "recovery"},
 		{"work stop run:r1", "run-release"},
-		{"goal release C --because=x", "stale-releases"},
+		{"goal release C --because=x", ""},
 	}
 	for _, argv := range []string{
 		"goal budget G 1d/10/720m/1/3", "landing resume", "machine revive m1e",
@@ -101,15 +102,21 @@ func TestTheAdmitterAdmitsOnlyTheGrantsClasses(t *testing.T) {
 		rows = append(rows, struct{ argv, class string }{"goal release C --reason x " + flag, ""})
 	}
 	for _, row := range rows {
-		for _, classes := range [][]string{nil, goal.AttorneyClasses, {row.class}, slices.DeleteFunc(slices.Clone(goal.AttorneyClasses), func(c string) bool { return c == row.class })} {
+		for _, classes := range [][]string{nil, goal.AttorneyClasses, {row.class}, {"mechanical"}, {"stale-releases"}, slices.DeleteFunc(slices.Clone(goal.AttorneyClasses), func(c string) bool { return c == row.class })} {
 			if len(classes) == 1 && classes[0] == "" {
 				continue
 			}
 			b := newAttorneyAdmitBed(t)
 			b.args, b.entries[0].Classes = strings.Fields(row.argv), classes
 			b.subject = attorneySubject{"F": {flakeFix: true}, "C": {machine: "m1e", lineage: "lin-dead"}, "D": {machine: "m1b", lineage: "lin-dead"}, "G": {machine: "m1e", lineage: "lin-main"}}
+			class, classified := attorneyActClass(b.args, func([]string) (attorneySubject, error) {
+				return b.subject, nil
+			}, b.machine, b.holder.OwnerLineage)
+			if classified != (row.class != "") || classified && class != row.class {
+				t.Fatalf("%s: classified as %q (%v), want %q", row.argv, class, classified, row.class)
+			}
 			_, ok := b.admitter().admit(b.root, 80, attorneyAdmitNow)
-			want := !slices.Contains(goal.DelegatedClasses, row.class) && (len(classes) == 0 || row.class != "" && slices.Contains(classes, row.class))
+			want := row.class != "" && !slices.Contains(goal.DelegatedClasses, row.class) && slices.Contains(classes, row.class)
 			if ok != want {
 				t.Errorf("%s under %v: admitted %v, want %v", row.argv, classes, ok, want)
 			}
