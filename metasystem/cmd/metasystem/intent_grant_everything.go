@@ -154,7 +154,11 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this machine's name can't be read, so nothing was done",
 			Decision: "metasystem machine list shows this machine's name; then run " + shellCommand(retry) + " again", Details: []string{err.Error()}})
 	}
-	grant := goal.GeneralGrant{Machine: machine, Checkout: checkout, Lineage: lineage, Classes: classes, Until: end}
+	reason := strings.TrimSpace(inv.input.text("reason"))
+	if reason == "" {
+		reason = "no reason given"
+	}
+	grant := goal.GeneralGrant{Machine: machine, Checkout: checkout, Lineage: lineage, Classes: classes, Reason: reason, Until: end}
 	args := append([]string{"--root", inv.stateRoot}, actor...)
 	report := &ownerReport{}
 	dependencies := inv.owners.dependencies
@@ -170,6 +174,7 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 		scope = " in " + strings.Join(classes, " and ")
 	}
 	data := map[string]any{"grant": report.entry, "acts": []string{goal.GeneralAct}, "for": machine, "checkout": checkout, "lineage": lineage, "until": end.UTC().Format(time.RFC3339)}
+	data["reason"] = reason
 	if len(classes) != 0 {
 		data["classes"] = classes
 	}

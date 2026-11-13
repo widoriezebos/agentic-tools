@@ -25,6 +25,83 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
+func TestAGrantKeepsItsReason(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, reason, want string
+	}{
+		{"quoted", `  nights "alone"  `, `nights "alone"`},
+		{"omitted", "", "no reason given"},
+		{"blank", " \t ", "no reason given"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := newGrantEverythingBed(t)
+			args := []string{"grant", "add", "--acts", "everything", "--for", "24h"}
+			if tc.reason != "" {
+				args = append(args, "--reason", tc.reason)
+			}
+			code, got := b.runJSON(b.owners(), args...)
+			data, _ := got.Data.(map[string]any)
+			if code != 0 || got.Outcome != intentConfirmed || data["reason"] != tc.want {
+				t.Fatalf("grant with reason: %d %+v", code, got)
+			}
+			code, listed := b.runJSON(b.owners(), "grant", "list")
+			data, _ = listed.Data.(map[string]any)
+			grants, ok := data["grants"].([]any)
+			if code != 0 || !ok || len(grants) != 1 {
+				t.Fatalf("grant list: %d %+v", code, listed)
+			}
+			if view := grants[0].(map[string]any); view["reason"] != tc.want {
+				t.Fatalf("listed reason = %v, want %q", view["reason"], tc.want)
+			}
+			endpoint, err := b.dependencies().endpoint(b.root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, entries, err := goal.GeneralGrantsAt(endpoint)
+			if err != nil || len(entries) != 1 || entries[0].Reason != tc.want {
+				t.Fatalf("recorded reason: %+v, %v", entries, err)
+			}
+			code, got = b.runJSON(b.owners(), args...)
+			if code != 0 || got.Outcome != intentUnchanged {
+				t.Fatalf("same reason again: %d %+v", code, got)
+			}
+			args = append(withoutOption(args, "reason"), "--reason", "a different reason")
+			code, got = b.runJSON(b.owners(), args...)
+			if code != 0 || got.Outcome != intentConfirmed {
+				t.Fatalf("changed reason: %d %+v", code, got)
+			}
+			_, entries, err = goal.GeneralGrantsAt(endpoint)
+			if err != nil || len(entries) != 2 {
+				t.Fatalf("replacement reason: %+v, %v", entries, err)
+			}
+			old, current := entries[0], entries[1]
+			if old.Revoked == "" {
+				old, current = current, old
+			}
+			if current.Reason != "a different reason" || current.Revoked != "" || old.Reason != tc.want || old.Revoked == "" {
+				t.Fatalf("replacement reason: old %+v, current %+v", old, current)
+			}
+			before := b.repo.accepted
+			code, got = b.runJSON(b.owners(), "grant", "add", "--tiers", "1", "--acts", "approve",
+				"--until", "2026-09-02", "--reason", "x")
+			if code == 0 || got.Outcome != intentRefused || !strings.Contains(got.Summary, "--reason") || b.repo.accepted != before {
+				t.Fatalf("scoped reason: %d %+v", code, got)
+			}
+			root := b.rootRecord()
+			root.PowerOfAttorney = []goal.PowerOfAttorneyEntry{{ID: entries[0].ID, By: entries[0].By,
+				Tiers: []uint8{1}, Verbs: []string{"approve"}, Since: entries[0].Since, Expires: "2026-09-02"}}
+			for _, reason := range []string{`""`, `"x"`, `x`} {
+				content := strings.Replace(string(goal.RenderRoot(root)), " verbs=approve", " reason="+reason+" verbs=approve", 1)
+				if _, problems := goal.ParseRoot([]byte(content)); len(problems) == 0 {
+					t.Fatalf("scoped ledger accepted reason=%s", reason)
+				}
+			}
+		})
+	}
+}
+
 func TestAnOverruleShowsItsImpactFirst(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"text", "json", "child", "targets", "disposition"} {
