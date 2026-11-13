@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 24
+- Sequence: 23
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="The lane writes one more ledger row with the existing goal done path under the holder declaration; a wrong conclusion is reopened by a person with goal reopen; no authority is taken from a person (the holder declares, the lane records as itself); about 124 production lines in four parts"
 - Tier: 2
 - Intent: When the landing lane lands a goal whose holder declared it finished at hand-in and said what it delivers, the goal concludes by itself once the work is live: the landed line and the conclusion are one ledger act recorded by the lane as itself; nobody repeats work land for the record or types goal done; the landing post and the done notice stay two messages (decision 39); a person can reopen
 - Origin: human
 - Next step: Build U1a (the declaration at hand-in), U1b1 (selection), U1b2 (dispatch, --last) then U2 (the words) from the accepted page plans/designs/a-landed-goal-concludes-itself.md with briefs cut by opus-designer (BRIEF-CHECKLIST, one Astra round each); carry check and read after each; the lane lands them Program the-route-holds-when-something-deviates (2026-11-12, D3): add and build first one unit (50): a confirmed push writes the landed line for every member of the batch as the lane, whether or not the goal qualifies for automatic conclusion; then U1a, U1b1, U1b2, U2 as designed.
 - OpenedAt: 2026-11-04T02:27:46Z
-- Revision: 120
+- Revision: 121
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
@@ -137,4 +137,5 @@ History:
 - 2026-11-13T09:10:38Z FMVD1Z0GQ4KR011RARJVRJG2W6-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,one-host-admits-heavy-work reason=priority-order subject=one-host-admits-heavy-work from=1:22 to=1:21 requested-sequence=24
 - 2026-11-13T09:11:46Z NRF6JDSBYKBHSAP7ZBHN1E681Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-landed-goal-concludes-itself from=1:21 to=1:25 requested-sequence=25
 - 2026-11-13T09:12:28Z 314B0ASBAKGV2919Y1E3TJFS3Q-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,one-host-admits-heavy-work,the-lane-carries-one-work-subject reason=priority-order subject=a-returned-member-leaves-the-batch from=1:25 to=1:24 requested-sequence=26
-Integrity: sha256=7108764e6cdc9c48a07ba8980372985fc716fab23bf82527eb3e5d06c08ce588
+- 2026-11-13T09:13:08Z YTMCYCXMSQ36GK12ZZHZ2RVF09-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,the-lane-carries-one-work-subject reason=priority-order subject=the-lane-carries-one-work-subject from=1:24 to=1:23 requested-sequence=27
+Integrity: sha256=c248f745ed6abdfda6c6a88e3853b9ea4a61275a8537b09fdccdf50fdc9c619b
