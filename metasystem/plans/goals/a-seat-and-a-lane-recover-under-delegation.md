@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 21
+- Sequence: 20
 - Risk: severity=3 novelty=2 exposure=2 accumulation=1 basis="The lane stood on its barren hold until a person ran landing run (2026-11-12 19:50); the steward's restart route ends in a person's machine revive."
 - Tier: 3
 - Intent: A lane held by its own barren rule becomes a routed row whose act is the delegated lane recovery, and a seat whose stewardship restart cap is reached is revived once a day by the steward runner itself under a scoped grant for that one effect on its checkout (analysis person-proxy Q5a, Q10).
 - Origin: main
 - Next step: Build the lane-held row (40) if lane health does not already route one, then the runner's scoped seat-revive (70, --last); briefs cut and Astra-checked before each build; after the deputy's first delivery; design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-owner-decides-the-machine-does-the-rest.md decisions E1, E4.
 - OpenedAt: 2026-11-12T22:37:35Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -33,4 +33,5 @@ History:
 - 2026-11-13T09:07:13Z Y8G4H7A1BGK96DK8NG8Z2GBW82-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-lane-act-runs-from-the-phone,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once reason=priority-order subject=an-agent-refusal-reaches-a-person-once from=1:19 to=1:18 requested-sequence=21
 - 2026-11-13T09:08:08Z J5YD80NT96T8D0PG9FA2FFFAQY-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-reserved-decision-executes-from-its-answer,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work reason=priority-order subject=a-seat-and-a-lane-recover-under-delegation from=1:18 to=1:22 requested-sequence=22
 - 2026-11-13T09:09:10Z H6KXN2E2HPFWBFP4WHKNWQ9H0Y-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-seat-and-a-lane-recover-under-delegation,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work reason=priority-order subject=a-deputy-budget-and-run-release from=1:22 to=1:21 requested-sequence=23
-Integrity: sha256=dd6eaf73c6a45d238c91529f9ed1f6992ba87b13c282e4fdf92f624dcead447a
+- 2026-11-13T09:10:38Z FMVD1Z0GQ4KR011RARJVRJG2W6-m1e-85ee26c5 set-priority actor=human:Wido targets=a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,one-host-admits-heavy-work reason=priority-order subject=one-host-admits-heavy-work from=1:21 to=1:20 requested-sequence=24
+Integrity: sha256=c0ab6df20621d563698228a0dfa2668403a0a3503e73f803c07dc1bd8ffe92ef
