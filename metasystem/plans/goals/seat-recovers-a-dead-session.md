@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 16
+- Sequence: 15
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Every seat whose session dies hits it (exposure 3); a wrong move could hand a dead session work to the wrong writer, recoverable (severity 3); existing claim and run owners (novelty 2); four units (accumulation 2)"
 - Tier: 3
 - Intent: A goal whose session died can be moved on by a person with remedies that succeed: a completed run releases its worktree, a refused verb creates no run, one recorded act moves the goal to the current session, and remedies name the checkout they run in
 - Origin: main
 - Next step: Struggle program item 6 (2026-11-10, /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/struggle-program-2026-11-10.md): a person-confirmed transfer of an idle checkout and its goal holds to an exact live session (finding 589, the /model switch). U2a (120-180): pending-transfer state fencing both writer gates, full lease identity change, interrupted-sweep behaviour (internal/lease/claim.go:110,311; verbs.go:475,567). U2b (150-220): metasystem session takeover --by NAME as a fresh enrolled-terminal person act, exact requester binding, idleness proven under the admission and mutation guards, goal holds moved with budget and stop fences kept. No inference from ancestry; isolation bootstrap deferred. Program the-owner-decides-the-machine-does-the-rest (2026-11-12, E1): built as designed, plus one unit (70): the transfer may be requested by the new live main session of the same seat and lineage under a scoped grant for the effect seat-transfer on its checkout (the scoped-grant path, goalsync_mutations.go:2896), checked at the transfer owner: same seat and lineage, the holder being replaced has no live launch, no live worker and no step for 30 minutes on the injected clock, no person's hold or stop on the seat, the exact-session fence. A foreign lineage and an unattended pane holder stay a person's. The continuation as a successor session (program route-holds D7) builds on this seam next.
 - OpenedAt: 2026-10-09T16:05:29Z
-- Revision: 39
+- Revision: 40
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -56,4 +56,5 @@ History:
 - 2026-11-13T09:04:43Z MSNJYX466D1WSQMQD9QWBM8M8C-m1e-85ee26c5 set-priority actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries,a-unit-stop-asks-its-steward-first,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=the-lane-returns-its-own-red from=1:15 to=1:14 requested-sequence=16
 - 2026-11-13T09:05:10Z 9EX7RF95MRB3021P9YAQJJQG70-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=seat-recovers-a-dead-session from=1:14 to=1:17 requested-sequence=17
 - 2026-11-13T09:05:38Z CPV39VD6R6THVA8VFZK6QAHEB1-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:17 to=1:16 requested-sequence=18
-Integrity: sha256=d36d8210c9571aa5c67d1d2e425cade211df6d4c79e1a36806ec2a9d73cefb21
+- 2026-11-13T09:06:19Z 296FJVH34YQZQXKK70HYJPN7S4-m1e-85ee26c5 set-priority actor=human:Wido targets=a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-reserved-decision-executes-from-its-answer,an-agent-refusal-reaches-a-person-once,seat-recovers-a-dead-session reason=priority-order subject=a-lane-act-runs-from-the-phone from=1:16 to=1:15 requested-sequence=19
+Integrity: sha256=25891fd561f9aa284d020cdb71da7bc1bfea7d78ddc11442f622460fd60b7f32
