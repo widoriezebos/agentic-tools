@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 29
+- Sequence: 28
 - Risk: severity=3 novelty=1 exposure=2 accumulation=1 basis="The m1e checkout's index and worktree were left at a pre-merge tree under a moved HEAD after the refresh raced another writer (607)."
 - Tier: 3
 - Intent: The seat steward's engine refresh never restores an index it did not change: when it cannot take the index lock it stops before changing anything and retries; on a later failure it undoes only its own steps (finding 607, analysis cause K1).
 - Origin: main
 - Next step: Build one unit (45, --last) from a brief cut and Astra-checked before the build; program design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-route-holds-when-something-deviates.md decision D12.
 - OpenedAt: 2026-11-12T16:59:02Z
-- Revision: 21
+- Revision: 22
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -38,4 +38,5 @@ History:
 - 2026-11-13T09:13:08Z YTMCYCXMSQ36GK12ZZHZ2RVF09-m1e-85ee26c5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,the-lane-carries-one-work-subject reason=priority-order subject=the-lane-carries-one-work-subject from=1:27 to=1:26 requested-sequence=27
 - 2026-11-13T09:13:39Z 0SVAHK4C6YX3RYW7GJDFMPN659-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-returned-member-leaves-the-batch,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject reason=priority-order subject=a-tier-raise-keeps-its-approval from=1:26 to=1:25 requested-sequence=28
 - 2026-11-13T09:14:07Z NMNH3YQCGSSPRAJEXRDVC507TG-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,the-lane-carries-one-work-subject,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-refresh-leaves-a-busy-checkout-alone from=1:25 to=1:29 requested-sequence=29
-Integrity: sha256=4e9ed8acd9bb4524d2643bc1c12b048ca232a853aace03c2846f3dec3c596f84
+- 2026-11-13T09:14:29Z 5W1R46J9R0EQ8TCFD9NM0CD0KE-m1e-85ee26c5 set-priority actor=human:Wido targets=a-refresh-leaves-a-busy-checkout-alone,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,scenario-beds-compose-the-facts-their-path-needs,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-unit-check-runs-the-importers-too from=1:29 to=1:28 requested-sequence=30
+Integrity: sha256=1e5b6dd82e335c975d0e2679ae8c5db840a37b6dd29c154f7d249d5daed0a04b
