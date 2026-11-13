@@ -1,0 +1,109 @@
+{
+  "canonicalRead": {
+    "id": "20261113t034928-7e2b5f485e-r1-s3-retry",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "27bb0882fe499690acb42873e3b5f544d6e7fdec392cfc0b2622ef7d1e64dc29",
+      "diffDigest": "27bb0882fe499690acb42873e3b5f544d6e7fdec392cfc0b2622ef7d1e64dc29"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261113t034928-7e2b5f485e-r1-s3-retry:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The grant add --classes usage text still lists only the five old classes; budget, lane-recovery and run-release are grantable but not named in the help.",
+        "evidence": "cmd/metasystem/intent_planning.go:279 usage \"with everything: only these classes of act: mechanical, recovery, ordering, acks, stale-releases\"; goal.AttorneyClasses now holds eight. The unknown-class diagnostic does list all eight.",
+        "where": "metasystem/cmd/metasystem/intent_planning.go",
+        "change": "Name the grantable list in the usage (best done in U1a3, which rewrites that list). Optional.",
+        "relation": "new; rule: a verb's help names every value it accepts"
+      },
+      {
+        "id": "20261113t034928-7e2b5f485e-r1-s3-retry:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A delegated admission's attorney log line has act= twice: the quoted verb, then the class.",
+        "evidence": "attorney_admits.go builds the line with act=%q (the verb) and then appends \" decision=\"+D+\" act=\"+C, as brief A6 prescribes. The only reader (internal/steward/situation.go:493-497) keeps raw lines, so nothing breaks today.",
+        "where": "metasystem/cmd/metasystem/attorney_admits.go",
+        "change": "None needed now. A later key=value reader has to handle the repeated key. Optional.",
+        "relation": "new; rule: a log line names each key once"
+      },
+      {
+        "id": "20261113t034928-7e2b5f485e-r1-s3-retry:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The decision is checked only for shape, and every descendant of a decision child inherits METASYSTEM_DECISION.",
+        "evidence": "admit accepts any non-empty token without whitespace (A6, V1); intent_delivery.go:418-419 appends to os.Environ. This is inert in U1a2: the only mapped delegated act, work stop run:, is refused at intent_work.go:3060-3064.",
+        "where": "metasystem/cmd/metasystem/attorney_admits.go",
+        "change": "None in this unit. U1b1c and U1b2a should note it when a decision child can start long-lived processes. Optional.",
+        "relation": "new; rule: a delegated admission is bound to its decision"
+      },
+      {
+        "id": "20261113t034928-7e2b5f485e-r1-s3-retry:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A hard-limit refusal of a delegated act is logged without its decision id.",
+        "evidence": "humanauthority.RecordAttorneyRefusal writes grant, by, act and reason from proof.Helm but not Helm.Decision or Helm.Act.",
+        "where": "metasystem/internal/humanauthority/attorney_log.go",
+        "change": "Consider adding decision= to the refusal line in the overrule and reporting units (U3a1 and later). Optional.",
+        "relation": "new; rule: every attorney log line of a delegated act names its decision"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261113t034928-7e2b5f485e-r1-s3-retry/outputs/read-findings.md.json"
+  },
+  "readDigest": "59d4e6b314d005c46d67b1bbcfa440d03250b32402d806818dfab58f8809e4ed",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1a2",
+  "subject": {
+    "commit": "0792aa6ab584451bdf4a4701a97cc716fb0fa841",
+    "parent": "8067d001d1c31a31a2882d5a5182f9a46b57d078",
+    "tree": "cfc8e77334a675320d90956d52b4efe5d8f51245",
+    "patchDigest": "27bb0882fe499690acb42873e3b5f544d6e7fdec392cfc0b2622ef7d1e64dc29",
+    "unitDigest": "f197cd995fa5d35e9d5bf9eacdbfd9563e3a2db9da2cad46753b14bb211611d8"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261113t034928-7e2b5f485e-r1-s3-retry",
+    "closureSha256": "a8830df0c1ca15369fe17e23258d2b34a74302937753a426a37d11921625584a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "cfc8e77334a675320d90956d52b4efe5d8f51245",
+    "runId": "goal-read-gate-20261113t062000z-96e452f5f4937394"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "8067d001d1c31a31a2882d5a5182f9a46b57d078",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/attorney_admits_test.go",
+      "readerWord": "reviewed by unit read 20261113t034928-7e2b5f485e-r1-s3-retry"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_decision_test.go",
+      "readerWord": "reviewed by unit read 20261113t034928-7e2b5f485e-r1-s3-retry"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_grant_everything_test.go",
+      "readerWord": "reviewed by unit read 20261113t034928-7e2b5f485e-r1-s3-retry"
+    },
+    {
+      "path": "metasystem/internal/goal/general_attorney_test.go",
+      "readerWord": "reviewed by unit read 20261113t034928-7e2b5f485e-r1-s3-retry"
+    }
+  ],
+  "sha256": "78627d829b3427b75d0c74abf0b209a5fd17f8f950c04d192adef971748a9821"
+}
