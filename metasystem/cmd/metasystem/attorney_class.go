@@ -49,6 +49,9 @@ func attorneyActClass(args []string, subject func([]string) (attorneySubject, er
 		return "", false
 	}
 	if command.name == "work stop" {
+		if len(input.args) == 1 && strings.HasPrefix(input.args[0], "run:") {
+			return "run-release", true
+		}
 		return "recovery", len(input.args) == 1 && !strings.HasPrefix(input.args[0], "run:")
 	}
 	if command.name == "goal release" && len(input.args) != 1 {

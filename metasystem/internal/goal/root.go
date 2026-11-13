@@ -85,7 +85,17 @@ func (e PowerOfAttorneyEntry) General() bool {
 var AttorneyVerbs = []string{"approve", "set-budget", "unpark"}
 
 // AttorneyClasses are the classes a general grant may name.
-var AttorneyClasses = []string{"acks", "mechanical", "ordering", "recovery", "stale-releases"}
+var AttorneyClasses = []string{"acks", "budget", "lane-recovery", "mechanical", "ordering", "recovery", "run-release", "stale-releases"}
+
+// DelegatedClasses are acts a grant carries only when it names them, and
+// only for a child of decision record.
+var DelegatedClasses = []string{"budget", "lane-recovery", "run-release"}
+
+// Carries reports whether the entry admits class: a delegated class only when
+// named; any other class when named or when the entry names none.
+func (e PowerOfAttorneyEntry) Carries(class string) bool {
+	return slices.Contains(e.Classes, class) || len(e.Classes) == 0 && !slices.Contains(DelegatedClasses, class)
+}
 
 // ParseAttorneyClasses reads a comma list, trimming, deduplicating and sorting it.
 func ParseAttorneyClasses(value string) ([]string, error) {

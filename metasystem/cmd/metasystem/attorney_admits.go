@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/sys/unix"
 
@@ -48,6 +49,7 @@ type attorneyAdmitOwners struct {
 	holder   func(root string) (lease.CurrentHolderView, error)
 	fixture  func(root string) bool
 	verb     func() string
+	decision func() string
 	stderr   io.Writer
 	// notice tells the person what the grant admitted; nil holds it on the
 	// process's admission board until the act's outcome is known.
@@ -96,6 +98,9 @@ func (o attorneyAdmitOwners) withDefaults() attorneyAdmitOwners {
 	}
 	if o.verb == nil {
 		o.verb = func() string { return publicVerb(os.Args[1:]) }
+	}
+	if o.decision == nil {
+		o.decision = func() string { return os.Getenv("METASYSTEM_DECISION") }
 	}
 	if o.stderr == nil {
 		o.stderr = os.Stderr
@@ -196,10 +201,19 @@ func (a *attorneyAdmitter) grantFor(root string, pid int64, now time.Time, argv 
 func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanauthority.HelmGrant, bool) {
 	o := a.owners.withDefaults()
 	d, ok := a.grantFor(root, pid, now, o.args())
-	if !ok || len(d.entry.Classes) != 0 && !slices.Contains(d.entry.Classes, d.act) {
+	if !ok || !d.entry.Carries(d.act) {
 		return humanauthority.HelmGrant{}, false
 	}
 	entry, class, checkout := d.entry, d.caller, d.entry.Checkout
+	grant := humanauthority.HelmGrant{By: strings.TrimPrefix(entry.By, "human:"), Since: entry.Since,
+		Class: class.Class, Checkout: entry.Checkout, Grant: entry.ID, Until: entry.Until}
+	if slices.Contains(goal.DelegatedClasses, d.act) {
+		decision := o.decision()
+		if decision == "" || strings.IndexFunc(decision, unicode.IsSpace) >= 0 {
+			return humanauthority.HelmGrant{}, false
+		}
+		grant.Act, grant.Decision, grant.Session = d.act, decision, class.MainId
+	}
 	// Only the grantee takes the grant lock, and only on the checkout the
 	// grant binds; the grant is read again under it, so a local revoke that
 	// returned is seen and one that starts waits for this act.
@@ -213,23 +227,29 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 	verb := o.verb()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	key := entry.ID + "\x00" + verb
+	key := entry.ID + "\x00" + verb + "\x00" + grant.Decision
 	if !a.logged[key] {
 		// "answered": the grant answered this act's person check; the act's
 		// own checks may still refuse it, and a hard limit logs "refused".
 		line := fmt.Sprintf("%s answered grant=%s by=%s act=%q class=%s main=%s pid=%d", now.UTC().Format(time.RFC3339), entry.ID, person, verb, class.Class, class.MainId, pid)
+		notice := fmt.Sprintf("POWER OF ATTORNEY (%s, grant %s): %s runs as %s's act", person, entry.ID, verb, person)
+		if grant.Decision != "" {
+			line += " decision=" + grant.Decision + " act=" + grant.Act
+			notice = fmt.Sprintf("POWER OF ATTORNEY (%s, grant %s): %s runs as the steward's own act under decision %s, class %s",
+				person, entry.ID, verb, grant.Decision, grant.Act)
+		}
 		if err := o.appendLog(checkout, line); err != nil {
 			return humanauthority.HelmGrant{}, false
 		}
 		o.notice(admissionNotice{w: o.stderr,
-			line:   fmt.Sprintf("POWER OF ATTORNEY (%s, grant %s): %s runs as %s's act", person, entry.ID, verb, person),
+			line:   notice,
 			detail: "the grant stood in for the enrolled-terminal check of this seat's main session; logged in " + attorneyLogPath(checkout)})
 		if a.logged == nil {
 			a.logged = map[string]bool{}
 		}
 		a.logged[key] = true
 	}
-	return humanauthority.HelmGrant{By: person, Since: entry.Since, Class: class.Class, Checkout: entry.Checkout, Grant: entry.ID, Until: entry.Until}, true
+	return grant, true
 }
 
 // attorneyLogPath is the local, append-only record of every answered act.

@@ -904,6 +904,11 @@ type HelmGrant struct {
 	// when the person is away; empty for the helm. Until is its end.
 	Grant string `json:"grant,omitempty"`
 	Until string `json:"until,omitempty"`
+	// Act is the class admitted inside a decision record; Decision names
+	// that record and Session the main session it ran in.
+	Act      string `json:"act,omitempty"`
+	Decision string `json:"decision,omitempty"`
+	Session  string `json:"session,omitempty"`
 }
 
 // AtHelm is the owner seam the command edge wires once at startup: while the
