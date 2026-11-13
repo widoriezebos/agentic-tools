@@ -152,11 +152,12 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 		if admitted.act != wanted {
 			return refuse(command.name + " is " + admitted.act + ", not " + wanted)
 		}
-		if len(admitted.entry.Classes) != 0 && !slices.Contains(admitted.entry.Classes, wanted) {
+		if !admitted.entry.Carries(wanted) {
 			return refuse(command.name + " is " + admitted.act + "; the grant does not carry " + wanted)
 		}
+		process.env = append(process.env, "METASYSTEM_DECISION="+id)
 		if inv.input.has("lineage") {
-			process.env = []string{"METASYSTEM_OWNER_LINEAGE=" + inv.input.text("lineage")}
+			process.env = append(process.env, "METASYSTEM_OWNER_LINEAGE="+inv.input.text("lineage"))
 		}
 		by = strings.TrimPrefix(admitted.entry.By, "human:")
 	}

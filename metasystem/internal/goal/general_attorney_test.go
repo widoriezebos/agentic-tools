@@ -250,7 +250,7 @@ func TestAGeneralGrantNamesItsClasses(t *testing.T) {
 	}
 	for _, bad := range [][]string{{"values"}, {"ordering", "acks"}, {"acks", "acks"}} {
 		entry.Classes = bad
-		if ok, why := entry.WithinBounds(); ok || bad[0] == "values" && !strings.Contains(why, "class values is not one of acks, mechanical, ordering, recovery, stale-releases") {
+		if ok, why := entry.WithinBounds(); ok || bad[0] == "values" && !strings.Contains(why, "class values is not one of acks, budget, lane-recovery, mechanical, ordering, recovery, run-release, stale-releases") {
 			t.Errorf("bounds %v: %v %s", bad, ok, why)
 		}
 		if live, _ := entry.LiveAt(human.Now); live {
