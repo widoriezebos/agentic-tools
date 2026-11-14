@@ -32,7 +32,7 @@ func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentRe
 	return inv.projectionWithFetch(inv.input.switched("fetch"))
 }
 
-func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projection, time.Time, *intentResult) {
+func (inv *intentInvocation) projectionWithFetch(fetchFirst bool, commandRead ...bool) (goal.Projection, time.Time, *intentResult) {
 	if inv.givenProjection != nil {
 		return *inv.givenProjection, inv.givenNow, nil
 	}
@@ -58,6 +58,7 @@ func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projecti
 			next: inv.typedArgv(), nextReason: "try again"}
 	}
 	// --fetch is the goal owner's explicit fetch and validation.
+	endpoint.UnlockedCommandRead = len(commandRead) > 0 && commandRead[0]
 	projection, err := goal.ProjectWithDeadline(endpoint, fetchFirst, now, inv.owners.dependencies.projectionDeadline)
 	if errors.Is(err, goal.ErrLedgerNotFetched) {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1,
@@ -385,7 +386,7 @@ func runIntentGoals(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	projection, _, problem := inv.projection()
+	projection, _, problem := inv.projectionWithFetch(inv.input.switched("fetch"), true)
 	if problem != nil {
 		return inv.render(*problem)
 	}

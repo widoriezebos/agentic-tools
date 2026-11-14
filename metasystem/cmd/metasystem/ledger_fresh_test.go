@@ -166,6 +166,26 @@ func freshRemoteEdit(t *testing.T, b *goalCLIBed, edit func(*goal.GoalFile)) (st
 
 func TestLedgerFreshClaimAndNextObserveRemote(t *testing.T) {
 	t.Parallel()
+	for _, flags := range [][]string{{"--fetch"}, {"--fetch", "--ready"}, {"--fetch", "--tiers"}} {
+		t.Run("list/"+strings.Join(flags, " "), func(t *testing.T) {
+			t.Parallel()
+			b := newGoalCLIBed(t, goalCLISeed{})
+			var output, diagnostic bytes.Buffer
+			owners := b.owners(&output, &diagnostic)
+			requests := 0
+			owners.dependencies.projectionDeadline = func(wait time.Duration) <-chan time.Time {
+				requests++
+				if wait != 30*time.Second {
+					t.Errorf("list requested %s, want 30s", wait)
+				}
+				return make(chan time.Time)
+			}
+			command, args, _ := resolveIntentArgv(append([]string{"goal", "list"}, flags...))
+			if code := runIntentIn(command, args, &output, &diagnostic, b.root, owners); code != 0 || requests != 1 {
+				t.Fatalf("list exit=%d reads=%d %s %s", code, requests, &output, &diagnostic)
+			}
+		})
+	}
 	for _, verb := range []string{"claim", "next"} {
 		t.Run(verb, func(t *testing.T) {
 			t.Parallel()
@@ -431,144 +451,164 @@ func freshUpFixture(t *testing.T, b *goalCLIBed, d syncRequestDependencies) upCo
 func TestLedgerFreshSessionAndUpPendingRepairAndOfflineHook(t *testing.T) {
 	t.Parallel()
 	for _, verb := range []string{"up", "session"} {
-		t.Run(verb, func(t *testing.T) {
-			t.Parallel()
-			b := newGoalCLIBed(t, goalCLISeed{amend: func(files map[string]*goal.GoalFile) {
-				files["ship-widget"].StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "fixture-machine", ClaimEpoch: 1}
-			}})
-			attempts := 0
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			cancelled := false
-			r := freshCommandRepository{Repository: b.repo, attempts: &attempts, capture: func(c context.Context, opid string) (string, error) {
-				b.repo.Capture(opid)
-				cancel()
-				<-c.Done()
-				cancelled = true
-				return "", c.Err()
-			}}
-			r.cleaned = func(c context.Context) {
-				if c == nil {
-					return
+		for _, timeout := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/timeout=%t", verb, timeout), func(t *testing.T) {
+				t.Parallel()
+				b := newGoalCLIBed(t, goalCLISeed{amend: func(files map[string]*goal.GoalFile) {
+					files["ship-widget"].StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "fixture-machine", ClaimEpoch: 1}
+				}})
+				attempts := 0
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				cancelled := false
+				r := freshCommandRepository{Repository: b.repo, attempts: &attempts, capture: func(c context.Context, opid string) (string, error) {
+					b.repo.Capture(opid)
+					if timeout {
+						if c.Err() != nil {
+							t.Fatalf("outer expired before transport failure: %v", c.Err())
+						}
+						cancelled = true
+						return "", &goal.ReadTimeout{Limit: 26 * time.Second, Cause: context.DeadlineExceeded}
+					}
+					cancel()
+					<-c.Done()
+					cancelled = true
+					return "", c.Err()
+				}}
+				r.cleaned = func(c context.Context) {
+					if c == nil {
+						return
+					}
+					if c.Err() != nil {
+						t.Fatalf("cleanup inherited read cancellation: %v", c.Err())
+					}
 				}
-				if c.Err() != nil {
-					t.Fatalf("cleanup inherited read cancellation: %v", c.Err())
-				}
-			}
-			d := freshDependencies(b, r)
-			d.ctx = ctx
-			inputs := freshUpFixture(t, b, d)
-			var actual up.Result
-			run := inputs.run
-			inputs.run = func(options up.Options) up.Result { actual = run(options); return actual }
-			invoke := func() (int, string) {
-				var out, diagnostic bytes.Buffer
-				if verb == "up" {
-					code := runUpWithInputs([]string{"--metasystem-root", b.root, "--repo", b.root, "--json"}, fakeTop(b.root), &out, &diagnostic, inputs)
+				d := freshDependencies(b, r)
+				d.ctx = ctx
+				inputs := freshUpFixture(t, b, d)
+				var actual up.Result
+				run := inputs.run
+				inputs.run = func(options up.Options) up.Result { actual = run(options); return actual }
+				invoke := func() (int, string) {
+					var out, diagnostic bytes.Buffer
+					if verb == "up" {
+						code := runUpWithInputs([]string{"--metasystem-root", b.root, "--repo", b.root, "--json"}, fakeTop(b.root), &out, &diagnostic, inputs)
+						return code, out.String() + diagnostic.String()
+					}
+					owners := b.owners(&out, &diagnostic)
+					owners.dependencies = inputs.dependencies
+					owners.processes = defaultProcessIntentOwners()
+					owners.processes.up = inputs.run
+					owners.processes.executable = inputs.executable
+					owners.processes.process.repositoryTop = fakeTop(b.root)
+					command, args, _ := resolveIntentArgv([]string{"session", "start", "--json"})
+					code := runIntentIn(command, args, &out, &diagnostic, b.root, owners)
 					return code, out.String() + diagnostic.String()
 				}
-				owners := b.owners(&out, &diagnostic)
-				owners.dependencies = inputs.dependencies
-				owners.processes = defaultProcessIntentOwners()
-				owners.processes.up = inputs.run
-				owners.processes.executable = inputs.executable
-				owners.processes.process.repositoryTop = fakeTop(b.root)
-				command, args, _ := resolveIntentArgv([]string{"session", "start", "--json"})
-				code := runIntentIn(command, args, &out, &diagnostic, b.root, owners)
-				return code, out.String() + diagnostic.String()
-			}
-			code, output := invoke()
-			remedy := "metasystem internal up"
-			if verb == "session" {
-				remedy = "metasystem session start"
-			}
-			expectedExit := 0
-			if verb == "session" {
-				expectedExit = 1
-			}
-			if code != expectedExit || actual.Outcome != "armed" || actual.Adoption == nil || actual.Adoption.Status != "pending" || actual.Adoption.Remedy != remedy || attempts != 1 || !cancelled || !strings.Contains(output, "adoption pending") || !strings.Contains(output, "canceled") || !strings.Contains(output, remedy) {
-				t.Fatalf("pending hidden: exit=%d attempts=%d cancelled=%v result=%+v output=%s", code, attempts, cancelled, actual, output)
-			}
-			envelope := upEnvelope(actual)
-			if envelope.Outcome != verbresult.Confirmed {
-				t.Fatalf("pending broke up envelope: %+v", envelope)
-			}
-			if verb == "session" && !strings.Contains(strings.ReplaceAll(output, " ", ""), `"outcome":"partial"`) {
-				t.Fatalf("pending session is not partial: %s", output)
-			}
-			before := b.tip()
-			// Hook arming uses the offline reader even while transport is down.
-			hook := hookOwners{diagnostics: &bytes.Buffer{}, upInputs: inputs, repositoryTop: fakeTop(b.root)}
-			var hookOutput bytes.Buffer
-			if code := hook.Up(hooksUpRequest(b.root), &hookOutput, &hookOutput); code != 0 || attempts != 1 {
-				t.Fatalf("hook fetched: code=%d attempts=%d output=%s", code, attempts, &hookOutput)
-			}
-			inputs.dependencies.ctx = context.Background()
-			r.capture, r.cleaned = nil, nil
-			inputs.dependencies = freshDependencies(b, r)
-			for replay := 0; replay < 2; replay++ {
-				code, output = invoke()
-				if code != 0 || actual.Adoption == nil || actual.Adoption.Status != "complete" || b.tip() != before {
-					t.Fatalf("repair/replay changed ownership or accounting: exit=%d result=%+v output=%s", code, actual, output)
+				code, output := invoke()
+				remedy := "metasystem internal up"
+				if verb == "session" {
+					remedy = "metasystem session start"
 				}
-			}
-		})
+				expectedExit := 0
+				if verb == "session" {
+					expectedExit = 1
+				}
+				if code != expectedExit || actual.Outcome != "armed" || actual.Adoption == nil || actual.Adoption.Status != "pending" || actual.Adoption.Remedy != remedy || attempts != 1 || !cancelled || !strings.Contains(output, "adoption pending") || (!timeout && !strings.Contains(output, "canceled") || timeout && !strings.Contains(output, "the goal ledger could not be fetched within 26 s (the remote or this host is slow)")) || !strings.Contains(output, remedy) {
+					t.Fatalf("pending hidden: exit=%d attempts=%d cancelled=%v result=%+v output=%s", code, attempts, cancelled, actual, output)
+				}
+				envelope := upEnvelope(actual)
+				if envelope.Outcome != verbresult.Confirmed {
+					t.Fatalf("pending broke up envelope: %+v", envelope)
+				}
+				if verb == "session" && !strings.Contains(strings.ReplaceAll(output, " ", ""), `"outcome":"partial"`) {
+					t.Fatalf("pending session is not partial: %s", output)
+				}
+				before := b.tip()
+				// Hook arming uses the offline reader even while transport is down.
+				hook := hookOwners{diagnostics: &bytes.Buffer{}, upInputs: inputs, repositoryTop: fakeTop(b.root)}
+				var hookOutput bytes.Buffer
+				if code := hook.Up(hooksUpRequest(b.root), &hookOutput, &hookOutput); code != 0 || attempts != 1 {
+					t.Fatalf("hook fetched: code=%d attempts=%d output=%s", code, attempts, &hookOutput)
+				}
+				inputs.dependencies.ctx = context.Background()
+				r.capture, r.cleaned = nil, nil
+				inputs.dependencies = freshDependencies(b, r)
+				for replay := 0; replay < 2; replay++ {
+					code, output = invoke()
+					if code != 0 || actual.Adoption == nil || actual.Adoption.Status != "complete" || b.tip() != before {
+						t.Fatalf("repair/replay changed ownership or accounting: exit=%d result=%+v output=%s", code, actual, output)
+					}
+				}
+			})
+		}
 	}
 }
 
 func TestLedgerFreshPersonNamedPublicationAndAgentRefusal(t *testing.T) {
 	t.Parallel()
-	b := newGoalCLIBed(t, goalCLISeed{allowTerminalProof: true})
-	b.announceHolder()
-	attempts, publications := 0, 0
-	r := freshCommandRepository{Repository: b.repo, attempts: &attempts, publications: &publications, capture: func(_ context.Context, opid string) (string, error) {
-		b.repo.Capture(opid)
-		return "", errors.New("transport unavailable")
-	}}
-	d := freshDependencies(b, r)
-	code, output := freshPublic(b, d, "goal", "claim", "ship-widget")
-	if code == 0 || attempts != 1 || publications != 0 || !strings.Contains(output, "transport unavailable") || strings.Contains(output, "continue") {
-		t.Fatalf("agent selected stale work: exit=%d attempts=%d %s", code, attempts, output)
-	}
-	agent := d
-	agent.proveTerminal = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New("agent terminal")
-	}
-	var agentOut, agentDiagnostic bytes.Buffer
-	if code := runGoalNextWithInputs([]string{"--root", b.root}, agent, b.commandNow, &agentOut, &agentDiagnostic); code == 0 || !strings.Contains(agentDiagnostic.String(), "transport unavailable") {
-		t.Fatalf("agent next guessed an empty frontier: %d %s %s", code, &agentOut, &agentDiagnostic)
-	}
-	attempts = 0
-	code, output = freshPublic(b, d, "goal", "claim", "ship-widget", "--by", "Wido", "--json")
-	var failed verbresult.Result
-	if err := json.Unmarshal([]byte(output), &failed); err != nil {
-		t.Fatalf("publication failure is not a command result: %v %s", err, output)
-	}
-	var data struct {
-		Claim       json.RawMessage  `json:"claim"`
-		Observation goal.Observation `json:"observation"`
-	}
-	if err := failed.DecodeData(&data); err != nil {
-		t.Fatal(err)
-	}
-	if code == 0 || attempts != 1 || publications != 1 || failed.Outcome != verbresult.Failed || data.Observation.Outcome != "unavailable" || failed.Next == nil || !strings.Contains(strings.Join(failed.Next.Argv, " "), "goal claim ship-widget") || !strings.Contains(output, "during publication") || !strings.Contains(output, "transport unavailable") {
-		t.Fatalf("person did not reach safe publication: exit=%d attempts=%d %s", code, attempts, output)
-	}
-	attempts = 0
-	code, output = freshPublic(b, d, "goal", "claim", "--by", "Wido")
-	if code == 0 || attempts != 1 || !strings.Contains(output, "name the goal") {
-		t.Fatalf("unnamed stale person claim invented work: %d %d %s", code, attempts, output)
-	}
-	var out, diagnostic bytes.Buffer
-	code = runGoalNextWithInputs([]string{"--root", b.root}, d, b.commandNow, &out, &diagnostic)
-	if code != 0 || !strings.Contains(out.String(), "stale and non-authoritative") {
-		t.Fatalf("person stale next: %d %s %s", code, &out, &diagnostic)
-	}
-	r.capture = nil
-	d = freshDependencies(b, r)
-	code, output = freshPublic(b, d, failed.Next.Argv[1:]...)
-	if code != 0 {
-		t.Fatalf("repaired named command failed: %d %s", code, output)
+	for _, cause := range []error{errors.New("transport unavailable"), &goal.ReadTimeout{Limit: 26 * time.Second, Cause: context.DeadlineExceeded}, &goal.ReadTimeout{Limit: 35 * time.Second, Cause: context.DeadlineExceeded}} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			t.Parallel()
+			b := newGoalCLIBed(t, goalCLISeed{allowTerminalProof: true})
+			b.announceHolder()
+			attempts, publications := 0, 0
+			r := freshCommandRepository{Repository: b.repo, attempts: &attempts, publications: &publications, capture: func(_ context.Context, opid string) (string, error) {
+				b.repo.Capture(opid)
+				return "", cause
+			}}
+			d := freshDependencies(b, r)
+			code, output := freshPublic(b, d, "goal", "claim", "ship-widget")
+			if code == 0 || attempts != 1 || publications != 0 || !strings.Contains(output, cause.Error()) || strings.Contains(output, "continue") {
+				t.Fatalf("agent selected stale work: exit=%d attempts=%d %s", code, attempts, output)
+			}
+			agent := d
+			agent.proveTerminal = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
+				return humanauthority.Proof{}, errors.New("agent terminal")
+			}
+			var agentOut, agentDiagnostic bytes.Buffer
+			if code := runGoalNextWithInputs([]string{"--root", b.root}, agent, b.commandNow, &agentOut, &agentDiagnostic); code == 0 || !strings.Contains(agentDiagnostic.String(), cause.Error()) {
+				t.Fatalf("agent next guessed an empty frontier: %d %s %s", code, &agentOut, &agentDiagnostic)
+			}
+			attempts = 0
+			code, output = freshPublic(b, d, "goal", "claim", "ship-widget", "--by", "Wido", "--json")
+			var failed verbresult.Result
+			if err := json.Unmarshal([]byte(output), &failed); err != nil {
+				t.Fatalf("publication failure is not a command result: %v %s", err, output)
+			}
+			var data struct {
+				Claim       json.RawMessage  `json:"claim"`
+				Observation goal.Observation `json:"observation"`
+			}
+			if err := failed.DecodeData(&data); err != nil {
+				t.Fatal(err)
+			}
+			if code == 0 || attempts != 1 || publications != 1 || failed.Outcome != verbresult.Failed || data.Observation.Outcome != "unavailable" || failed.Next == nil || !strings.Contains(strings.Join(failed.Next.Argv, " "), "goal claim ship-widget") || !strings.Contains(output, "during publication") || !strings.Contains(output, cause.Error()) {
+				t.Fatalf("person did not reach safe publication: exit=%d attempts=%d %s", code, attempts, output)
+			}
+			if goal.IsReadTimeout(cause) && !strings.Contains(output, goal.ReadTimeoutMessage(cause)) {
+				t.Fatalf("named claim omitted timeout: %s", output)
+			}
+			attempts = 0
+			code, output = freshPublic(b, d, "goal", "claim", "--by", "Wido")
+			if code == 0 || attempts != 1 || !strings.Contains(output, "name the goal") {
+				t.Fatalf("unnamed stale person claim invented work: %d %d %s", code, attempts, output)
+			}
+			var out, diagnostic bytes.Buffer
+			code = runGoalNextWithInputs([]string{"--root", b.root}, d, b.commandNow, &out, &diagnostic)
+			if code != 0 || !strings.Contains(out.String(), "stale and non-authoritative") {
+				t.Fatalf("person stale next: %d %s %s", code, &out, &diagnostic)
+			}
+			if goal.IsReadTimeout(cause) && !strings.Contains(out.String(), goal.ReadTimeoutMessage(cause)) {
+				t.Fatalf("stale advice omitted timeout: %s", &out)
+			}
+			r.capture = nil
+			d = freshDependencies(b, r)
+			code, output = freshPublic(b, d, failed.Next.Argv[1:]...)
+			if code != 0 {
+				t.Fatalf("repaired named command failed: %d %s", code, output)
+			}
+		})
 	}
 }
 

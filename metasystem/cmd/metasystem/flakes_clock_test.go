@@ -28,6 +28,25 @@ func checkedProjectionDeadline(t *testing.T) func(time.Duration) <-chan time.Tim
 	}
 }
 
+func checkedCommandProjectionDeadline(t *testing.T) func(time.Duration) <-chan time.Time {
+	t.Helper()
+	var calls atomic.Int32
+	t.Cleanup(func() {
+		if calls.Load() == 0 {
+			t.Error("fresh command ledger read bypassed its fixture deadline")
+		}
+	})
+	return func(wait time.Duration) <-chan time.Time {
+		calls.Add(1)
+		// internal/goal/project.go keeps commandFetchAcceptanceTimeout and
+		// commandFreshFetchProcessTimeout private to the goal package.
+		if wait != 30*time.Second && wait != 26*time.Second {
+			t.Errorf("fresh command ledger deadline=%s", wait)
+		}
+		return make(chan time.Time)
+	}
+}
+
 func TestFrozenCorpusPhaseOwnsItsInjectedDeadline(t *testing.T) {
 	t.Parallel()
 	event := make(chan time.Time)

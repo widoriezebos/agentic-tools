@@ -536,10 +536,14 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 		proof, proofErr := dependencies.proveTerminal(*root, dependencies.authorityFacts.caller.Pid, nil, now)
 		person := proofErr == nil && proof.Helm == nil && proof.TerminalValidFor(*root)
 		read := func(e goal.Endpoint, _ bool, _ time.Time) (goal.Projection, error) {
+			e.UnlockedCommandRead = true
 			p, _, err := goal.FreshProjection(dependencies.readContext(), e, func() (time.Time, error) { return commandNow(*root) })
 			if err != nil && person {
 				stale, staleErr := goal.Project(e, false, now)
 				if staleErr == nil {
+					if goal.IsReadTimeout(err) {
+						err = errors.New(goal.ReadTimeoutMessage(err))
+					}
 					stale.Banners = append([]string{"stale and non-authoritative: " + err.Error() + "; rerun metasystem internal goal next after repair"}, stale.Banners...)
 					return stale, nil
 				}

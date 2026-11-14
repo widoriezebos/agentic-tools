@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -481,79 +484,99 @@ func transferDestinationReader(t *testing.T, b *workBed, obligations []goal.Revi
 
 func TestIntentExtraStoppedUnitRetainsCodeAndAsksWorkingAct(t *testing.T) {
 	t.Parallel()
-	fixture := newTransferScenarioFixture(t, false)
-	b, owners := fixture.bed, fixture.owners
-	code, result := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped")
-	if code != 1 || result.Outcome != intentInProgress {
-		t.Fatalf("extra stopped unit did not request its acts: %d %+v", code, result)
-	}
-	questions, damaged := channel.WalkOpenQuestions(b.stateRoot())
-	if len(damaged) != 0 || len(questions) != 2 {
-		t.Fatalf("unrequired findings have no executable asks: %+v %v", questions, damaged)
-	}
-	for _, question := range questions {
-		if question.UnitStop == nil || !strings.Contains(question.UnitStop.Needs, "work review "+b.id+" --work stopped") || !strings.Contains(question.UnitStop.Needs, "--dispositions") || !slices.Contains(question.UnitStop.AcceptableActs, "work-drop") || !slices.Contains(question.UnitStop.AcceptableActs, "work-revise") {
-			t.Fatalf("finding ask has no existing matching act: %+v", question)
-		}
-		owners.processes.question = channel.ReadQuestion
-		code, out, _ := b.run(owners, "question", "show", "channel:"+question.ID)
-		if code != 0 || !strings.Contains(strings.Join(strings.Fields(out), " "), question.UnitStop.Needs) {
-			t.Fatalf("question show omitted its correction command: %d %q", code, out)
-		}
-	}
-	before, err := fixture.runner.Status(fixture.run)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, err := os.ReadFile(filepath.Join(fixture.agents, "jobs", fixture.critic+".json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sourceRecord map[string]any
-	if err = json.Unmarshal(source, &sourceRecord); err != nil {
-		t.Fatal(err)
-	}
-	transferWriteJSON(t, filepath.Join(b.root(), "artifacts", "agents", "jobs", fixture.critic+".json"), sourceRecord)
-	originalDiff, err := os.ReadFile(filepath.Join(before.Rounds[1].Directory, "worktree.diff"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(before.Rounds[1].Directory, "stop-dispositions.md")
-	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return "", fmt.Errorf("branch endpoint unavailable") }
-	code, dropped := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped", "--dispositions", path)
-	if code != 1 || dropped.Outcome != intentInProgress || dropped.Summary != "the drop remains pending" || !slices.Equal(dropped.Details, []string{"branch endpoint unavailable"}) {
-		t.Fatalf("extra drop silently changed retained work: %d %+v", code, dropped)
-	}
-	after, err := fixture.runner.Status(fixture.run)
-	if err != nil || after.Rounds[1].Transferred || after.Subjects[0].Commit != before.Subjects[0].Commit || len(b.goalFile(b.id).ReviewObligations) != 0 || fixture.observer.publications != 0 {
-		t.Fatalf("extra drop changed source/completion: %+v %v", after, err)
-	}
-	retained, err := os.ReadFile(filepath.Join(after.Rounds[1].Directory, "worktree.diff"))
-	if err != nil || !bytes.Equal(retained, originalDiff) {
-		t.Fatalf("extra drop changed retained diff: %v", err)
-	}
-	questions, damaged = channel.WalkOpenQuestions(b.stateRoot())
-	if len(damaged) != 0 || len(questions) != 2 {
-		t.Fatalf("unsupported drop closed a question: %+v %v", questions, damaged)
-	}
-	unrelated, err := channel.Ask(channel.AskRequest{RepoRoot: b.root(), Goal: b.id, Kind: "stop", Machine: "machine", Facts: []string{"another unit still needs correction"}, Now: b.manager.Now(), UnitStop: &channel.UnitStopQuestion{Loop: "unit-round", Subject: b.id + "/another/run", Attempt: 2, Finding: "another-reader:1", Review: "another-reader", Needs: "metasystem work revise " + b.id + " --work another --brief FILE --reason TEXT --by NAME", AcceptableActs: []string{"work-revise"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var correction strings.Builder
-	correction.WriteString("Correct the extra work.\n\n## Decisions on round 2\n\n| Finding | Decision | Evidence |\n| --- | --- | --- |\n")
-	for _, finding := range fixture.findings {
-		fmt.Fprintf(&correction, "| %s | fixed | %s:12 |\n", finding.ID, finding.Where)
-	}
-	brief := b.brief("extra-person-correction.md", correction.String())
-	b.manager.Supervisor = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{}}}
-	code, corrected := transferPublic(t, b, owners, "work", "revise", b.id, "--work", "stopped", "--brief", brief, "--reason", "Correct the remaining extra findings", "--by", "Wido")
-	if code != 0 || corrected.Outcome != intentConfirmed {
-		t.Fatalf("printed reasoned correction act cannot run: %d %+v", code, corrected)
-	}
-	questions, damaged = channel.WalkOpenQuestions(b.stateRoot())
-	if len(damaged) != 0 || len(questions) != 1 || questions[0].ID != unrelated.ID {
-		t.Fatalf("recorded reasoned correction did not close only its matching asks: %+v %v", questions, damaged)
-	}
+	for name, cause := range map[string]error{
+		"authority": errors.New("branch endpoint unavailable"),
+		"outer":     &goal.ReadTimeout{Limit: 4 * time.Second},
+		"process":   boundedexec.ErrTimedOut,
+		"transport": context.DeadlineExceeded,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newTransferScenarioFixture(t, false)
+			b, owners := fixture.bed, fixture.owners
+			code, result := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped")
+			if code != 1 || result.Outcome != intentInProgress {
+				t.Fatalf("extra stopped unit did not request its acts: %d %+v", code, result)
+			}
+			questions, damaged := channel.WalkOpenQuestions(b.stateRoot())
+			if len(damaged) != 0 || len(questions) != 2 {
+				t.Fatalf("unrequired findings have no executable asks: %+v %v", questions, damaged)
+			}
+			for _, question := range questions {
+				if question.UnitStop == nil || !strings.Contains(question.UnitStop.Needs, "work review "+b.id+" --work stopped") || !strings.Contains(question.UnitStop.Needs, "--dispositions") || !slices.Contains(question.UnitStop.AcceptableActs, "work-drop") || !slices.Contains(question.UnitStop.AcceptableActs, "work-revise") {
+					t.Fatalf("finding ask has no existing matching act: %+v", question)
+				}
+				owners.processes.question = channel.ReadQuestion
+				code, out, _ := b.run(owners, "question", "show", "channel:"+question.ID)
+				if code != 0 || !strings.Contains(strings.Join(strings.Fields(out), " "), question.UnitStop.Needs) {
+					t.Fatalf("question show omitted its correction command: %d %q", code, out)
+				}
+			}
+			before, err := fixture.runner.Status(fixture.run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := os.ReadFile(filepath.Join(fixture.agents, "jobs", fixture.critic+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var sourceRecord map[string]any
+			if err = json.Unmarshal(source, &sourceRecord); err != nil {
+				t.Fatal(err)
+			}
+			transferWriteJSON(t, filepath.Join(b.root(), "artifacts", "agents", "jobs", fixture.critic+".json"), sourceRecord)
+			originalDiff, err := os.ReadFile(filepath.Join(before.Rounds[1].Directory, "worktree.diff"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(before.Rounds[1].Directory, "stop-dispositions.md")
+			failure := cause
+			detail := cause.Error()
+			if goal.IsReadTimeout(cause) {
+				sha := strings.Repeat("c", 40)
+				failure = &branch.OpError{Code: branch.NotHolderCode, Message: cause.Error(), Cause: cause, CreatedCommit: sha}
+				detail = goal.ReadTimeoutMessage(cause) + ", so commit " + sha + " was created and its publication is not confirmed"
+			}
+			owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return "", failure }
+			code, dropped := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped", "--dispositions", path)
+			if code != 1 || dropped.Outcome != intentInProgress || dropped.Summary != "the drop remains pending" || !slices.Equal(dropped.Details, []string{detail}) {
+				t.Fatalf("extra drop silently changed retained work: %d %+v", code, dropped)
+			}
+			if dropped.Next == nil || !slices.Equal(dropped.Next.Argv, []string{"metasystem", "work", "review", "--json", b.id, "--work", "stopped", "--dispositions", path}) {
+				t.Fatalf("drop lost retry: %+v", dropped.Next)
+			}
+			after, err := fixture.runner.Status(fixture.run)
+			if err != nil || after.Rounds[1].Transferred || after.Subjects[0].Commit != before.Subjects[0].Commit || len(b.goalFile(b.id).ReviewObligations) != 0 || fixture.observer.publications != 0 {
+				t.Fatalf("extra drop changed source/completion: %+v %v", after, err)
+			}
+			retained, err := os.ReadFile(filepath.Join(after.Rounds[1].Directory, "worktree.diff"))
+			if err != nil || !bytes.Equal(retained, originalDiff) {
+				t.Fatalf("extra drop changed retained diff: %v", err)
+			}
+			questions, damaged = channel.WalkOpenQuestions(b.stateRoot())
+			if len(damaged) != 0 || len(questions) != 2 {
+				t.Fatalf("unsupported drop closed a question: %+v %v", questions, damaged)
+			}
+			unrelated, err := channel.Ask(channel.AskRequest{RepoRoot: b.root(), Goal: b.id, Kind: "stop", Machine: "machine", Facts: []string{"another unit still needs correction"}, Now: b.manager.Now(), UnitStop: &channel.UnitStopQuestion{Loop: "unit-round", Subject: b.id + "/another/run", Attempt: 2, Finding: "another-reader:1", Review: "another-reader", Needs: "metasystem work revise " + b.id + " --work another --brief FILE --reason TEXT --by NAME", AcceptableActs: []string{"work-revise"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var correction strings.Builder
+			correction.WriteString("Correct the extra work.\n\n## Decisions on round 2\n\n| Finding | Decision | Evidence |\n| --- | --- | --- |\n")
+			for _, finding := range fixture.findings {
+				fmt.Fprintf(&correction, "| %s | fixed | %s:12 |\n", finding.ID, finding.Where)
+			}
+			brief := b.brief("extra-person-correction.md", correction.String())
+			b.manager.Supervisor = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{}}}
+			code, corrected := transferPublic(t, b, owners, "work", "revise", b.id, "--work", "stopped", "--brief", brief, "--reason", "Correct the remaining extra findings", "--by", "Wido")
+			if code != 0 || corrected.Outcome != intentConfirmed {
+				t.Fatalf("printed reasoned correction act cannot run: %d %+v", code, corrected)
+			}
+			questions, damaged = channel.WalkOpenQuestions(b.stateRoot())
+			if len(damaged) != 0 || len(questions) != 1 || questions[0].ID != unrelated.ID {
+				t.Fatalf("recorded reasoned correction did not close only its matching asks: %+v %v", questions, damaged)
+			}
 
+		})
+	}
 }

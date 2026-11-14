@@ -45,6 +45,9 @@ const StaleThreshold = 30 * time.Minute
 const (
 	defaultFreshFetchProcessTimeout = 3 * time.Second
 	defaultFreshProjectionTimeout   = 4 * time.Second
+	commandFreshFetchProcessTimeout = 26 * time.Second
+	commandFreshProjectionTimeout   = 35 * time.Second
+	commandFetchAcceptanceTimeout   = 30 * time.Second
 )
 
 // ReadTimeout identifies an expired projection and retains its underlying cause.
@@ -164,15 +167,18 @@ func ProjectWithDeadline(e Endpoint, fetchFirst bool, now time.Time, deadline fu
 	}
 	dependencies := projectionDependencies{processDeadline: deadline}
 	if fetchFirst {
-		dependencies = projectionWithDeadline(deadline)
+		dependencies = projectionWithDeadline(deadline, e.UnlockedCommandRead)
 	}
 	return project(e, fetchFirst, now, dependencies)
 }
 
-func projectionWithDeadline(deadline func(time.Duration) <-chan time.Time) projectionDependencies {
+func projectionWithDeadline(deadline func(time.Duration) <-chan time.Time, commandRead ...bool) projectionDependencies {
 	dependencies := projectionDependencies{processDeadline: deadline}
+	if len(commandRead) > 0 && commandRead[0] {
+		dependencies.timeout, dependencies.processTimeout = commandFetchAcceptanceTimeout, commandFreshFetchProcessTimeout
+	}
 	if deadline != nil {
-		dependencies.deadline = deadline(defaultFreshProjectionTimeout)
+		dependencies.deadline = deadline(dependencies.withDefaults().timeout)
 	}
 	return dependencies
 }
@@ -338,6 +344,9 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout tim
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := boundedexec.RunWithDeadline(cmd, boundedexec.FixedBound(processTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch", deadline); err != nil {
+		if errors.Is(err, boundedexec.ErrTimedOut) {
+			err = &ReadTimeout{Limit: processTimeout, Cause: err}
+		}
 		return "", fmt.Errorf("git fetch: %w (%s)", err, strings.TrimSpace(stderr.String()))
 	}
 	out, err := goalGit(e.Root, nil, "rev-parse", "--verify", ref)
