@@ -175,6 +175,7 @@ func cloneGroup(value Group) Group {
 	result.Obligations = append([]string(nil), value.Obligations...)
 	result.Platforms = append([]string(nil), value.Platforms...)
 	result.Packages = append([]string(nil), value.Packages...)
+	result.RequiredTestFiles = append([]string(nil), value.RequiredTestFiles...)
 	result.BuildTags = append([]string(nil), value.BuildTags...)
 	result.Tests = append(json.RawMessage(nil), value.Tests...)
 	result.Argv = append([]string(nil), value.Argv...)
@@ -224,6 +225,7 @@ func mergeProtectedGroup(base, candidate Group) Group {
 	result.Obligations = unique(base.Obligations, candidate.Obligations)
 	result.Platforms = unique(base.Platforms, candidate.Platforms)
 	result.Packages = unique(base.Packages, candidate.Packages)
+	result.RequiredTestFiles = unique(base.RequiredTestFiles, candidate.RequiredTestFiles)
 	// A tag change can exclude files, so a protected group keeps its original
 	// build constraints. Additional tagged coverage needs a new group ID.
 	result.BuildTags = append([]string(nil), base.BuildTags...)

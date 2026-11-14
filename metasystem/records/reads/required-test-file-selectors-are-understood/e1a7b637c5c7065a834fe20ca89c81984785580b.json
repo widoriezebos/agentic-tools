@@ -1,0 +1,60 @@
+{
+  "canonicalRead": {
+    "engine": "9cae462fa0582cdff4e07a589549ada6df8a763e",
+    "findings": [
+      {
+        "change": "In U-required, before the first mapping lands, leave selectors out of scopeDecision.groupIDs, or treat a path covered only by a selector like a template-covered path, and refuse selectors in RunNamedGroups as it refuses templates.",
+        "claim": "The lane's scoped proof can pick a selector group (one that names required test files and is never run as itself) as a group to run. The trigger is a changed path that a selector's inputs cover while no Go code unit changes. RunNamedGroups does not refuse selectors, so that scoped proof would stop with 'not run' instead of running.",
+        "class": "other",
+        "evidence": "testpolicy.Affected (internal/testpolicy/affected.go:46-57) adds every group whose inputs cover a path, selectors included. scopeDecision.groupIDs (internal/landing/plain/scope.go:301-307) turns those into LANDING_PROOF_GROUPS (prove.go:1275). repoproof (internal/repoproof/full.go:153) passes them to proofrun.RunNamedGroups, whose only refusal is for packageSelection (internal/proofrun/groups.go:53-56). The run then fails closed, because GoTests errors on an empty test list (contract.go:696-697). It cannot be reached in this unit: testing.json has no selectors, and the brief puts mappings in the next unit (U-required). Not material: the slice works and is safe without the fix, and the failure is closed, not a false green.",
+        "id": "code-critic-e43c696ff6a8bfe92c1e608b:1",
+        "material": false,
+        "relation": "goal intent: every reader of the test contract understands a selector group before any mapping uses one",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/scope.go"
+      }
+    ],
+    "id": "code-critic-e43c696ff6a8bfe92c1e608b",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-required-test-file-selectors-are-understood/metasystem/artifacts/agents/code-critic-e43c696ff6a8bfe92c1e608b/rounds/1/return.md",
+    "subject": {
+      "commit": "e1a7b637c5c7065a834fe20ca89c81984785580b",
+      "diffDigest": "a2e090554b09dfc250f8e10996dd1556f381150f9bfb39de0724dff5a7db8c6c",
+      "kind": "commit",
+      "parent": "5ab969360e21a1271b36973bdeccec17ea3412b4",
+      "tree": "617dff950a8b04d990d726edbc3bc5a06ba31045"
+    }
+  },
+  "readDigest": "a7f77ed613b34c1d22c290cfdce83de9e2f5f13f11f780eb8f209b2dd14ca3ff",
+  "schemaVersion": 1,
+  "goal": "required-test-file-selectors-are-understood",
+  "unit": "U-files",
+  "subject": {
+    "commit": "e1a7b637c5c7065a834fe20ca89c81984785580b",
+    "parent": "5ab969360e21a1271b36973bdeccec17ea3412b4",
+    "tree": "617dff950a8b04d990d726edbc3bc5a06ba31045",
+    "patchDigest": "a2e090554b09dfc250f8e10996dd1556f381150f9bfb39de0724dff5a7db8c6c",
+    "unitDigest": "697184df080cd10499551d77af445cd28497f8d28f83f1dd95529730ba8e338e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-e43c696ff6a8bfe92c1e608b",
+    "round": 1,
+    "closureSha256": "a53dfb2524bc1f201616b7fd4fcd66158d7047fb8b71a8bea7bdb19267b0b98e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "617dff950a8b04d990d726edbc3bc5a06ba31045",
+    "runId": "goal-read-gate-20261112t064106z-d9509ac6109eb5f6"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/work_commit_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-e43c696ff6a8bfe92c1e608b"
+    }
+  ],
+  "sha256": "cb9c7ed50ff6b7b789de243f045095ef909ec39044750ca15f5b3aeaf1be91e2"
+}
