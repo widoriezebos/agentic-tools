@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 const (
@@ -120,7 +121,25 @@ func SelectPersonBatch(install, checkout string, registered lane.Record, goals [
 
 // PersonSelection records a selection after the caller proves the person's terminal.
 func PersonSelection(install, checkout string, registered lane.Record, goals []string, person ActProvenance, s ProveSeams) (selected *Batch, err error) {
-	at := person.CheckedAt
+	personPause := landingstate.Actor(landingstate.ActorFacts{Provenance: true}).Word == landingstate.Person
+	return selectRecordedBatch(install, "", checkout, registered, goals, &person, nil, nil, personPause, s)
+}
+
+// SelectDelegatedBatch selects every waiting goal on the engine's unchanged barren hold.
+func SelectDelegatedBatch(install, home, checkout string, registered lane.Record, goals []string, d DelegatedProvenance, fingerprint func(string) (string, error), s ProveSeams) (*Batch, error) {
+	if d.Grant == "" || d.Decision == "" || d.Session == "" || d.Class != "lane-recovery" {
+		return nil, errors.New("the delegated selection needs a grant, decision, session and lane-recovery class")
+	}
+	return selectRecordedBatch(install, home, checkout, registered, goals, nil, &d, fingerprint, false, s)
+}
+
+func selectRecordedBatch(install, home, checkout string, registered lane.Record, goals []string, person *ActProvenance, d *DelegatedProvenance, fingerprint func(string) (string, error), personPause bool, s ProveSeams) (selected *Batch, err error) {
+	at := time.Time{}
+	if person != nil {
+		at = person.CheckedAt
+	} else {
+		at = d.CheckedAt
+	}
 	if len(goals) == 0 {
 		return nil, errors.New("name at least one waiting goal with --goals")
 	}
@@ -132,6 +151,31 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 		return nil, err
 	}
 	err = withLock(install, func() error {
+		if d != nil {
+			held, err := lock.File(lane.LockPath(home), 0600, lock.Exclusive)
+			if err != nil {
+				return err
+			}
+			defer held.Release()
+			current, present, err := lane.Read(home)
+			if err != nil || !present || current != registered || registered.Install != install || registered.Root != checkout {
+				return errors.New("the lane registration changed")
+			}
+			if _, unsetting, err := lane.ReadUnset(home); err != nil || unsetting {
+				return errors.New("the landing lane is being unset")
+			}
+			if err := DelegatedRecoveryHeld(install, home, checkout, fingerprint, s); err != nil {
+				return err
+			}
+			state, err := lane.ReadAgentState(home)
+			if err != nil || state.BarrenAt == "" {
+				return errors.New("the barren hold has no recorded identity")
+			}
+			d.Hold = DelegatedHold{BarrenAt: state.BarrenAt, Fingerprint: state.BarrenFingerprint}
+			if len(state.BarrenLaunches) > 0 {
+				d.Hold.Launch = state.BarrenLaunches[len(state.BarrenLaunches)-1]
+			}
+		}
 		entries, err := Entries(install)
 		if err != nil {
 			return err
@@ -148,6 +192,11 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 				return fmt.Errorf("goal %s has no current waiting hand-in; repeat the selection with current waiting goals", goal)
 			}
 			members = append(members, GoalSHA{Goal: goal, SHA: entries[index].SHA})
+		}
+		for _, entry := range entries {
+			if d != nil && entry.State == StateWaiting && !seen[entry.Goal] {
+				return errors.New("the waiting goals changed; repeat the selection with every waiting goal")
+			}
 		}
 		batch, readErr := ReadBatch(install)
 		if batch != nil && batch.Lane != registered {
@@ -177,15 +226,22 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 			policy = PolicyValue{Value: "unknown", Source: policyErr.Error()}
 		}
 		batch.Selector = policy
-		person.Kind, person.Destination, person.Subject = "selection", registered, members
-		batch.Person, batch.Delegated = &person, nil
-		if s.Pause != nil && landingstate.Actor(landingstate.ActorFacts{Provenance: batch.Person != nil}).Word == landingstate.Person {
+		stopAt, err := barrenStopAtLocked(install)
+		if err != nil {
+			return err
+		}
+		batch.Person, batch.Delegated = person, d
+		if person != nil {
+			person.Kind, person.Destination, person.Subject = "selection", registered, members
+			person.BarrenStopAt = stopAt
+		} else {
+			d.Kind, d.Destination, d.Subject = "selection", registered, members
+			d.BarrenStopAt = stopAt
+		}
+		if s.Pause != nil && personPause {
 			if pause, paused := s.Pause(); paused && !pause.Unreadable() {
 				batch.Person.StandingPause = &pause
 			}
-		}
-		if err := bindBarrenStopLocked(install, batch.Person); err != nil {
-			return err
 		}
 		if err := s.batchLane(batch); err != nil {
 			return err
@@ -194,17 +250,29 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 			return err
 		}
 		selected = batch
-		return closeMatchingStopsLocked(install, "person selected batch "+batch.ID, at, func(stop Stop) bool {
-			return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
+		actor := "person"
+		if d != nil {
+			actor = "decision " + d.Decision
+		}
+		return closeMatchingStopsLocked(install, actor+" selected batch "+batch.ID, at, func(stop Stop) bool {
+			return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == stopAt
 		}, s)
 	})
 	return selected, err
 }
 
 func bindBarrenStopLocked(install string, person *ActProvenance) error {
+	at, err := barrenStopAtLocked(install)
+	if at != "" {
+		person.BarrenStopAt = at
+	}
+	return err
+}
+
+func barrenStopAtLocked(install string) (string, error) {
 	stops, err := readLines[Stop](stopsPath(install))
 	if err != nil {
-		return err
+		return "", err
 	}
 	seenStops := stopSet{}
 	for i := len(stops) - 1; i >= 0; i-- {
@@ -214,11 +282,10 @@ func bindBarrenStopLocked(install string, person *ActProvenance) error {
 		}
 		seenStops.add(stop)
 		if stop.Decision == "stop" && stop.Loop == "lane-return" && stop.Subject == "lane" {
-			person.BarrenStopAt = stop.At
-			break
+			return stop.At, nil
 		}
 	}
-	return nil
+	return "", nil
 }
 
 // RecordedPersonBatch checks an internal continuation against its durable effect.
