@@ -235,18 +235,28 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 			t.Fatalf("revision reused exception: %+v %v", next, err)
 		}
 	})
-	t.Run("carry-subject", func(t *testing.T) {
+	carrySubject := func(t *testing.T) {
 		t.Parallel()
+		state := strings.TrimPrefix(t.Name(), "TestCarryAndFullSuitePublicAdmission/")
 		b, owners, _ := rebaseIntentBed(t)
 		initialGoal := b.id
+		installCarrySelectionProducer(t, b.worktree)
+		producer := ""
+		if state != "carry-subject-no-selection" {
+			producer = carrySelectionProducerCommand(t) + " || exit $?\n"
+		}
+		audits := "printf audited"
+		if state == "carry-subject-unaudited" {
+			audits = "true"
+		}
 		script := filepath.Join(t.TempDir(), "check")
-		if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'subject checked'\n"), 0700); err != nil {
+		if err := testexec.WriteFile(script, []byte("#!/bin/sh\n"+producer+"printf 'subject checked'\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
-		mainContent := "proof.cheap=printf seed\nproof.audits=true\nproof.deadline=15\nproof.full=printf full\n"
+		mainContent := "proof.cheap=printf seed\nproof.audits=" + audits + "\nproof.deadline=15\nproof.full=printf full\n"
 		cheap, full, unavailable := script, script, false
 		content := func() string {
-			return "proof.cheap=" + cheap + "\nproof.audits=true\nproof.deadline=15\nproof.full=" + full + "\n"
+			return "proof.cheap=" + cheap + "\nproof.audits=" + audits + "\nproof.deadline=15\nproof.full=" + full + "\n"
 		}
 		subject := branch.AttestationSubject{Commit: strings.Repeat("c", 40), Tree: strings.Repeat("d", 40), Parent: "seed"}
 		owners.connection.readRepository = carryFullRepository{root: b.worktree, common: t.TempDir(), subject: subject}
@@ -345,6 +355,11 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		if err != nil || q.State != "closed" {
 			t.Fatalf("carry question: %+v %v acts=%+v", q, err, checkActs(t, b))
 		}
+		paths, err = filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*", "result.json"))
+		if err != nil || len(paths) != 1 {
+			t.Fatalf("approved check executions: %v %v", paths, err)
+		}
+		assertCarrySelectionEvidence(t, paths[0], state != "carry-subject-no-selection", state == "carry-subject")
 		gatePath := filepath.Join(b.root(), "artifacts", "unit-checks", "carry", subject.Commit, "gate.json")
 		if err := os.Remove(gatePath); err != nil {
 			t.Fatal(err)
@@ -353,8 +368,12 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 			t.Fatalf("carry replay: %d %+v", code, result)
 		}
 		paths, _ = filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*", "result.json"))
-		if len(paths) != 1 {
-			t.Fatalf("duplicate carry check: %v", paths)
+		want := 1
+		if state != "carry-subject" {
+			want++
+		}
+		if len(paths) != want {
+			t.Fatalf("carry executions: got %d want %d: %v", len(paths), want, paths)
 		}
 		raw, _ := os.ReadFile(paths[0])
 		var executed struct {
@@ -449,7 +468,10 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 			t.Fatalf("carry repair lost the enrolled name: %+v %v", repaired, err)
 		}
 
-	})
+	}
+	for _, state := range []string{"carry-subject", "carry-subject-no-selection", "carry-subject-unaudited"} {
+		t.Run(state, carrySubject)
+	}
 }
 
 type carryFullRepository struct {

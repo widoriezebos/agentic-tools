@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // enginePrefaceStart opens the two lines the engine puts in front of every
@@ -163,12 +166,19 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				if lookup == nil {
 					lookup = os.LookupEnv
 				}
+				if base, ok := lookup("METASYSTEM_PUBLICATION_BASE"); ok && base != "" {
+					check := *plan.Check
+					check.Base = base
+					plan.Check = &check
+				}
 				kind, _ := lookup(launch.KindEnv)
 				if role == "attestation" || kind == "proof" {
 					records = round
 				}
 				body, briefErr := os.ReadFile(brief)
 				checkContext := launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: record.Goal, Run: record.ID, Round: filepath.Base(round), Role: role, BriefSHA256: fmt.Sprintf("%x", sha256.Sum256(body))}, Parent: parent, Now: inv.unitRunner().Manager.Now}
+				checkContext.Worktree = strings.TrimSpace(string(top))
+				checkContext.Tree = func() (string, error) { return inv.unitRunner().CheckTree(checkContext.Worktree) }
 				if briefErr != nil {
 					checkContext.BriefSHA256 = ""
 				}
@@ -177,7 +187,7 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					executable = os.Executable
 				}
 				if path, err := executable(); err == nil {
-					plan.Check.Environment = commandenv.EngineEnvironmentInDirectory(plan.Check.Environment, filepath.Dir(path))
+					checkContext.EngineDirectory = filepath.Dir(path)
 				}
 				install := inv.layout.InstallationRoot.Path()
 				var lease *proofrun.HostResourceLease
@@ -397,4 +407,77 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 		return &processCheckHeld{act: admitted, remedy: withAct(admitted.ID), problem: ""}
 	}
 	return nil
+}
+
+func (inv *intentInvocation) publicationCheckContext(worktree, parent string, check launch.UnitCheck, previous launch.CheckSelection) (current launch.CheckSelection, required []string, err error) {
+	installation := filepath.Join(worktree, inv.layout.InstallationRel)
+	_, contract, _, err := testrun.LoadContract(installation)
+	if err != nil {
+		return current, nil, err
+	}
+	ids, err := publicationRequirements(contract)
+	if err != nil {
+		return current, nil, err
+	}
+	closure, err := testpolicy.WithPrerequisiteClosure(contract, testpolicy.Plan{SelectedGroups: ids, Stages: []testpolicy.Stage{{ID: "publication", Groups: ids}}})
+	if err != nil {
+		return current, nil, err
+	}
+	current.Version, current.VerdictPolicyVersion = 1, 1
+	data, _ := json.Marshal(contract)
+	current.ContractDigest = bytesSHA256(data)
+	current.BuildTags, current.Settings = map[string][]string{}, map[string]string{}
+	for _, id := range previous.Groups {
+		current.BuildTags[id] = nil
+	}
+	for _, group := range contract.Groups {
+		if slices.Contains(previous.Groups, group.ID) {
+			current.BuildTags[group.ID] = group.BuildTags
+		}
+	}
+	for key := range previous.Settings {
+		current.Settings[key], _, err = config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(installation, "metasystem.conf"), LookupEnv: inv.owners.lookupEnv})
+		if err != nil {
+			return current, nil, err
+		}
+	}
+	executable := inv.owners.processes.executable
+	if executable == nil {
+		executable = os.Executable
+	}
+	engine, _ := executable()
+	current.EngineDigest, err = fileSHA256(engine)
+	if err != nil {
+		return current, nil, err
+	}
+	var environment []string
+	environment, current.EnvironmentSHA256, current.Workers = publicationCheckEnvironment(check, parent)
+	description, err := proofrun.LandingEnvironment(context.Background(), installation, environment)
+	if err != nil {
+		return current, nil, err
+	}
+	current.GoVersion, _, _ = strings.Cut(description, "; ")
+	_, err = fmt.Sscanf(strings.TrimPrefix(description, current.GoVersion+"; "), "GOOS=%q; GOARCH=%q;", &current.GOOS, &current.GOARCH)
+	return current, closure.SelectedGroups, err
+}
+
+func publicationCheckEnvironment(check launch.UnitCheck, parent string) (environment []string, digest string, workers int) {
+	environment = slices.Clone(check.Environment)
+	environment = slices.DeleteFunc(environment, func(entry string) bool {
+		return strings.HasPrefix(entry, "METASYSTEM_CHECK_SELECTION=") || strings.HasPrefix(entry, launch.CheckEnvironmentVariable+"=") || strings.HasPrefix(entry, "LANDING_ONLY=") || strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
+	})
+	environment = append(environment, "LANDING_ONLY=", "LANDING_PROOF_BASE="+parent)
+	digest = launch.CheckEnvironmentDigest(check.Environment, parent)
+	workers = runtime.GOMAXPROCS(0)
+	for _, name := range []string{"METASYSTEM_TESTING_WORKERS", proofrun.TestWorkersEnvironment} {
+		for _, entry := range environment {
+			if value, found := strings.CutPrefix(entry, name+"="); found && value != "" {
+				n, _ := strconv.Atoi(value)
+				if name == "METASYSTEM_TESTING_WORKERS" || n < workers {
+					workers = n
+				}
+			}
+		}
+	}
+	return environment, digest, workers
 }

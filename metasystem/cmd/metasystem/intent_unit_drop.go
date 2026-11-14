@@ -233,7 +233,7 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 						_, err = git(dir, "diff", "--exit-code")
 						return err
 					}
-					proof, err := runner.ProveRoundResult(review, dir, &drop.Subject, retain)
+					proof, err := runner.ProveRoundResult(review, dir, parent, &drop.Subject, retain)
 					if err != nil {
 						return err
 					}

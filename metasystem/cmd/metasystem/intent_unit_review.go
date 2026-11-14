@@ -429,7 +429,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 									}
 								}
 							}
-							gate, err := runner.ProveRoundResult(review, dir, subject, retain)
+							gate, err := runner.ProveRoundResult(review, dir, parent, subject, retain)
 							if err != nil {
 								gateErr = err
 								return err

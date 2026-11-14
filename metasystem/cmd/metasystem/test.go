@@ -117,10 +117,11 @@ func runTestGroupsWithEnvironment(args, environment []string, stdout, stderr io.
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	return runNamedTestGroups(installation, contract, ids, environment, nil, stdout, stderr)
+	code, _ := runNamedTestGroups(installation, contract, ids, environment, nil, stdout, stderr)
+	return code
 }
 
-func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, units map[string]string, stdout, stderr io.Writer, completed ...func()) int {
+func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, units map[string]string, stdout, stderr io.Writer, completed ...func()) (int, []proofrun.NamedGroupResult) {
 	var progress func(string, int, []proofrun.PackageExecution)
 	if units != nil {
 		progress = func(id string, planned int, completed []proofrun.PackageExecution) {
@@ -160,7 +161,7 @@ func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, 
 		if units != nil {
 			fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
 		}
-		return 1
+		return 1, results
 	}
 	if units != nil {
 		failed := 0
@@ -186,7 +187,7 @@ func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, 
 		}
 		fmt.Fprintf(stdout, "LANDING-CHECKED\t%d\n", failed)
 	}
-	return exit
+	return exit, results
 }
 
 func runTestList(args []string, stdout, stderr io.Writer) int {

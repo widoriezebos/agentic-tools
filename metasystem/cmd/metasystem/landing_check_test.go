@@ -45,7 +45,7 @@ func TestLandingResolveCheckCostAndCollectionReuse(t *testing.T) {
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = false\n")
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() { _ = 1 }\n")
 	testingFixtureGit(t, root, "add", ".")
-	run := func(wantCount int) {
+	run := func(wantCount int, reused bool) {
 		t.Helper()
 		code, out, problem := impactPublic(t, root, "--base", base, "--check")
 		if code != 0 {
@@ -55,23 +55,23 @@ func TestLandingResolveCheckCostAndCollectionReuse(t *testing.T) {
 		if err != nil || string(got) != strings.Repeat("checked", wantCount) {
 			t.Fatalf("checks=%s err=%v", got, err)
 		}
-		if !strings.Contains(out, "check: fast-static-build only; impact would cover 50% of 4 packages") || !strings.Contains(out, "landing group fast-static-build green") || strings.Contains(out, "landing group unit/") || strings.Contains(out, "check reused from the job") {
+		if !strings.Contains(out, "check: fast-static-build only; impact would cover 50% of 4 packages") || strings.Contains(out, "landing group fast-static-build green") == reused || strings.Contains(out, "check reused:") != reused || strings.Contains(out, "landing group unit/") {
 			t.Fatalf("expensive check: %s", out)
 		}
 		t.Log(out)
 	}
-	run(1)
-	run(2)
+	run(1, false)
+	run(1, true)
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() { _ = 2 }\n")
 	testingFixtureGit(t, root, "add", ".")
-	run(3)
+	run(2, false)
 	// A different comparison base cannot borrow the preceding job's green.
 	identity, err := repairCheckIdentity(root, base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity.Base = "another-base"
-	if reused, _ := repairCheckCache(root, identity, false); reused {
+	if decision, _ := repairCheckCache(root, identity, false); decision.Reuse != nil {
 		t.Fatal("reused another base")
 	}
 	record, err := os.ReadFile(filepath.Join(plain.Dir(root), "repair-check.json"))
@@ -126,7 +126,7 @@ func TestLandingCheckSaveWorkingTreeGitAdapter(t *testing.T) {
 					t.Fatalf("record=%s err=%v", record, err)
 				}
 				code, out, problem = impactPublic(t, root, "--base", base, "--check")
-				if code != 0 || strings.Contains(out, "check reused from the job") || !strings.Contains(out, "landing group fast-static-build green") {
+				if code != 0 || !strings.Contains(out, "check reused:") || strings.Contains(out, "landing group fast-static-build green") {
 					t.Fatalf("recheck=%d out=%s err=%s", code, out, problem)
 				}
 			}
@@ -204,12 +204,12 @@ func TestLandingCheckFixRecordsEveryOutcomeGitAdapter(t *testing.T) {
 				t.Logf("fix record after real check: %s", record)
 				for reuse := 1; reuse <= 2; reuse++ {
 					code, out, problem := impactPublic(t, root, "--base", base, "--check")
-					if code != 0 || strings.Contains(out, "check reused from the job") || !strings.Contains(out, "landing group fast-static-build green") {
+					if code != 0 || !strings.Contains(out, "check reused:") || strings.Contains(out, "landing group fast-static-build green") {
 						t.Fatalf("recheck %d: exit=%d out=%s problem=%s", reuse, code, out, problem)
 					}
 					after, err := os.ReadFile(filepath.Join(plain.Dir(root), "fixes", "attempt.json"))
-					if err != nil || json.Unmarshal(after, &fields) != nil || fields.Result != wantResult || fields.Minutes < 2.0/60 {
-						t.Fatalf("recheck %d did not record the new execution: after=%s err=%v", reuse, after, err)
+					if err != nil || json.Unmarshal(after, &fields) != nil || fields.Result != wantResult || fields.Minutes <= 0 {
+						t.Fatalf("recheck %d did not record the cache decision: after=%s err=%v", reuse, after, err)
 					}
 					t.Logf("fix record after reuse %d: %s", reuse, after)
 				}

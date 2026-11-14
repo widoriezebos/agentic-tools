@@ -33,6 +33,7 @@ type UnitSubject struct {
 	GateSnapshot *repositorySnapshot `json:"gateSnapshot,omitempty"`
 	GateLaunches []string            `json:"gateLaunches,omitempty"`
 	GateRunID    string              `json:"gateRunId,omitempty"`
+	GateReuse    *CheckReuse         `json:"gateReuse,omitempty"`
 	Conflict     string              `json:"conflict,omitempty"`
 	Round        int                 `json:"round"`
 	Operation    string              `json:"operation"`

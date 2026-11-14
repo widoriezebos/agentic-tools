@@ -21,6 +21,7 @@ import (
 // NamedGroupResult describes a native run without granting proof authority.
 type NamedGroupResult struct {
 	ID         string
+	Workers    int
 	Status     string
 	DurationMS int64
 	Reasons    []string
@@ -135,6 +136,7 @@ func RunNamedGroups(ctx context.Context, installation string, contract testpolic
 			groupRequest.nativeProgress(0, []PackageExecution{{Package: id, Shard: 0, Status: status, ElapsedMS: &ms}})
 		}
 		known[id] = result.Status
+		result.Workers = workers
 		results = append(results, result)
 		return nil
 	}

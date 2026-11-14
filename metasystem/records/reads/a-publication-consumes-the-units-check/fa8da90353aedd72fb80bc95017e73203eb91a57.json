@@ -1,0 +1,59 @@
+{
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [],
+    "id": "code-critic-bf48bb35645ddb9a3ca90bf1",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-publication-consumes-the-units-check/metasystem/artifacts/agents/code-critic-bf48bb35645ddb9a3ca90bf1/rounds/1/return.md",
+    "subject": {
+      "commit": "fa8da90353aedd72fb80bc95017e73203eb91a57",
+      "diffDigest": "21b43e8ca0e776f1f22b7b8866d1e18963deb07f4bc89d04856778bf0540db8c",
+      "kind": "commit",
+      "parent": "ecfbffc0413333a65b0ad13fdffefcf27ec80f6b",
+      "tree": "85b460372660c70c0dddbd90fac1da543fd02a49"
+    }
+  },
+  "readDigest": "c0b5cbccc675a415ed8f3db98dd6fdb854d1c6f9c3ffcc50c075da651d1c6c12",
+  "schemaVersion": 1,
+  "goal": "a-publication-consumes-the-units-check",
+  "unit": "D2-U3c2",
+  "subject": {
+    "commit": "fa8da90353aedd72fb80bc95017e73203eb91a57",
+    "parent": "ecfbffc0413333a65b0ad13fdffefcf27ec80f6b",
+    "tree": "85b460372660c70c0dddbd90fac1da543fd02a49",
+    "patchDigest": "21b43e8ca0e776f1f22b7b8866d1e18963deb07f4bc89d04856778bf0540db8c",
+    "unitDigest": "8cf8f1d654976ce2c510be64b9cf7d59d1977afc5b6e551bd874679441768eb8"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-bf48bb35645ddb9a3ca90bf1",
+    "round": 1,
+    "closureSha256": "74bafc9d55524dd407bda0c02932ce3f40cfeb5723d8e8f56360204a467ad585"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "85b460372660c70c0dddbd90fac1da543fd02a49",
+    "runId": "goal-read-gate-20261113t184248z-cff862530f93c383"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "46c1b647ff4322a4ebd901e95918ca126fcf1a17",
+      "digest": "006479f85c0af660a5ab9a6a00494ce726bdc795c73b14a1075a4966e5ae3b59"
+    },
+    {
+      "kind": "read",
+      "commit": "a2786e3716d7a3c4c56e065ad84b77e11ea665ba",
+      "digest": "e7c30a2f4c3504761f3cc07e62ae06df4476534f755aa632eb314c25db22cd53"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/publication_check_environment_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf48bb35645ddb9a3ca90bf1"
+    }
+  ],
+  "sha256": "1a10285f582ad56e32740a83558a8d38d278087916f57c4f11dc3b5564dd1563"
+}

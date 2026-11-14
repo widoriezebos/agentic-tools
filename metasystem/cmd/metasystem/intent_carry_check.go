@@ -135,13 +135,32 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 					return branch.GateObservation{}, fmt.Errorf("the retained subject check failed\nrun: %s", shellCommand(rerun))
 				}
 			}
-			if !inv.input.switched("rerun") {
+		}
+		if !inv.input.switched("rerun") {
+			path := filepath.Join(latest, "evidence.json")
+			data, readErr := os.ReadFile(path)
+			var evidence launch.CheckEvidence
+			if readErr == nil {
+				readErr = json.Unmarshal(data, &evidence)
+			}
+			current, required, contextErr := inv.unitRunner().PublicationCheck(directory, subject.Parent, check, evidence.Selection)
+			decision := launch.ApplicableCheck(&evidence, path, readErr, launch.CheckNeed{Tree: subject.Tree, Base: subject.Parent, Strength: "audited", Check: check, Context: current, Requirements: required})
+			if contextErr != nil {
+				decision = launch.CheckDecision{Field: "current context unavailable"}
+			}
+			if decision.Reuse != nil {
 				execution = latest
+			} else {
+				fmt.Fprintln(inv.stderr, "carry check runs: "+decision.Field+" differs")
 			}
 		}
 	}
 	if execution == "" {
-		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now})
+		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now,
+			Worktree: directory, Tree: func() (string, error) {
+				tree, err := inv.work().git(directory, "rev-parse", "HEAD^{tree}")
+				return strings.TrimSpace(string(tree)), err
+			}})
 	}
 	if err != nil {
 		return branch.GateObservation{}, err

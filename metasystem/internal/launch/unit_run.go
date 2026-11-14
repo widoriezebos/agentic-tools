@@ -227,6 +227,8 @@ type UnitRunner struct {
 	ExaminationRead   func(string, string) (readsubject.Read, error)
 	RedUnits          func(Record) ([]loopstop.RedUnit, bool, error)
 	RecordMain        func(Record, string, string) error
+	PublicationCheck  func(string, string, UnitCheck, CheckSelection) (CheckSelection, []string, error)
+	CheckMismatch     func(string)
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
 	// options is set only on the per-call copy AdvancePrepared makes; a new
@@ -1406,6 +1408,12 @@ func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree stri
 
 func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapshot, error) {
 	return runner.snapshotWorktree(worktree, true)
+}
+
+// CheckTree observes the same content tree as the runner's repository snapshot.
+func (runner *UnitRunner) CheckTree(worktree string) (string, error) {
+	snapshot, err := runner.snapshotRepository(worktree)
+	return snapshot.TreeID, err
 }
 
 func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (repositorySnapshot, error) {
