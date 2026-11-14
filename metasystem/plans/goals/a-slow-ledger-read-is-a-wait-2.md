@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build U3 (bound 60) from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-slow-ledger-read-is-a-wait-brief.md section U3; then U4 (--last) from a brief of its own that a1 writes when U3 is published (persisted count, a notification path that is not the idle incident, a whitelisted verdict class). Fold the two low notes of U1's read into U3: a resumed commit's recheck timeout must not say 'nothing was committed', and the message names the bound that actually expired.
 - OpenedAt: 2026-11-14T08:08:17Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=X5AAQHFESEAH1GMT5T3X82QJY9-ui-2e4e153f minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-14T08:08:17Z 0KECAYCPJJQ4ZWK0FZZEQXFFJ4-ui-2e4e153f open actor=human:Wido targets=a-slow-ledger-read-is-a-wait-2
 - 2026-11-14T08:08:30Z X5AAQHFESEAH1GMT5T3X82QJY9-ui-2e4e153f approve actor=human:Wido targets=a-slow-ledger-read-is-a-wait-2
-Integrity: sha256=10617af89c7b13c120e3b40e4effd66f70db2289e5961b824410203e34d4d1bb
+- 2026-11-14T08:08:44Z XZ7X40FSA7924Z91B3TR7B0DZ8-ui-2e4e153f set-pin actor=human:Wido targets=a-slow-ledger-read-is-a-wait-2
+Integrity: sha256=8926af962dde5e1053d44cd3d31f3c86326abb1331ba834f3a10768fd7283ffd
