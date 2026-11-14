@@ -1,6 +1,6 @@
 # a-batch-gate-is-accepted-for-its-tree
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="an engine defect in one owner, root cause read in a recorded finding (556, 557); the unit check and the lane proof gate it"
@@ -11,14 +11,13 @@
 - Next step: Build without a design from finding 556: key the gate acceptance on the tree; one test with two merge commits of one tree; about 20 lines
 - OpenedAt: 2026-11-07T15:02:25Z
 - FirstClaimAt: 2026-11-13T21:36:46Z
-- Revision: 85
+- Revision: 86
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-07T15:02:45Z revision=3 opid=SAN72GZ3YQHDSAB5NHA6VDBDJE-m1e-5a3e856b authority=proven digest=683b3409040a95f18d0aac7553fcf0354c09a3989707b20a726cde3fe0b399ba episode=3
 - Sliced: machine=ui lineage=steward-seat revision=83 at=2026-11-13T22:21:14Z
-- Claimed: machine=ui lineage=steward-seat at=2026-11-13T21:36:46Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-batch-gate-is-accepted-for-its-tree: no accepted design declares areas\"]" revision=83 accountingRevision=83 episodeAt=2026-11-13T21:36:46Z episodeRevision=83
-- StopCapability: generation=83 revision=83 machine=ui claimEpoch=11 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=83 episodeAt=2026-11-13T21:36:46Z episodeRevision=83 idleSeconds=0 released=2026-11-14T01:44:51Z
 
 History:
 - 2026-11-07T15:02:25Z FYXYRR9049G82FDFAZ9HG6HHCX-m1e-5a3e856b open actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree
@@ -106,4 +105,5 @@ History:
 - 2026-11-13T21:36:46Z R1RKWRS08K76G274F36MAAXDXK-ui-71c5cb39 claim actor=ui+steward-seat targets=a-batch-gate-is-accepted-for-its-tree reason=areas unknown for goal a-batch-gate-is-accepted-for-its-tree: no accepted design declares areas
 - 2026-11-13T22:04:32Z NMKQ9CMF2FW3MCWZ7QW2PSTY29-m1e-fd759238 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-blocking-flake-is-raised,a-boundary-waits-only-on-its-own-questions,a-continuation-job-may-write-the-stewards-state,a-deputy-budget-and-run-release,a-done-goals-branch-is-swept,a-flake-has-an-owner-from-its-first-sighting,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-host-is-ready-before-it-joins,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-channel-carries-only-acts-and-deliveries,a-persons-lane-act-is-not-overdue,a-publication-consumes-the-units-check,a-publication-refuses-only-what-it-adds,a-real-act-is-not-barren,a-refresh-leaves-a-busy-checkout-alone,a-register-append-is-published-by-its-writer,a-remedy-names-who-acts,a-reserved-decision-executes-from-its-answer,a-retained-read-brief-keeps-its-context,a-returned-conflict-can-be-resolved,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-run-holds-its-worktree,a-seat-and-a-lane-recover-under-delegation,a-selected-batch-is-proving,a-settled-unit-is-not-in-flight,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-steward-tick-costs-seconds,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-name-is-one-word-everywhere,a-unit-reservation-carries-its-deadline,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-agent-refusal-reaches-a-person-once,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,every-critic-reads-in-one-form,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-launch-testlanefixlaunchdeadlinerealprocess,lane-steward-2,one-host-admits-heavy-work,one-question-per-refused-admission,red-names-what-failed,required-test-file-selectors-are-understood,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-carry-check-classifies-a-flake,the-census-ignores-its-own-report,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-lane-carries-one-work-subject,the-lane-redoes-a-lost-merge,the-lane-returns-its-own-red,the-lane-session-owns-its-merge-2,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ratchet-counts-what-a-change-adds,the-ui-bundle-builds-again,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=a-slow-ledger-read-is-a-wait from=1:5 to=1:6 requested-sequence=1
 - 2026-11-13T22:21:14Z 2MTBY9R2K8CJXN2N3AK3DXFZBC-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-batch-gate-is-accepted-for-its-tree
-Integrity: sha256=03d9c924b08e4ea07e66cde73bf26e93aeba3fe60ff13ea617693710d228cc1b
+- 2026-11-14T01:44:51Z 5RQ4AC0B3SGFEP6DXX11BYVMDW-ui-71c5cb39 release actor=ui+steward-seat targets=a-batch-gate-is-accepted-for-its-tree reason=m1e for Wido gave it back from the lane at 02:44 so ui's one landing slot builds a-slow-ledger-read-is-a-wait (the fix of the load flake that keeps the census batch out); its U1 read 3ca142a3e stays published and it is handed in again after the census batch clears
+Integrity: sha256=dad5ef17c79b1c801f8b108344963728cd8fc6dac8e1203146efbdb8bcd94c44
