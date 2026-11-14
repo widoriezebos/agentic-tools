@@ -123,6 +123,19 @@ func text(value string) *string {
 	return &value
 }
 
+// BarrenHeld reports whether the engine's barren hold still describes this lane.
+func BarrenHeld(home string, fingerprint func(string) (string, error), root string) (bool, error) {
+	state, err := ReadAgentState(home)
+	if err != nil || state.Barren < barrenLimit {
+		return false, err
+	}
+	if fingerprint == nil {
+		return false, errors.New("the lane fingerprint is unavailable")
+	}
+	current, err := fingerprint(root)
+	return err == nil && current == state.BarrenFingerprint, err
+}
+
 func ownerView(sources ViewSources, root string) OwnerView {
 	owner := OwnerView{State: OwnerUnready}
 	if pause, paused := ReadPause(sources.Home); paused {
