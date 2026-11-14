@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="Test-only change to existing beds and three migrated scenarios."
 - Tier: 1
 - Intent: Scenario test beds compose the production facts their path needs (enrolled person via the prover seam, checkout holder, subjects present in the scenario repository) as explicit per-scenario options, and the demonstrated failing scenarios use them (root cause 3).
 - Origin: main
 - Next step: Build D3-U1 (test-only, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (revision 5 section: reduced D3; per-instance Git isolation deferred).
 - OpenedAt: 2026-11-11T18:11:43Z
-- Revision: 60
+- Revision: 61
 - Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -77,4 +77,5 @@ History:
 - 2026-11-14T22:27:04Z WMSJSP59H1R7F0N3449JRTCMXX-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-refresh-leaves-a-busy-checkout-alone,a-reserved-decision-executes-from-its-answer,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,a-steward-tick-costs-seconds,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-stop-asks-its-steward-first,an-agent-refusal-reaches-a-person-once,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,one-host-admits-heavy-work,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,the-lane-carries-one-work-subject,the-lane-returns-its-own-red,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-steward-tick-costs-seconds from=1:26 to=1:27 requested-sequence=8
 - 2026-11-14T22:27:22Z 554CW5GD64BQHP2TJ4M23XKXRY-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-refresh-leaves-a-busy-checkout-alone,a-reserved-decision-executes-from-its-answer,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-stop-asks-its-steward-first,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work,scenario-beds-compose-the-facts-their-path-needs,the-lane-carries-one-work-subject,the-lane-returns-its-own-red,the-ratchet-counts-what-a-change-adds reason=priority-order subject=scenario-beds-compose-the-facts-their-path-needs from=1:27 to=1:10 requested-sequence=10
 - 2026-11-14T22:27:38Z DV2X97ZYD9FT5N36F24X9N358B-m1e-2651bc90 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=red-names-what-failed from=1:10 to=1:9 requested-sequence=11
-Integrity: sha256=391888f6eed6ecc564a4e0a6687dfbe7d74d8a9bffd306b38bd9e978b38cc403
+- 2026-11-14T22:29:47Z 85FC5PB4QKXWNS7S4QCVSYKW09-m1e-d852a137 set-priority actor=human:Wido targets=a-returned-conflict-can-be-resolved,a-steward-tick-costs-seconds,a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-lane-returns-its-own-red,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=unit-run-truthful-and-self-advancing-2 from=1:9 to=1:8 requested-sequence=12
+Integrity: sha256=3e2fd1898638d5d550fed9936efe1ba99cc6c6f493007f2d1f7210d4960adf5a

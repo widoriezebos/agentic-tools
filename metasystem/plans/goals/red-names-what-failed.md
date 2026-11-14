@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 11
+- Sequence: 10
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="findings 321, 311, 327: a red labelled a passing test as a flake; one flaky test filed twice; a confirmed-flake incident outlived its fix goal and three green proofs because clearLandingIncidents excludes flake entries and nothing feeds countFlakePass (goal/trunkred.go:909). Design plans/designs/red-names-what-failed.md (the former U2 of lane-proof-finds-its-own-engine, split out so each goal integrates once)"
 - Tier: 2
 - Intent: a red names exactly what failed, one flaky test is one incident, and the lane's proofs feed the existing three-pass flake closure so a fixed flake closes by itself
 - Origin: human
 - Next step: U1 brief, Astra to zero or stop rule, Codex by hand after steward-duties-run-on-every-tick, Opus read, land by hand Struggle program item 7 (2026-11-10, /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/struggle-program-2026-11-10.md): a unit keeping package + test + candidate identity through the report boundary for grouped checks (internal/landing/plain/report.go:52,59); test TestGroupedFailureRetainsPackageAndTest. The diagnostic-green integration goes to the-carry-check-classifies-a-flake at its next safe boundary. Program the-route-holds-when-something-deviates (2026-11-12, D8): build first U-a (90) the classifier keeps failed tests of every check section (unit_attribution.go:87), U-b (80) verdict inputs carry how a run ended (cancelled, unavailable, deadline, exit), U-c (50) no comparison when it cannot change the verdict, U-d (90) the deadline classified at checkCause with phase and progress including queued-for-admission (amends a-unit-check-ends-on-progress); then the flake units as designed.
 - OpenedAt: 2026-10-15T06:37:02Z
-- Revision: 214
+- Revision: 215
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -230,4 +230,5 @@ History:
 - 2026-11-14T22:26:45Z 8D3A9GZG484KHTMWMX57EHG5PD-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-unit-stop-asks-its-steward-first,red-names-what-failed,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=seat-recovers-a-dead-session from=1:7 to=1:8 requested-sequence=7
 - 2026-11-14T22:27:04Z WMSJSP59H1R7F0N3449JRTCMXX-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-refresh-leaves-a-busy-checkout-alone,a-reserved-decision-executes-from-its-answer,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,a-steward-tick-costs-seconds,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-stop-asks-its-steward-first,an-agent-refusal-reaches-a-person-once,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,one-host-admits-heavy-work,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,the-lane-carries-one-work-subject,the-lane-returns-its-own-red,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-steward-tick-costs-seconds from=1:8 to=1:9 requested-sequence=8
 - 2026-11-14T22:27:38Z DV2X97ZYD9FT5N36F24X9N358B-m1e-2651bc90 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=red-names-what-failed from=1:9 to=1:11 requested-sequence=11
-Integrity: sha256=6d9ecd7a822e144a1a7115b8798258bd6af74bdf0dcae4580860fb153c844386
+- 2026-11-14T22:29:47Z 85FC5PB4QKXWNS7S4QCVSYKW09-m1e-d852a137 set-priority actor=human:Wido targets=a-returned-conflict-can-be-resolved,a-steward-tick-costs-seconds,a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-lane-returns-its-own-red,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=unit-run-truthful-and-self-advancing-2 from=1:11 to=1:10 requested-sequence=12
+Integrity: sha256=f9d0aabacca1b71c4b630def964d574fa984cc8c110d83f872c5818fd73477b7
