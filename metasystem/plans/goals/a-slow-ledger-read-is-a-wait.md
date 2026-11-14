@@ -1,6 +1,6 @@
 # a-slow-ledger-read-is-a-wait
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Fable's addendum 2026-10-24 10:50 (row 10): the fresh ledger read is bounded by 4 s of wall clock (internal/goal/project.go:45-46, fresh.go:41-121); at load 16-20 goal next on m1e failed twice (git show-ref context deadline exceeded); a seat's turn verdict counts a failed read as an idle refusal with backlog (turnverdict.go:1252-1275) and alerts at three; 75 of ui's 129 open alerts are this sentinel."
@@ -9,12 +9,15 @@
 - Origin: human
 - Next step: Cut the brief (opus-designer, BRIEF-CHECKLIST, Read each round: yes, --last), one Astra round, then the machine route on ui after the-elapsed-clock-excludes-waits. Brief agreed with Astra (round 4, 2026-11-13): /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-slow-ledger-read-is-a-wait-brief.md. Four units: U1 (bound 50) a timed-out read has a typed identity and work review's three commit boundaries say the ledger could not be fetched and what was not done; U2 (70) the provider-recovery fixture reads through one controlled reader in setup, tick and recovery, and the fresh-clone test shows its child's error and is diagnosed; U3 (60) unlocked command reads opt into a 35 s outer and 26 s transport bound, reads inside the commit's lease lock stay short; U4 (--last, a brief of its own before its build) the Stop hook counts timed-out reads as waits and tells the person at three without an idle incident. Moved to the front on 2026-11-13: the 4 s read refused a publication twice (finding 621) and failed a 145-minute lane proof.
 - OpenedAt: 2026-10-24T09:02:21Z
-- Revision: 167
+- FirstClaimAt: 2026-11-14T01:45:16Z
+- Revision: 168
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=743C1J1CWQCWRYMQYXP96HJ33T-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-10-24T09:02:31Z revision=2 opid=743C1J1CWQCWRYMQYXP96HJ33T-m1e-294bbb33 authority=proven digest=5d9da46a13902cab2eb898dc1a944d0db35aeaa3354b2af524b30306400100d8 episode=2
+- Claimed: machine=ui lineage=steward-seat at=2026-11-14T01:45:16Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-slow-ledger-read-is-a-wait: no accepted design declares areas\"]" revision=168 accountingRevision=168 episodeAt=2026-11-14T01:45:16Z episodeRevision=168
+- StopCapability: generation=168 revision=168 machine=ui claimEpoch=11 fenceEpoch=0
 
 History:
 - 2026-10-24T09:02:21Z 2C6NY68NNCNY9RRDKYH7C8YY9M-m1e-294bbb33 open actor=human:Wido targets=a-slow-ledger-read-is-a-wait
@@ -184,4 +187,5 @@ History:
 - 2026-11-13T22:03:53Z BYYN316239N15K7RG48RF307DZ-m1e-fd759238 edit actor=human:Wido targets=a-slow-ledger-read-is-a-wait
 - 2026-11-13T22:04:17Z BS2NFD19PX32RQV2SHP2Z1Y8KV-m1e-fd759238 set-pin actor=human:Wido targets=a-slow-ledger-read-is-a-wait
 - 2026-11-13T22:04:32Z NMKQ9CMF2FW3MCWZ7QW2PSTY29-m1e-fd759238 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-blocking-flake-is-raised,a-boundary-waits-only-on-its-own-questions,a-continuation-job-may-write-the-stewards-state,a-deputy-budget-and-run-release,a-done-goals-branch-is-swept,a-flake-has-an-owner-from-its-first-sighting,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-host-is-ready-before-it-joins,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-channel-carries-only-acts-and-deliveries,a-persons-lane-act-is-not-overdue,a-publication-consumes-the-units-check,a-publication-refuses-only-what-it-adds,a-real-act-is-not-barren,a-refresh-leaves-a-busy-checkout-alone,a-register-append-is-published-by-its-writer,a-remedy-names-who-acts,a-reserved-decision-executes-from-its-answer,a-retained-read-brief-keeps-its-context,a-returned-conflict-can-be-resolved,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-run-holds-its-worktree,a-seat-and-a-lane-recover-under-delegation,a-selected-batch-is-proving,a-settled-unit-is-not-in-flight,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-steward-tick-costs-seconds,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-name-is-one-word-everywhere,a-unit-reservation-carries-its-deadline,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-agent-refusal-reaches-a-person-once,attempts-are-bounded-per-unit,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,every-critic-reads-in-one-form,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-launch-testlanefixlaunchdeadlinerealprocess,lane-steward-2,one-host-admits-heavy-work,one-question-per-refused-admission,red-names-what-failed,required-test-file-selectors-are-understood,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-carry-check-classifies-a-flake,the-census-ignores-its-own-report,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-lane-carries-one-work-subject,the-lane-redoes-a-lost-merge,the-lane-returns-its-own-red,the-lane-session-owns-its-merge-2,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ratchet-counts-what-a-change-adds,the-ui-bundle-builds-again,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=a-slow-ledger-read-is-a-wait from=1:73 to=1:1 requested-sequence=1
-Integrity: sha256=a14cbf0389d993a422e017df938a6144439cf117b26de3ab3c0302932e28aae6
+- 2026-11-14T01:45:16Z TB2JHEYKV75T5VG8NRNMZTBY9W-ui-71c5cb39 claim actor=ui+steward-seat targets=a-slow-ledger-read-is-a-wait reason=areas unknown for goal a-slow-ledger-read-is-a-wait: no accepted design declares areas
+Integrity: sha256=b2d67d7874f94c78f3473b436812bd59213206bd82acdbc3a2aeb7f8e7aa9dab
