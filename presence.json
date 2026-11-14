@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "ui",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem",
+  "generation": 141,
+  "engine": "495e1749d7ed26904adab134ff40721ca2e5c71f",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "seat-8112ba670302432b",
+    "job": "seat-8112ba670302432b",
+    "role": "working",
+    "round": 0,
+    "goal": "flake-fix-metasystem-internal-launch-testlanefixlaunchdeadlinerealprocess",
+    "startedAt": "2026-11-14T20:30:42Z"
+  },
+  "working": {
+    "goal": "flake-fix-metasystem-internal-launch-testlanefixlaunchdeadlinerealprocess",
+    "phase": {
+      "role": "working",
+      "round": 0,
+      "roundLimit": null
+    },
+    "job": {
+      "id": "seat-8112ba670302432b",
+      "role": "working",
+      "status": "running",
+      "startedAt": "2026-11-14T20:30:42Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 1,
+      "attemptLimit": 10,
+      "reservedMinutes": 114,
+      "reservedMinutesLimit": 1200,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "seat-8112ba670302432b",
+        "role": "working",
+        "round": 0,
+        "status": "running",
+        "startedAt": "2026-11-14T20:30:42Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-11-14T20:43:19Z",
+  "diskFreeBytes": 113606246400
+}
