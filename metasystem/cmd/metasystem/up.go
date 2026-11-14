@@ -271,6 +271,7 @@ func restampStopCapabilityWith(dependencies syncRequestDependencies, clock func(
 		if !fresh {
 			return restampStopCapabilityWithReads(root, lineage, claimEpoch, dependencies, clock, goal.Project)
 		}
+		endpoint.UnlockedCommandRead = true
 		projection, observation, err := goal.FreshProjection(dependencies.readContext(), endpoint, func() (time.Time, error) { return clock(root) })
 		if err != nil {
 			return up.StopCapabilityRestampResult{Observation: &observation, Status: "pending", Pending: true}, err

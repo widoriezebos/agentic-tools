@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -13,7 +14,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"golang.org/x/sys/unix"
 )
 
 type reviewTimeoutGit struct{ workGit }
@@ -61,8 +64,31 @@ func TestUnitReviewReadTimeoutBoundaries(t *testing.T) {
 				if boundary == "created" {
 					operation.CreatedCommit = strings.Repeat("c", 40)
 				}
-				owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
+				locked := false
+				checks := 0
+				projectionBed := newGoalCLIBed(t, goalCLISeed{})
+				owners.connection.claimCheck = func(_ string, _ string, endpoint goal.Endpoint) func() error {
 					return func() error {
+						checks++
+						if endpoint.UnlockedCommandRead != !locked {
+							t.Fatalf("command allowance under lock=%t: endpoint=%+v", locked, endpoint)
+						}
+						// Drive the production legacy reader with this call's property.
+						endpoint.Repository = projectionBed.repo
+						endpoint.Root = projectionBed.root
+						if locked {
+							reviewReadWithInjectedExpiry(t, endpoint)
+						} else {
+							_, err := goal.ProjectWithDeadline(endpoint, true, goalCLISeedNow, func(wait time.Duration) <-chan time.Time {
+								if wait != 30*time.Second {
+									t.Errorf("preflight bound = %s, want 30s", wait)
+								}
+								return make(chan time.Time)
+							})
+							if err != nil {
+								t.Fatal(err)
+							}
+						}
 						if boundary == "entry" {
 							return cause
 						}
@@ -70,9 +96,68 @@ func TestUnitReviewReadTimeoutBoundaries(t *testing.T) {
 					}
 				}
 				called := false
-				owners.connection.commitToken = func(_ string, commit func() error) error { return commit() }
-				owners.connection.commit = func(branch.CommitRequest) (string, error) { called = true; return "", operation }
+				lockRoot := t.TempDir()
+				lockPath := lease.LockPath(lockRoot)
+				owners.connection.commitToken = func(_ string, commit func() error) error {
+					release, err := lease.LockBounded(lockPath, "review")
+					if err != nil {
+						return err
+					}
+					locked = true
+					defer func() { locked = false; release() }()
+					return commit()
+				}
+				renewalDone := make(chan error, 1)
+				owners.connection.commit = func(req branch.CommitRequest) (string, error) {
+					called = true
+					// The renewal uses this same flock. It is excluded until the
+					// inner read finishes, then acquires as soon as review releases it.
+					file, err := os.OpenFile(lockPath, os.O_RDWR, 0600)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != unix.EWOULDBLOCK {
+						t.Fatalf("review did not hold renewal lock: %v", err)
+					}
+					go func() {
+						err := unix.Flock(int(file.Fd()), unix.LOCK_EX)
+						if err == nil {
+							err = unix.Flock(int(file.Fd()), unix.LOCK_UN)
+						}
+						file.Close()
+						renewalDone <- err
+					}()
+					if err := req.CheckClaim(); err != nil {
+						t.Fatal(err)
+					}
+					if boundary == "created" {
+						if err := req.CheckClaim(); err != nil {
+							t.Fatal(err)
+						}
+					}
+					select {
+					case err := <-renewalDone:
+						t.Fatalf("renewal passed review's lock early: %v", err)
+					default:
+					}
+					return "", operation
+				}
 				code, result := b.runJSON(owners, command...)
+				if boundary != "entry" {
+					if err := <-renewalDone; err != nil {
+						t.Fatalf("renewal lock acquisition: %v", err)
+					}
+				}
+				wantChecks := 1
+				if boundary == "owner" {
+					wantChecks = 2
+				}
+				if boundary == "created" {
+					wantChecks = 3
+				}
+				if checks != wantChecks {
+					t.Fatalf("checks=%d, want %d", checks, wantChecks)
+				}
 				want := fmt.Sprintf("the branch commit owner did not commit unit u1: %v", operation)
 				if boundary == "entry" {
 					want = fmt.Sprintf("this session can't commit to goal %s's branch, so nothing was committed", b.id)
@@ -97,5 +182,39 @@ func TestUnitReviewReadTimeoutBoundaries(t *testing.T) {
 				t.Log(result.Summary)
 			})
 		}
+	}
+}
+
+// No timer advances: the read holds capture until its own deadline is fired.
+func reviewReadWithInjectedExpiry(t *testing.T, endpoint goal.Endpoint) {
+	t.Helper()
+	captured, release, completed := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	repository := endpoint.Repository
+	endpoint.Repository = freshCommandRepository{Repository: repository,
+		capture: func(_ context.Context, opid string) (string, error) {
+			close(captured)
+			<-release
+			return repository.Capture(opid)
+		},
+		cleaned: func(context.Context) { close(completed) },
+	}
+	expired := make(chan time.Time)
+	result := make(chan error, 1)
+	go func() {
+		_, err := goal.ProjectWithDeadline(endpoint, true, goalCLISeedNow, func(wait time.Duration) <-chan time.Time {
+			if wait != 4*time.Second {
+				t.Errorf("inner bound = %s, want 4s", wait)
+			}
+			return expired
+		})
+		result <- err
+	}()
+	<-captured
+	close(expired)
+	err := <-result
+	close(release)
+	<-completed
+	if !goal.IsReadTimeout(err) || !strings.Contains(goal.ReadTimeoutMessage(err), "within 4 s") {
+		t.Fatalf("inner expiry = %v", err)
 	}
 }

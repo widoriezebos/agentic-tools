@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +26,10 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		summary := "the drop remains pending"
 		if source.Drop != nil && (source.Drop.Phase == "recorded" || source.Drop.Phase == "closed") {
 			summary = "the unit is dropped; its question repair remains pending"
+		}
+		var operation *branch.OpError
+		if goal.IsReadTimeout(err) && errors.As(err, &operation) && operation.CreatedCommit != "" {
+			err = fmt.Errorf("%s, so commit %s was created and its publication is not confirmed", goal.ReadTimeoutMessage(err), operation.CreatedCommit)
 		}
 		return &intentResult{Targets: targets, Outcome: intentInProgress, code: 1, Summary: summary, Details: []string{err.Error()}, Data: source.Drop, next: inv.sameCommand()}
 	}

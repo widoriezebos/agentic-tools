@@ -240,6 +240,9 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 	adoption.Status = "complete"
 	if err != nil {
 		adoption.Pending = true
+		if goal.IsReadTimeout(err) {
+			err = errors.New(goal.ReadTimeoutMessage(err) + "; claim adoption remains pending")
+		}
 		adoption.Status, adoption.Cause, adoption.Remedy = "pending", err.Error(), remedy
 		return ComponentOutcome{
 			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),

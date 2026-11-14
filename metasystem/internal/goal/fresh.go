@@ -38,7 +38,11 @@ type freshProjectionTiming struct {
 }
 
 func freshProjection(ctx context.Context, e Endpoint, clock func() (time.Time, error), timing freshProjectionTiming) (p Projection, observed Observation, err error) {
-	ctx, cancel := timing.withTimeout(ctx, defaultFreshProjectionTimeout)
+	limit, cap := defaultFreshProjectionTimeout, defaultFreshFetchProcessTimeout
+	if e.UnlockedCommandRead {
+		limit, cap = commandFreshProjectionTimeout, commandFreshFetchProcessTimeout
+	}
+	ctx, cancel := timing.withTimeout(ctx, limit)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
 	source := e
@@ -55,7 +59,7 @@ func freshProjection(ctx context.Context, e Endpoint, clock func() (time.Time, e
 	defer func() {
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				err = &ReadTimeout{Limit: defaultFreshProjectionTimeout, Cause: err}
+				err = &ReadTimeout{Limit: limit, Cause: err}
 			}
 			p = Projection{}
 			observed.Outcome = "unavailable"
@@ -77,7 +81,7 @@ func freshProjection(ctx context.Context, e Endpoint, clock func() (time.Time, e
 		return cleanup.Release(opid)
 	}
 	allowance := max(0, deadline.Sub(timing.now()))
-	transport := min(defaultFreshFetchProcessTimeout, allowance*3/4)
+	transport := min(cap, allowance*3/4)
 	transportCtx, transportCancel := timing.withTimeout(ctx, transport)
 	defer transportCancel()
 	capture, err := bind(transportCtx, deadline)
@@ -87,6 +91,9 @@ func freshProjection(ctx context.Context, e Endpoint, clock func() (time.Time, e
 	e.Repository = reader
 	advanced, err := fetchAdvance(e, capture.Capture, release)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && errors.Is(transportCtx.Err(), context.DeadlineExceeded) {
+			err = &ReadTimeout{Limit: transport, Cause: err}
+		}
 		return p, observed, err
 	}
 	if err = ctx.Err(); err != nil {

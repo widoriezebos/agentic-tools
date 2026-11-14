@@ -812,7 +812,7 @@ func runIntentGoalViews(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	projection, _, problem := inv.projection()
+	projection, _, problem := inv.projectionWithFetch(inv.input.switched("fetch"), true)
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -1148,6 +1148,7 @@ func (inv *intentInvocation) claimResult(id, box string, fallback bool) (result 
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.typedArgv()}, false
 	}
+	endpoint.UnlockedCommandRead = true
 	projection, observation, err := goal.FreshProjection(inv.owners.dependencies.readContext(), endpoint, func() (time.Time, error) { return inv.owners.commandNow(inv.layout.InstallationRoot.Path()) })
 	if err != nil {
 		if person && id != "" {
@@ -1159,6 +1160,9 @@ func (inv *intentInvocation) claimResult(id, box string, fallback bool) (result 
 				}
 			}
 			result := inv.claimGoalAs(id, box, projection, actor, proof)
+			if goal.IsReadTimeout(err) {
+				result.Details = append(result.Details, goal.ReadTimeoutMessage(err)+"; the named claim was submitted to publication, which must freshly validate the ledger")
+			}
 			data, ok := result.Data.(map[string]any)
 			if !ok {
 				data = map[string]any{"claim": result.Data}

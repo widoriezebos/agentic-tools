@@ -486,7 +486,7 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 			return "", err
 		}
 		if err := checkClaim(req.CheckClaim); err != nil {
-			return "", err
+			return "", &OpError{Code: NotHolderCode, Message: err.Error(), Cause: err, CreatedCommit: parent}
 		}
 		return parent, nil
 	}

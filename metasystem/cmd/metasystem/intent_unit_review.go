@@ -235,7 +235,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			"goal worktree %s resolves goal branch endpoint %s %s (%v), not the selected installation's %s %s", install, local.Remote, local.Branch, err, endpoint.Remote, endpoint.Branch)
 	}
 	check := inv.laneClaimCheck(conn, original.Path(), goalID, endpoint)
-	if err := branch.CheckCommitAccess(goalID, check); err != nil {
+	preflight := endpoint
+	preflight.UnlockedCommandRead = true
+	if err := branch.CheckCommitAccess(goalID, inv.laneClaimCheck(conn, original.Path(), goalID, preflight)); err != nil {
 		if goal.IsReadTimeout(err) {
 			return refuse(retry, "the bound subject is kept; the same command reconciles or commits it once", goal.ReadTimeoutMessage(err)+", so nothing was committed", "%v", err)
 		}

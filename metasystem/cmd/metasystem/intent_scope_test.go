@@ -26,7 +26,29 @@ func requiredScopeFixture(t *testing.T, inherited string) (*dropFixture, string)
 	f := newDropFixture(t)
 	f.connect()
 	f.bed.manager.Seat = board.Seat{Machine: filepath.Base(filepath.Dir(t.TempDir())), Installation: f.bed.root()}
-	f.owners.dependencies.projectionDeadline = checkedProjectionDeadline(t)
+	scopeDeadline := checkedProjectionDeadline(t)
+	f.owners.dependencies.projectionDeadline = scopeDeadline
+	commandDeadline := checkedCommandProjectionDeadline(t)
+	claimCheck := f.owners.connection.claimCheck
+	// Review's preflight opts in; its later claim and scope reads stay short.
+	f.owners.connection.claimCheck = func(root, id string, endpoint goal.Endpoint) func() error {
+		check := claimCheck(root, id, endpoint)
+		return func() error {
+			readEndpoint, err := f.owners.dependencies.endpoint(f.bed.root())
+			if err != nil {
+				return err
+			}
+			readEndpoint.UnlockedCommandRead = endpoint.UnlockedCommandRead
+			deadline := scopeDeadline
+			if endpoint.UnlockedCommandRead {
+				deadline = commandDeadline
+			}
+			if _, err := goal.ProjectWithDeadline(readEndpoint, true, f.bed.manager.Now(), deadline); err != nil {
+				return err
+			}
+			return check()
+		}
+	}
 	if code, result := f.review(t); code != 1 {
 		t.Fatalf("prepare: %d %+v", code, result)
 	}

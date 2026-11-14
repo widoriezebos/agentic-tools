@@ -56,6 +56,7 @@ type Endpoint struct {
 	Remote                 string     // goal.sync-remote; "local" is single-machine mode
 	Branch                 string     // goal.sync-branch, fully qualified
 	Repository             Repository // optional committed-state owner; nil uses Git
+	UnlockedCommandRead    bool       // this read may wait without holding a lock
 	commandEnv             []string
 	captureTimers          attentionTimerSource
 	carriedCounselorAppend func(string, string, HistoryLine, time.Time) error
