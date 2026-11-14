@@ -10,7 +10,7 @@
 - Next step: Build U3 (bound 60) from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-slow-ledger-read-is-a-wait-brief.md section U3; then U4 (--last) from a brief of its own that a1 writes when U3 is published (persisted count, a notification path that is not the idle incident, a whitelisted verdict class). Fold the two low notes of U1's read into U3: a resumed commit's recheck timeout must not say 'nothing was committed', and the message names the bound that actually expired.
 - OpenedAt: 2026-11-14T08:08:17Z
 - FirstClaimAt: 2026-11-14T10:44:05Z
-- Revision: 7
+- Revision: 8
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -29,4 +29,5 @@ History:
 - 2026-11-14T10:44:05Z H3HZ65NGRA14QT604GGKT7TXQB-ui-71c5cb39 claim actor=ui+steward-seat targets=a-slow-ledger-read-is-a-wait-2 reason=areas unknown for goal a-slow-ledger-read-is-a-wait-2: no accepted design declares areas
 - 2026-11-14T14:56:16Z T7QR6T2SNDT5VRKZC399X4HV6R-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-slow-ledger-read-is-a-wait-2
 - 2026-11-14T15:56:57Z DP2X4J09679VWD550B7JPQ41XK-ui-71c5cb39 land-ready actor=ui+steward-seat targets=a-slow-ledger-read-is-a-wait-2
-Integrity: sha256=c7e031c29cd5434f13b0777f3acc0b1b8a6931bae4f5179dd7c7a8045c20a7fd
+- 2026-11-14T20:32:58Z HHAS34HBB6QYCVT5V2JHYKYM4K-ui-71c5cb39 landed actor=ui+steward-seat targets=a-slow-ledger-read-is-a-wait-2 reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; end declared by Wido; landing took 227.2 min: hand-in to merge 228.2, cheap gate not run, push unknown
+Integrity: sha256=dd42b83742a693878898cfba3a68a022ba3a60e442fae6396a08f036391b3420
