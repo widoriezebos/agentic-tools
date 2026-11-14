@@ -1,0 +1,72 @@
+{
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [
+      {
+        "change": "Optionally set CreatedCommit to the resumed commit (parent) on that recheck too.",
+        "claim": "When a review resumes a commit kept from an earlier round (the 'resumed commit' path), a timeout at its claim recheck says 'nothing was committed' even though that retained commit already exists in the kept worktree.",
+        "class": "other",
+        "evidence": "internal/goal/branch/commit.go:489-491 (resumedCommit branch) returns checkClaim's error without CreatedCommit, so intent_unit_review.go's new block picks 'nothing was committed'. The brief names only the recheck after a fresh commit (:494-505), which is handled; the next act is the same command either way, so a person is not misled into a different action. Not material: no reproduction of harm, and the slice works and is safe without it (R-124-m1u).",
+        "id": "code-critic-3e3042de5bd228d32021c16f:1",
+        "material": false,
+        "relation": "R-124-m1u later list",
+        "severity": "low",
+        "where": "metasystem/internal/goal/branch/commit.go"
+      },
+      {
+        "change": "None required; a later unit could carry the actual bound in the error.",
+        "claim": "The wording names 3 s for any process or transport expiry, while FreshProjection's transport cap can be shorter (the lesser of 3 s and three quarters of the remaining allowance), and a caller's own parent deadline expiring inside FreshProjection is labelled as the 4 s projection limit.",
+        "class": "other",
+        "evidence": "internal/goal/project.go ReadTimeoutMessage defaults to defaultFreshFetchProcessTimeout; internal/goal/fresh.go:57-58 wraps whenever the derived context expired, which also happens when the caller's parent context expired first. Only the number in the message can be slightly off; the kind and next act are right. Not material.",
+        "id": "code-critic-3e3042de5bd228d32021c16f:2",
+        "material": false,
+        "relation": "R-124-m1u later list",
+        "severity": "low",
+        "where": "metasystem/internal/goal/project.go"
+      }
+    ],
+    "id": "code-critic-3e3042de5bd228d32021c16f",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-slow-ledger-read-is-a-wait/metasystem/artifacts/agents/code-critic-3e3042de5bd228d32021c16f/rounds/1/return.md",
+    "subject": {
+      "commit": "459c1d083c9a6a8c293d153f0eb52342f574477d",
+      "diffDigest": "6114a1bfaeb8b6b7298758b5423e596f095016ac8a2fc9e5013cfaa204d63f33",
+      "kind": "commit",
+      "parent": "4c8b651559b9ef77c1cfceba3b1c795208fc2a5a",
+      "tree": "a13d28862ca28f056a1d4225ebe9519a89e66658"
+    }
+  },
+  "readDigest": "5b57e07ea3e2adbea7220c21ab0a9772b8153d5a0ceeb04e48462b0d2a88f19d",
+  "schemaVersion": 1,
+  "goal": "a-slow-ledger-read-is-a-wait",
+  "unit": "U1",
+  "subject": {
+    "commit": "459c1d083c9a6a8c293d153f0eb52342f574477d",
+    "parent": "4c8b651559b9ef77c1cfceba3b1c795208fc2a5a",
+    "tree": "a13d28862ca28f056a1d4225ebe9519a89e66658",
+    "patchDigest": "6114a1bfaeb8b6b7298758b5423e596f095016ac8a2fc9e5013cfaa204d63f33",
+    "unitDigest": "266f9691ffb6ed83fec930c86102176a8679d2e119fad3f2fcf8fd3784370cf9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3e3042de5bd228d32021c16f",
+    "round": 1,
+    "closureSha256": "53dc2caa6505ccf7b040bbe092a7dba21baa6194ae01b9d8f9e6b63bc6be038b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a13d28862ca28f056a1d4225ebe9519a89e66658",
+    "runId": "goal-read-gate-20261114t074154z-34dc626715f3c3b5"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "4c8b651559b9ef77c1cfceba3b1c795208fc2a5a",
+      "digest": "38743290599b3bb3e2ef9f4f975a959a8ad0fdf8b999f3af37866c5017f07a5d"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "0fb6cfdc82279269751534440248b4a5fc47d6510dc14ec46473adb7d6355652"
+}
