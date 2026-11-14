@@ -1,0 +1,111 @@
+{
+  "canonicalRead": {
+    "id": "20261114t024043-db2ed68feb-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "a53dd9070a18d2812e84a17cfd7597123ec97777026525a46fadc43e0fedfd84",
+      "diffDigest": "a53dd9070a18d2812e84a17cfd7597123ec97777026525a46fadc43e0fedfd84"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261114t024043-db2ed68feb-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The delegated waiting-set comparison uses the raw queue state (Entries, StateWaiting), while the engine's barren stop names landing run --goals over pending, which also drops waiting entries already on origin/main.",
+        "evidence": "batch.go:196-200 compares against Entries with StateWaiting; stop.go:340-351 builds Required from pending; queue.go:548-572 marks entries already on main as landed. A delegate that copies the stop's --goals is refused with a message telling it to repeat with every waiting goal; this fails closed and can be recovered.",
+        "where": "metasystem/internal/landing/plain/batch.go",
+        "change": "No change in this unit; U1b1c sources the delegate's goals from the same raw waiting set, or a later unit compares against pending.",
+        "relation": "rule: one definition of the waiting set a delegate must name"
+      },
+      {
+        "id": "20261114t024043-db2ed68feb-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "lane.BarrenHeld restates the held rule the status view already applies instead of the view calling it.",
+        "evidence": "view.go:126-138 (BarrenHeld) and view.go:176-184 (ownerView) both test Barren \u003e= barrenLimit and fingerprint == BarrenFingerprint.",
+        "where": "metasystem/internal/landing/lane/view.go",
+        "change": "Optionally have ownerView use BarrenHeld's rule so the two cannot drift; equivalent today.",
+        "relation": "rule: one owner per held-state rule"
+      },
+      {
+        "id": "20261114t024043-db2ed68feb-r1-s3:3",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "Production changed lines are 165 against the row's 96 doubled; tests are 149 against 160.",
+        "evidence": "view.go +13, batch.go +80/-13, delegated.go +59 (new).",
+        "where": "metasystem/internal/landing/plain/batch.go",
+        "change": "None; under the 250-line production limit."
+      },
+      {
+        "id": "20261114t024043-db2ed68feb-r1-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "Reusing an open batch with the same members lets a delegated selection replace a person-selected batch's Person provenance with Delegated.",
+        "evidence": "batch.go:206-224 reuses an open same-member batch and sets batch.Person, batch.Delegated = nil, d, as the brief's 'the selection of PersonSelection with Delegated set and Person nil' directs. The delegated path refuses whenever any pause record exists, and a delegated batch runs with PersonAct false, so the delegate gains no reach.",
+        "where": "metasystem/internal/landing/plain/batch.go",
+        "change": "None required; a later unit may refuse a delegated selection over an open person-selected batch if the person's record should be kept.",
+        "relation": "rule: the machine never overrules a person"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261114t024043-db2ed68feb-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "87fb3c0b5aee910e0ae7b8c712d86f9ab19d2c9e56ba5c644fffe517384f3407",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1b1b",
+  "subject": {
+    "commit": "e6c30c5fecc3ec87909566e8eecfb04bba711082",
+    "parent": "9257d0aefd7ef8d14545d03aaf4881d8f36e7570",
+    "tree": "14ea30601f0270d84e4b24a9776e711f7ac2886b",
+    "patchDigest": "a53dd9070a18d2812e84a17cfd7597123ec97777026525a46fadc43e0fedfd84",
+    "unitDigest": "467ab9bfea87fa19a061ceafc296b3fa376f2ce85e9acaa67842540926855003"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261114t024043-db2ed68feb-r1-s3",
+    "closureSha256": "ffdf3ed98c8639c83b8942ed480a9006bf1f76cd4d119fe31be57414c69b3ebc"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "14ea30601f0270d84e4b24a9776e711f7ac2886b",
+    "runId": "goal-read-gate-20261114t081558z-3c87ef0fe442b18a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6fbd34817b92575c8b41aaaff800dc5cdaf1c305",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "97e0517226d1fc113e8d21330da025d40e3cedfa",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "e0f1a9b99ef77d3dad33e7bcda65203b2e7acabd",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    },
+    {
+      "kind": "read",
+      "commit": "c779455cb6d3cf09e91df82013468ac72e6141a1",
+      "digest": "346a113098cb0ecda3ff9bb76ac2f379d2900beac3cd54da827f6c5153e911dd"
+    },
+    {
+      "kind": "read",
+      "commit": "9257d0aefd7ef8d14545d03aaf4881d8f36e7570",
+      "digest": "88c5730677887e2b5ee70c15f2b1d438bbdbf0e3cff978ddd90dd7ecd7df84f5"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "b70d63da1ace55f5836cb75e8f5532bb5b11333f762f2529f9960735a8028090"
+}
