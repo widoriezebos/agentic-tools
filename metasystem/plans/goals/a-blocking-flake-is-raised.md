@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 12
+- Sequence: 13
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A flaky test with a fix goal open since 16 October cost five long runs on 2026-11-12 and nothing told the steward it had started to block (design a-unit-costs-what-its-change-costs G1, agreed with Astra round 3)."
 - Tier: 2
 - Intent: A flaky test that starts to block work is raised to the steward: the flake incident counts the runs it failed (a returned or held landing, a failed publication, a failed check), and at two within 24 hours the lane steward's confirmed-flake row becomes a routed row 'blocking' whose suggested act is the existing ordering act on the incident's fix goal; nothing reorders the frontier by computation and no test result is waived (design a-unit-costs-what-its-change-costs G1).
 - Origin: main
 - Next step: Build one unit (50, --last) from the design section G1: the count on the incident record, the routed row, its suggested act goal prioritize under the ordering class; tests for one run (no row), two runs in 24 hours (row), two runs further apart (no row). Brief agreed with Astra (round 4, 2026-11-13) replaces the one-unit plan: three units from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-blocking-flake-is-raised-U1-brief.md: U1 (bound 40) the lane counts the lane runs a known flake failed in 24 hours and fires blocking-flake at two; U2 (60) the row is routed to the fix goal's seat with the ordering act as a decision record's child, and asked of the person when undisposed; U3 (80, --last) a seat raises a known flake that failed one of its own checks. No shared counter, no register write, no classification change.
 - OpenedAt: 2026-11-13T09:16:57Z
-- Revision: 18
+- Revision: 19
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -35,4 +35,5 @@ History:
 - 2026-11-14T22:26:45Z 8D3A9GZG484KHTMWMX57EHG5PD-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-unit-stop-asks-its-steward-first,red-names-what-failed,seat-recovers-a-dead-session,the-lane-returns-its-own-red reason=priority-order subject=seat-recovers-a-dead-session from=1:9 to=1:10 requested-sequence=7
 - 2026-11-14T22:27:04Z WMSJSP59H1R7F0N3449JRTCMXX-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-refresh-leaves-a-busy-checkout-alone,a-reserved-decision-executes-from-its-answer,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,a-steward-tick-costs-seconds,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-stop-asks-its-steward-first,an-agent-refusal-reaches-a-person-once,briefs-carry-their-rules,builder-proves-each-rule-by-mutation,one-host-admits-heavy-work,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,the-lane-carries-one-work-subject,the-lane-returns-its-own-red,the-ratchet-counts-what-a-change-adds reason=priority-order subject=a-steward-tick-costs-seconds from=1:10 to=1:11 requested-sequence=8
 - 2026-11-14T22:27:22Z 554CW5GD64BQHP2TJ4M23XKXRY-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-refresh-leaves-a-busy-checkout-alone,a-reserved-decision-executes-from-its-answer,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-stop-asks-its-steward-first,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work,scenario-beds-compose-the-facts-their-path-needs,the-lane-carries-one-work-subject,the-lane-returns-its-own-red,the-ratchet-counts-what-a-change-adds reason=priority-order subject=scenario-beds-compose-the-facts-their-path-needs from=1:11 to=1:12 requested-sequence=10
-Integrity: sha256=284822c68d97cbe6fabdd4424d21f50c9b1a9a9866c7e4124b01d997ccd4d6bd
+- 2026-11-14T22:27:52Z DQ3EZRWZ4RTZG4620W0EJPEGTX-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,the-lane-returns-its-own-red reason=priority-order subject=the-lane-returns-its-own-red from=1:12 to=1:13 requested-sequence=12
+Integrity: sha256=23770c198b26492a51c54ff1abc0026cc14fa73b646331f0da9b18516be95eec
