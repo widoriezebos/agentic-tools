@@ -135,10 +135,18 @@ func ProjectWithDeadline(e Endpoint, fetchFirst bool, now time.Time, deadline fu
 		deadline = e.ProjectionDeadline
 	}
 	dependencies := projectionDependencies{processDeadline: deadline}
-	if deadline != nil && fetchFirst {
-		dependencies.deadline = deadline(defaultFreshProjectionTimeout)
+	if fetchFirst {
+		dependencies = projectionWithDeadline(deadline)
 	}
 	return project(e, fetchFirst, now, dependencies)
+}
+
+func projectionWithDeadline(deadline func(time.Duration) <-chan time.Time) projectionDependencies {
+	dependencies := projectionDependencies{processDeadline: deadline}
+	if deadline != nil {
+		dependencies.deadline = deadline(defaultFreshProjectionTimeout)
+	}
+	return dependencies
 }
 
 func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projectionDependencies) (Projection, error) {
@@ -415,7 +423,13 @@ func ReadClaimableBudgetedWork(root string, now time.Time) (ClaimableBudgetedWor
 
 // ReadClaimableBudgetedWorkWith joins the canonical work with the supplied process observations.
 func ReadClaimableBudgetedWorkWith(root string, now time.Time, prober identity.Prober) (ClaimableBudgetedWork, error) {
-	return readClaimableBudgetedWork(root, now, prober, projectionDependencies{})
+	return ReadClaimableBudgetedWorkWithDeadline(root, now, prober, nil)
+}
+
+// ReadClaimableBudgetedWorkWithDeadline supplies both fresh-read deadlines;
+// nil keeps the production timers.
+func ReadClaimableBudgetedWorkWithDeadline(root string, now time.Time, prober identity.Prober, deadline func(time.Duration) <-chan time.Time) (ClaimableBudgetedWork, error) {
+	return readClaimableBudgetedWork(root, now, prober, projectionWithDeadline(deadline))
 }
 
 func readClaimableBudgetedWork(root string, now time.Time, prober identity.Prober, dependencies projectionDependencies) (ClaimableBudgetedWork, error) {

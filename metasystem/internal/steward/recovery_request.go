@@ -125,7 +125,7 @@ func reconcileSeatRecovery(root string, cfg TickConfig, census WorkerCensus, pro
 	if !workers.CensusComplete || workers.Live > 0 || workers.Untracked > 0 || workers.Unprovable > 0 {
 		return nil
 	}
-	work, err := goal.ReadClaimableBudgetedWork(root, cfg.now())
+	work, err := cfg.readClaimableBudgetedWork(root, cfg.now())
 	if err != nil {
 		return err
 	}
