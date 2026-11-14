@@ -1,0 +1,47 @@
+{
+  "presenceSchema": 1,
+  "machine": "landing",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem",
+  "generation": 242,
+  "engine": "495e1749d7ed26904adab134ff40721ca2e5c71f",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "landing-91659f6ad82b8001",
+    "job": "landing-91659f6ad82b8001",
+    "role": "landing",
+    "round": 0,
+    "goal": "",
+    "startedAt": "2026-11-14T19:43:31Z"
+  },
+  "working": {
+    "goal": "",
+    "phase": {
+      "role": "landing",
+      "round": 0,
+      "roundLimit": null
+    },
+    "job": {
+      "id": "landing-91659f6ad82b8001",
+      "role": "landing",
+      "status": "running",
+      "startedAt": "2026-11-14T19:43:31Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": null,
+    "chain": [
+      {
+        "job": "landing-91659f6ad82b8001",
+        "role": "landing",
+        "round": 0,
+        "status": "running",
+        "startedAt": "2026-11-14T19:43:31Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-11-14T20:30:11Z",
+  "diskFreeBytes": 111979175936
+}
