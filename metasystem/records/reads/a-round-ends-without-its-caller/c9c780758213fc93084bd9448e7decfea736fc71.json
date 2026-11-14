@@ -1,0 +1,55 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "None needed. If later work needs a clean shared store before a retry, add that inside the new-launch branch.",
+        "claim": "A unit read that is retried no longer has the first attempt's report cleared from the shared findings store when a later call resumes the round. The retry's preparation only covers its redirected output folder under the launch state. This leaves a stale file behind but harms nothing.",
+        "class": "other",
+        "evidence": "read_sequence.go:99-105 sends a retry's outputs to \u003cstate\u003e/declared/... and rewrites the brief to match (:127-138), and :124 now prepares only those paths. Collection and readFindingsMissing (:260-274) read the record's own declared outputs, which are the redirected ones, so nothing reads the stale file. A retry also starts from retryFailedStep inside waitStep, which comes after the old top-of-run preparation, so even the old code did not clear the store just before a retry within the same call.",
+        "id": "code-critic-b763d1f0ad9cf8b07b1b3fe2:1",
+        "material": false,
+        "relation": "code-critique materiality criterion (not material: no behaviour or proof affected)",
+        "severity": "low",
+        "where": "metasystem/internal/launch/read_sequence.go"
+      }
+    ],
+    "id": "code-critic-b763d1f0ad9cf8b07b1b3fe2",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-b763d1f0ad9cf8b07b1b3fe2/rounds/1/return.md",
+    "subject": {
+      "commit": "c9c780758213fc93084bd9448e7decfea736fc71",
+      "diffDigest": "c91c60b1fc1ae82248c02683cb01e1cae4fda55600fc6440a4e05a58dbb76856",
+      "kind": "commit",
+      "parent": "f43f704413317119d89f7f2b8824fd33479dd78a",
+      "tree": "acf8812d6a3a285b2271db80cb2eba1a268dfb1c"
+    }
+  },
+  "readDigest": "0916a4193d6e3929d5c816ee976176241d2949aad23b0c7c5af60d8877166847",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "Uprep",
+  "subject": {
+    "commit": "c9c780758213fc93084bd9448e7decfea736fc71",
+    "parent": "f43f704413317119d89f7f2b8824fd33479dd78a",
+    "tree": "acf8812d6a3a285b2271db80cb2eba1a268dfb1c",
+    "patchDigest": "c91c60b1fc1ae82248c02683cb01e1cae4fda55600fc6440a4e05a58dbb76856",
+    "unitDigest": "3f2f40f9a92b34e34defa84aeea6fd394dbd3a8b416b02ae681016b5cf9c063b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-b763d1f0ad9cf8b07b1b3fe2",
+    "round": 1,
+    "closureSha256": "61c0b1fd05790ffeb503ab478adc8b95dceb9c8284625a47320edb90c741f7c0"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "acf8812d6a3a285b2271db80cb2eba1a268dfb1c",
+    "runId": "goal-read-gate-20261114t230656z-17ad024fc259c2d4"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "07e4ba9c5614804ae16699b9574ab57c54bc86c0f53f35a0cceb1fa05234a2b7"
+}
