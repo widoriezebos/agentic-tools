@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 11
+- Sequence: 10
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="The agent return is bound to the existing evidence rule (newest proof red, cause own, same goal, same sha); the rest is refusal text, stop text and the keeper's order of two acts it already performs; no verb gains authority"
 - Tier: 2
 - Intent: The landing lane's agent returns a goal proven red by its own defect without a person, a refused lane fix build names the lane precondition that failed, the keeper's stop names the proof's cause and the one command and does not flap, a proven-green batch is pushed before a due clock proof, and the lane's questions say the cause in the contract's form (findings 430 and 434; design plans/designs/the-stewards-act-on-what-they-see.md (accepted, revision 4) D4, D5, D11, D12, G3)
 - Origin: main
 - Next step: On ui's machine route after decision 73's queue: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 95 production lines: cmd/metasystem/intent_landing_return.go, intent_lane_fix.go, landing_fix.go, landing/plain/stop.go, the keeper's wake order, landing/plain/policy_question.go; the lane-question obligation (acts) stays open until a-lane-act-runs-from-the-phone lands
 - OpenedAt: 2026-10-27T15:22:42Z
-- Revision: 167
+- Revision: 168
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -184,4 +184,5 @@ History:
 - 2026-11-14T22:27:22Z 554CW5GD64BQHP2TJ4M23XKXRY-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,a-deputy-budget-and-run-release,a-landed-goal-concludes-itself,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-refresh-leaves-a-busy-checkout-alone,a-reserved-decision-executes-from-its-answer,a-returned-member-leaves-the-batch,a-seat-and-a-lane-recover-under-delegation,a-tier-raise-keeps-its-approval,a-unit-check-runs-the-importers-too,a-unit-stop-asks-its-steward-first,an-agent-refusal-reaches-a-person-once,one-host-admits-heavy-work,scenario-beds-compose-the-facts-their-path-needs,the-lane-carries-one-work-subject,the-lane-returns-its-own-red,the-ratchet-counts-what-a-change-adds reason=priority-order subject=scenario-beds-compose-the-facts-their-path-needs from=1:12 to=1:13 requested-sequence=10
 - 2026-11-14T22:27:52Z DQ3EZRWZ4RTZG4620W0EJPEGTX-m1e-2651bc90 set-priority actor=human:Wido targets=a-blocking-flake-is-raised,the-lane-returns-its-own-red reason=priority-order subject=the-lane-returns-its-own-red from=1:13 to=1:12 requested-sequence=12
 - 2026-11-14T22:29:47Z 85FC5PB4QKXWNS7S4QCVSYKW09-m1e-d852a137 set-priority actor=human:Wido targets=a-returned-conflict-can-be-resolved,a-steward-tick-costs-seconds,a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-lane-returns-its-own-red,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=unit-run-truthful-and-self-advancing-2 from=1:12 to=1:11 requested-sequence=12
-Integrity: sha256=b943fe591a8aabc73600e209d106d4cd49cbb64a374cb518b2f3711c9b94969c
+- 2026-11-14T22:30:00Z 59HRT019K90C41DTZPFHWA70W0-m1e-d852a137 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,red-names-what-failed,the-lane-returns-its-own-red,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:11 to=1:10 requested-sequence=12
+Integrity: sha256=02f0accfc438eec028edb02b78a94c491d48fc35948ad5f57e2099709e59b602
