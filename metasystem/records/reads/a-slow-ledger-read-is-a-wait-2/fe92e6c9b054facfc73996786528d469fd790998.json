@@ -1,0 +1,91 @@
+{
+  "canonicalRead": {
+    "engine": "741da026b0554f8616565bdde43c9cbdc7ec7818",
+    "findings": [
+      {
+        "change": "Optional: put line 29 back to the single checkedProjectionDeadline install and rely on intent_unit_review_timeout_test.go for the preflight's 30 s bound. No change is needed for this unit to ship.",
+        "claim": "The rework of requiredScopeFixture adds a test-side ledger read that the brief did not need. The fixture's claim check is a stub that never reads the ledger, so the original single short-deadline helper was already correct. The added wrapper performs its own goal.ProjectWithDeadline call and picks the deadline helper from the endpoint's opt-in flag. It does not weaken anything: production still uses the short helper, and the wrapper also shows that review's preflight flag reaches the claim check. But it is extra test machinery, and the scope deadline helper's 'was it used' check can now also be satisfied by test code.",
+        "class": "scope",
+        "evidence": "intent_scope_test.go:29-51 wraps f.owners.connection.claimCheck. The bed's claimCheck returns nil (intent_work_test.go:555). With the base version of the fixture restored through go test -overlay, all three scope tests pass at this commit (ok, 65.5 s). The same preflight flag is already pinned by intent_unit_review_timeout_test.go:70-93.",
+        "id": "code-critic-9d792a4a55655351766dd7de:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_scope_test.go"
+      }
+    ],
+    "id": "code-critic-9d792a4a55655351766dd7de",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-slow-ledger-read-is-a-wait-2/metasystem/artifacts/agents/code-critic-9d792a4a55655351766dd7de/rounds/1/return.md",
+    "subject": {
+      "commit": "fe92e6c9b054facfc73996786528d469fd790998",
+      "diffDigest": "17f41ffa8baf7e957e7d9c5ed281416cc49eaf5e4238e14584796b82dff51492",
+      "kind": "commit",
+      "parent": "6008ed235779729b43c16de43f6b5b3d441b3b71",
+      "tree": "ac73e7c1d8e7e8c10b3d87d1e14fe1885fa53992"
+    }
+  },
+  "readDigest": "c6135c8be8d4c0c359f221bfe82fab82a2420f0d680225fe85985271418ba9ff",
+  "schemaVersion": 1,
+  "goal": "a-slow-ledger-read-is-a-wait-2",
+  "unit": "U3",
+  "subject": {
+    "commit": "fe92e6c9b054facfc73996786528d469fd790998",
+    "parent": "6008ed235779729b43c16de43f6b5b3d441b3b71",
+    "tree": "ac73e7c1d8e7e8c10b3d87d1e14fe1885fa53992",
+    "patchDigest": "17f41ffa8baf7e957e7d9c5ed281416cc49eaf5e4238e14584796b82dff51492",
+    "unitDigest": "964f29724ca8c3b4258a60080f01b3617c48dc4223ff99e4cdf36b884458057e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-9d792a4a55655351766dd7de",
+    "round": 1,
+    "closureSha256": "fe61e3da4e7f7a195c3645f994bc033dbf2cda247cca482ddae000d4099cae50"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ac73e7c1d8e7e8c10b3d87d1e14fe1885fa53992",
+    "runId": "goal-read-gate-20261114t145607z-80ffb9c183fa85f6"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/flakes_clock_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_scope_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_text_files_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_timeout_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_transfer_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/ledger_fresh_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/commit_timeout_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/internal/goal/project_deadline_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    },
+    {
+      "path": "metasystem/internal/goal/read_timeout_test.go",
+      "readerWord": "reviewed by critic root code-critic-9d792a4a55655351766dd7de"
+    }
+  ],
+  "sha256": "3d4433876e07b947dad80cb684b2ebb58f7462ccc7a8033f30b66be359959b12"
+}
