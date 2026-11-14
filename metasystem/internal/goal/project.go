@@ -10,6 +10,7 @@ package goal
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +46,33 @@ const (
 	defaultFreshFetchProcessTimeout = 3 * time.Second
 	defaultFreshProjectionTimeout   = 4 * time.Second
 )
+
+// ReadTimeout identifies an expired projection and retains its underlying cause.
+type ReadTimeout struct {
+	Limit time.Duration
+	Cause error
+}
+
+func (e *ReadTimeout) Error() string {
+	return fmt.Sprintf("fresh canonical ledger fetch timed out after %s", e.Limit)
+}
+func (e *ReadTimeout) Unwrap() error { return e.Cause }
+
+// IsReadTimeout recognizes projection, fetch-process and transport expiry.
+func IsReadTimeout(err error) bool {
+	var timeout *ReadTimeout
+	return errors.As(err, &timeout) || errors.Is(err, boundedexec.ErrTimedOut) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// ReadTimeoutMessage names the allowance that expired, independently of authority.
+func ReadTimeoutMessage(err error) string {
+	limit := defaultFreshFetchProcessTimeout
+	var timeout *ReadTimeout
+	if errors.As(err, &timeout) {
+		limit = timeout.Limit
+	}
+	return fmt.Sprintf("the goal ledger could not be fetched within %g s (the remote or this host is slow)", limit.Seconds())
+}
 
 type projectionDependencies struct {
 	fetch           func(Endpoint) (AdvanceResult, error)
@@ -230,7 +258,7 @@ func fetchProjectionWithinDeadline(e Endpoint, dependencies projectionDependenci
 	case err := <-done:
 		return err
 	case <-deadline:
-		return fmt.Errorf("fresh canonical ledger fetch timed out after %s", dependencies.timeout)
+		return &ReadTimeout{Limit: dependencies.timeout}
 	}
 }
 
