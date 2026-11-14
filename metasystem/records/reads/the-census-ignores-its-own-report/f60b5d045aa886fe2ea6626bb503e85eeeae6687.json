@@ -1,0 +1,60 @@
+{
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [
+      {
+        "change": "None needed for this slice. If it ever causes trouble, add a seam so the registry path and the engine check can be injected.",
+        "claim": "The new test is not fully isolated from the machine it runs on. recordedProcesses, the function that builds the list of the metasystem's own processes, also reads the host's real process registry from its default path and asks the real kernel whether a pid is running an engine binary. The test's outcome therefore depends a little on the host's state. The test still holds: no real registry can name pid 99999999, which is above every operating system's pid limit. This is existing behaviour of the function, not something this commit added.",
+        "class": "other",
+        "evidence": "In metasystem/internal/steward/disk_role.go, recordedProcesses calls registry.DefaultPath() and sets up the engine check through the real kernel. The new test in disk_launch_test.go calls recordedProcesses(home, []string{checkout}) without injecting either one.",
+        "id": "code-critic-52fe7fad8f1713d25d0a27f7:1",
+        "material": false,
+        "relation": "R-124: a corner the slice's first use does not need goes on the later list",
+        "severity": "low",
+        "where": "metasystem/internal/steward/disk_launch_test.go"
+      }
+    ],
+    "id": "code-critic-52fe7fad8f1713d25d0a27f7",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-the-census-ignores-its-own-report/metasystem/artifacts/agents/code-critic-52fe7fad8f1713d25d0a27f7/rounds/1/return.md",
+    "subject": {
+      "commit": "f60b5d045aa886fe2ea6626bb503e85eeeae6687",
+      "diffDigest": "9a96b54d83568c7ac8ed834d9a6c9dcc25a2a2879eab9387f0685dba33ba96e2",
+      "kind": "commit",
+      "parent": "beb261506b4da580e0711ef82692c5c2e31e400d",
+      "tree": "887e92f9ce0dad6b931f5b7796caf2cc97e64016"
+    }
+  },
+  "readDigest": "896d66766866f21d30a7d2759efb870b3eb10db7512354315f060fb2f54dbb1a",
+  "schemaVersion": 1,
+  "goal": "the-census-ignores-its-own-report",
+  "unit": "U1",
+  "subject": {
+    "commit": "f60b5d045aa886fe2ea6626bb503e85eeeae6687",
+    "parent": "beb261506b4da580e0711ef82692c5c2e31e400d",
+    "tree": "887e92f9ce0dad6b931f5b7796caf2cc97e64016",
+    "patchDigest": "9a96b54d83568c7ac8ed834d9a6c9dcc25a2a2879eab9387f0685dba33ba96e2",
+    "unitDigest": "5557c4d4436c8851a3cccdb21865dca4b9adffc9c7d475608ec23b02b86843b7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-52fe7fad8f1713d25d0a27f7",
+    "round": 1,
+    "closureSha256": "c6b665cc716bff29f8c87450dccf7550edf403f6c65e76d6efef177a5fcbef72"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "887e92f9ce0dad6b931f5b7796caf2cc97e64016",
+    "runId": "goal-read-gate-20261113t150353z-7aea1d9377851b08"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/disk_launch_test.go",
+      "readerWord": "reviewed by critic root code-critic-52fe7fad8f1713d25d0a27f7"
+    }
+  ],
+  "sha256": "e5c7d419c95ad6bacb511796d1b2f4fdd119ef783b9540ac0507cdccf5296465"
+}
