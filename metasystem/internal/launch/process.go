@@ -118,12 +118,19 @@ func (OSProcesses) Signal(pid int64, signal syscall.Signal) error {
 	return syscall.Kill(int(pid), signal)
 }
 func (OSProcesses) GroupAlive(pgid int64) (bool, error) {
-	err := syscall.Kill(-int(pgid), 0)
+	return groupAlive(pgid, syscall.Kill, groupListed)
+}
+
+func groupAlive(pgid int64, signal func(int, syscall.Signal) error, listed func(int64) (bool, error)) (bool, error) {
+	err := signal(-int(pgid), 0)
 	switch {
-	case err == nil, errors.Is(err, syscall.EPERM):
+	case err == nil:
 		return true, nil
 	case errors.Is(err, syscall.ESRCH):
 		return false, nil
+	case errors.Is(err, syscall.EPERM):
+		present, readErr := listed(pgid)
+		return present || readErr != nil, nil
 	default:
 		return false, err
 	}
