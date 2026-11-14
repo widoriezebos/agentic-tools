@@ -236,6 +236,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	check := inv.laneClaimCheck(conn, original.Path(), goalID, endpoint)
 	if err := branch.CheckCommitAccess(goalID, check); err != nil {
+		if goal.IsReadTimeout(err) {
+			return refuse(retry, "the bound subject is kept; the same command reconciles or commits it once", goal.ReadTimeoutMessage(err)+", so nothing was committed", "%v", err)
+		}
 		if holder, next, reason, held := inv.heldElsewhere(goalID, err); held {
 			return refuse(next, reason, fmt.Sprintf("seat %s holds goal %s and writes its branch, so nothing was committed", holder, goalID), "%v", err)
 		}
@@ -494,6 +497,14 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				summary := fmt.Sprintf("the branch commit owner's result for unit %s does not bind round %d: %v", unit, review.Round.Number, conflict)
 				if commitErr != nil {
 					summary = fmt.Sprintf("the branch commit owner did not commit unit %s: %v", unit, commitErr)
+				}
+				if goal.IsReadTimeout(commitErr) {
+					effect := "nothing was committed"
+					var operation *branch.OpError
+					if errors.As(commitErr, &operation) && operation.CreatedCommit != "" {
+						effect = fmt.Sprintf("commit %s was created and its publication is not confirmed", operation.CreatedCommit)
+					}
+					summary = goal.ReadTimeoutMessage(commitErr) + ", so " + effect
 				}
 				return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: summary,
 					Details: launchDetails(commitErr),

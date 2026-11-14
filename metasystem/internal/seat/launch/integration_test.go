@@ -18,8 +18,10 @@ package launch
 // clone resolves its own root from its committed conf, that
 // the nickname reaches git configuration, and that the clone's own engine
 // fetches the fleet's ledger from the bare fixture and accepts its tip.
+// Orientation formatting is proven in process with controlled ledger deadlines.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,8 +34,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
-// mixedRunner runs git and the real engine, and answers only for the two
-// commands this test does not exercise.
+// mixedRunner runs git and the real engine, and answers for commands whose
+// behavior has a separate in-process proof.
 //
 // The engine is built once into the clone, because the ledger step is one of
 // the things only a real run can prove: `goal fetch` validates the canonical
@@ -41,9 +43,16 @@ import (
 // stubbed answer would prove that the sequencer runs a command rather than
 // that a machine joins a ledger.
 type mixedRunner struct {
-	real OSRunner
-	said map[string]string
-	ran  []string
+	real    OSRunner
+	said    map[string]string
+	ran     []string
+	results []commandResult
+}
+
+type commandResult struct {
+	command string
+	output  string
+	err     error
 }
 
 func (r *mixedRunner) Run(command Command) (string, error) {
@@ -51,7 +60,17 @@ func (r *mixedRunner) Run(command Command) (string, error) {
 	if answer, canned := r.said[commandKey(command)]; canned {
 		return answer, nil
 	}
-	return r.real.Run(command)
+	output, err := r.real.Run(command)
+	r.results = append(r.results, commandResult{commandKey(command), output, err})
+	return output, err
+}
+
+func (r *mixedRunner) diagnostics() string {
+	var out strings.Builder
+	for _, result := range r.results {
+		fmt.Fprintf(&out, "\n%s\noutput: %s\nerror: %v\n", result.command, result.output, result.err)
+	}
+	return out.String()
 }
 
 func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
@@ -70,9 +89,8 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	runner := &mixedRunner{said: map[string]string{
 		// The launching seat's own engine is this test binary's module and
 		// not a built executable, so the command the SOURCE side runs is
-		// answered rather than run, as is the clone's validation. Everything
-		// the clone's own engine does — the ledger fetch, the orientation —
-		// is real.
+		// answered rather than run, as is the clone's validation. The ledger
+		// fetch is real; orientation has a separate proof with an injected read.
 		"metasystem validate session-isolation --source-root " + source + " --destination-root " + target +
 			" --manifest " + filepath.Join(target, install, "artifacts", "agents", "ui", "local-config-paths") +
 			" --harness-root " + filepath.Join(source, install): "",
@@ -109,6 +127,11 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	// is an engine at this path, so the test produces one and the ledger
 	// step below runs against the real thing.
 	buildEngine(t, filepath.Join(target, install, "bin", "metasystem"))
+	orientationRoot, err := sequencer.Host.StateRoot(filepath.Join(target, install))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.said["metasystem goal next --root "+orientationRoot] = "fixture orientation\n"
 	run(StepLedger)
 
 	if got := git(t, target, "remote", "get-url", "origin"); got != bare {
@@ -173,8 +196,8 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 	if accepted != git(t, target, "rev-parse", "--verify", "refs/remotes/origin/main") {
 		t.Fatalf("the accepted ref is %s, which is not the tip the bare fixture published", accepted)
 	}
-	if record.Orientation == "" {
-		t.Fatal("the record carries no orientation line from the clone's own reading")
+	if record.Orientation != "fixture orientation" {
+		t.Fatalf("the record lost the orientation command's line:%s", runner.diagnostics())
 	}
 	if record.ClonedCommit == "" {
 		t.Fatal("the record does not say which commit was cloned")
@@ -211,6 +234,7 @@ func TestAFreshCloneOfTheSelfHostedTemplateFetchesItsLedger(t *testing.T) {
 			" --harness-root " + filepath.Join(source, install): "",
 		"metasystem config validate --conf " + filepath.Join(target, install, "metasystem.conf") +
 			" --repo " + target: "",
+		"metasystem goal next --root " + filepath.Join(target, install): "fixture orientation\n",
 	}}
 	sequencer := &Sequencer{
 		Request: Request{
@@ -231,7 +255,7 @@ func TestAFreshCloneOfTheSelfHostedTemplateFetchesItsLedger(t *testing.T) {
 	buildEngine(t, filepath.Join(target, install, "bin", "metasystem"))
 	ran, err := sequencer.step(StepLedger, &record)
 	if err != nil || ran.outcome != StepDone {
-		t.Fatalf("ledger = %q, %v; want the template clone's ledger fetched and validated", ran.outcome, err)
+		t.Fatalf("ledger = %q, %v; want the template clone's ledger fetched and validated:%s", ran.outcome, err, runner.diagnostics())
 	}
 	stateRoot := filepath.Join(target, install)
 	for _, verb := range []string{"fetch", "next"} {
@@ -248,9 +272,23 @@ func TestAFreshCloneOfTheSelfHostedTemplateFetchesItsLedger(t *testing.T) {
 	if accepted == "" || accepted != git(t, target, "rev-parse", "--verify", "refs/remotes/origin/main") {
 		t.Fatalf("the accepted ref is %q, want the fleet's published tip", accepted)
 	}
-	if record.Orientation == "" {
-		t.Fatal("the record carries no orientation line from the clone's own reading")
+	if record.Orientation != "fixture orientation" {
+		t.Fatalf("the record lost the orientation command's line:%s", runner.diagnostics())
 	}
+}
+
+func TestCloneRunnerFailureRetainsChildOutputAndError(t *testing.T) {
+	t.Parallel()
+	runner := &mixedRunner{}
+	output, err := runner.Run(Command{Name: "/bin/sh", Args: []string{"-c", "printf 'orientation output'; printf 'orientation failure' >&2; exit 23"}, Budget: time.Minute})
+	if err == nil || output != "orientation output" {
+		t.Fatalf("child output=%q error=%v", output, err)
+	}
+	diagnostic := runner.diagnostics()
+	if !strings.Contains(diagnostic, "output: orientation output") || !strings.Contains(diagnostic, "error: orientation failure") {
+		t.Fatalf("fixture lost its failed child's evidence: %s", diagnostic)
+	}
+	t.Log(diagnostic)
 }
 
 // fixtureRepository builds a bare remote and a checkout of it that looks

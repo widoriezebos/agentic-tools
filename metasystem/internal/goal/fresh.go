@@ -54,6 +54,9 @@ func freshProjection(ctx context.Context, e Endpoint, clock func() (time.Time, e
 	}
 	defer func() {
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				err = &ReadTimeout{Limit: defaultFreshProjectionTimeout, Cause: err}
+			}
 			p = Projection{}
 			observed.Outcome = "unavailable"
 			observed.Cause = err.Error()

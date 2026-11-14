@@ -21,15 +21,196 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgoal"
 )
+
+type heldRecoveryAcceptance struct {
+	goal.Repository
+	entered chan struct{}
+	release chan struct{}
+	cleaned chan struct{}
+}
+
+func (r heldRecoveryAcceptance) Capture(opid string) (string, error) {
+	tip, err := r.Repository.Capture(opid)
+	close(r.entered)
+	<-r.release
+	return tip, err
+}
+
+func (r heldRecoveryAcceptance) Release(opid string) error {
+	err := r.Repository.Release(opid)
+	close(r.cleaned)
+	return err
+}
+
+// controlledRecoveryProjection drives the production read while acceptance is
+// held. Only the explicit deadline event may expire it, regardless of host load.
+func controlledRecoveryProjection(t *testing.T, endpoint goal.Endpoint, at time.Time, expire bool) (goal.Projection, error) {
+	t.Helper()
+	held := heldRecoveryAcceptance{Repository: endpoint.Repository, entered: make(chan struct{}), release: make(chan struct{}), cleaned: make(chan struct{})}
+	endpoint.Repository = held
+	deadline, requested := make(chan time.Time), make(chan time.Duration, 1)
+	type answer struct {
+		projection goal.Projection
+		err        error
+	}
+	done := make(chan answer, 1)
+	go func() {
+		projection, err := goal.ProjectWithDeadline(endpoint, true, at, func(wait time.Duration) <-chan time.Time {
+			requested <- wait
+			return deadline
+		})
+		done <- answer{projection, err}
+	}()
+	<-held.entered
+	released := false
+	defer func() {
+		if !released {
+			close(held.release)
+		}
+		<-held.cleaned
+	}()
+	select {
+	case wait := <-requested:
+		if wait != 4*time.Second {
+			t.Fatalf("projection requested %s, want 4s", wait)
+		}
+	default:
+		t.Fatal("production projection bypassed the injected deadline source")
+	}
+	clock := at
+	clock = clock.Add(5 * time.Second)
+	select {
+	case got := <-done:
+		t.Fatalf("projection returned while acceptance was held at %s: %+v", clock, got)
+	default:
+	}
+	if expire {
+		deadline <- clock
+		got := <-done
+		return got.projection, got.err
+	}
+	// Release acceptance before joining the successful read.
+	close(held.release)
+	released = true
+	got := <-done
+	return got.projection, got.err
+}
+
+func TestRecoveryProjectionUsesTheInjectedDeadline(t *testing.T) {
+	t.Parallel()
+	for _, expire := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expire=%t", expire), func(t *testing.T) {
+			t.Parallel()
+			bed := newWorkBed(t)
+			endpoint, err := bed.dependencies().endpoint(bed.root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			projection, err := controlledRecoveryProjection(t, endpoint, bed.manager.Now(), expire)
+			if expire {
+				if err == nil || err.Error() != "fresh canonical ledger fetch timed out after 4s" || projection.Tree != nil {
+					t.Fatalf("injected expiry: %+v %v", projection, err)
+				}
+			} else if err != nil || projection.Tree.Live[bed.id] == nil {
+				t.Fatalf("held acceptance after five injected seconds: %+v %v", projection, err)
+			}
+		})
+	}
+}
+
+func TestCloneOrientationWithControlledLedgerRead(t *testing.T) {
+	t.Parallel()
+	for _, expire := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expire=%t", expire), func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			at := time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)
+			files := map[string][]byte{
+				"plans/goals/backlog.md": goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "2", SyncMode: goal.SyncRemote, Revision: 1}),
+				"plans/goals/fixture-goal.md": goal.RenderFile(&goal.GoalFile{
+					Id: "fixture-goal", State: goal.StateQueued, Intent: "Join the fleet.", Origin: "main", NextStep: "Start it.", OpenedAt: at.Format(time.RFC3339), Revision: 1,
+					History: []goal.HistoryLine{{At: at.Format(time.RFC3339), Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-00000000", Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"fixture-goal"}, Keep: -1}},
+				}),
+			}
+			endpoint := goal.Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main", Repository: testgoal.New(files, at, strings.Repeat("a", 40))}
+			var out, diagnostic bytes.Buffer
+			code := nextSyncedWithInputs(&out, &diagnostic, root, "m1j", true, func(string) (goal.Endpoint, error) { return endpoint, nil },
+				func(string) (time.Time, error) { return at, nil },
+				func(endpoint goal.Endpoint, _ bool, at time.Time) (goal.Projection, error) {
+					return controlledRecoveryProjection(t, endpoint, at, expire)
+				}, func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil })
+			if expire {
+				if code != 1 || out.Len() != 0 || !strings.Contains(diagnostic.String(), "fresh canonical ledger fetch timed out after 4s") {
+					t.Fatalf("expired orientation: exit=%d output=%q error=%q", code, &out, &diagnostic)
+				}
+			} else if code != 0 || out.String() != "no claimable goal for machine m1j; 1 await the human's approval (first: fixture-goal)\n" {
+				t.Fatalf("orientation: exit=%d output=%q error=%q", code, &out, &diagnostic)
+			}
+		})
+	}
+}
+
+func proveRootReadInjectedDeadline(t *testing.T, root string, at time.Time) {
+	t.Helper()
+	fifos := make([]*os.File, 3)
+	for i, name := range []string{"projection-ready", "projection-release", "projection-cleaned"} {
+		path := filepath.Join(root, name)
+		if err := syscall.Mkfifo(path, 0600); err != nil {
+			t.Fatal(err)
+		}
+		file, err := os.OpenFile(path, os.O_RDWR, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fifos[i] = file
+		defer file.Close()
+		defer os.Remove(path)
+	}
+	if err := os.WriteFile(filepath.Join(root, "hold-projection"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	deadline, requested := make(chan time.Time), make(chan time.Duration, 1)
+	done := make(chan error, 1)
+	go func() {
+		_, err := goal.ReadClaimableBudgetedWorkWithDeadline(root, at, identity.KernelProber{}, func(wait time.Duration) <-chan time.Time {
+			requested <- wait
+			return deadline
+		})
+		done <- err
+	}()
+	var signal [1]byte
+	if _, err := fifos[0].Read(signal[:]); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = fifos[1].Write([]byte("release\n"))
+		_, _ = fifos[2].Read(signal[:])
+	}()
+	select {
+	case wait := <-requested:
+		if wait != 4*time.Second {
+			t.Fatalf("root read deadline=%s, want 4s", wait)
+		}
+	default:
+		t.Fatal("root read bypassed the injected source")
+	}
+	deadline <- at.Add(5 * time.Second)
+	if err := <-done; err == nil || err.Error() != "fresh canonical ledger fetch timed out after 4s" {
+		t.Fatalf("root read ignored injected expiry: %v", err)
+	}
+}
 
 var providerRecoveryScenarios = []string{"person", "automatic", "wrong-launch", "wrong-episode", "failed-start", "reserved", "text", "unknown-reset", "late-tick", "stopped", "helm", "person-held", "relapse", "released", "dependent", "registration", "delivery", "unreadable", "old-interval", "no-terminal", "bad-time"}
 
@@ -99,12 +280,22 @@ case "$*" in
  config*) exit 1 ;;
  'rev-parse --show-toplevel') echo "$root" ;;
  'rev-parse --verify'*|'rev-parse HEAD') echo 0000000000000000000000000000000000000001 ;;
- 'ls-tree --name-only'*) printf 'plans/goals/backlog.md\n' ;;
- 'ls-tree -r --name-only'*) printf 'plans/goals/backlog.md\nplans/goals/standing-validation.md\n' ;;
+ 'ls-tree --name-only'*)
+  if [ -f "$root/controlled-ledger" ]; then echo 'ledger read bypassed the configured reader' >&2; exit 97; fi
+  printf 'plans/goals/backlog.md\n' ;;
+ 'ls-tree -r --name-only'*)
+  if [ -f "$root/hold-projection" ]; then
+   /bin/rm "$root/hold-projection"
+   printf r > "$root/projection-ready"
+   IFS= read -r released < "$root/projection-release"
+  fi
+  printf 'plans/goals/backlog.md\nplans/goals/standing-validation.md\n' ;;
  'cat-file --batch') while IFS= read -r input; do path=${input#*:}; path=${path#./}; size=$(/usr/bin/wc -c < "$root/$path"); printf '0000000000000000000000000000000000000001 blob %s\n' "$size"; /bin/cat "$root/$path"; printf '\n'; done ;;
  'cat-file -p '*) path=${3#*:}; /bin/cat "$root/${path#./}" ;;
  'cat-file -e '*) exit 0 ;;
  'show -s --format=%cI '*) echo 2026-09-01T09:55:00Z ;;
+ 'update-ref -d refs/metasystem/goals/txn/'*)
+  if [ -p "$root/projection-cleaned" ]; then printf c > "$root/projection-cleaned"; fi ;;
  *) exit 128 ;;
 esac
 `
@@ -178,11 +369,39 @@ esac
 				t.Fatalf("fixture must visit the dependent seat first: %s >= %s", root, next)
 			}
 			root, home, start := bed.root(), bed.manager.CapacityHome, bed.manager.Now()
+			reads := 0
+			readsByRoot := map[string]int{}
+			readProjection := func(root string, at time.Time) (goal.Projection, error) {
+				reads++
+				key, err := filepath.EvalSymlinks(root)
+				if err != nil {
+					return goal.Projection{}, err
+				}
+				readsByRoot[key]++
+				for _, seat := range []*workBed{bed, other} {
+					if root == seat.root() {
+						endpoint, err := seat.dependencies().endpoint(root)
+						if err != nil {
+							return goal.Projection{}, err
+						}
+						return controlledRecoveryProjection(t, endpoint, at, false)
+					}
+				}
+				files := map[string][]byte{"plans/goals/backlog.md": goal.RenderRoot(&goal.RootRecord{
+					Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "2", SyncMode: goal.SyncLocal, Revision: 1,
+				})}
+				return controlledRecoveryProjection(t, goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch,
+					Repository: testgoal.New(files, at, strings.Repeat("a", 40))}, at, false)
+			}
 			providers, err := outage.ReadProviders(home)
 			if err != nil {
 				t.Fatal(err)
 			}
 			owner := providers.Owner.Install
+			ownerKey, err := filepath.EvalSymlinks(owner)
+			if err != nil {
+				t.Fatal(err)
+			}
 			registryPath := filepath.Join(root, "host-registry")
 			for _, path := range []string{root, other.root()} {
 				fleetWriteJSON(t, filepath.Join(path, ".git", "fixture.json"), map[string]string{})
@@ -200,9 +419,16 @@ esac
 				if err := os.WriteFile(filepath.Join(seat.root(), "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\nlaunch.seat.runtime=claude\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := goal.ReadClaimableBudgetedWork(seat.root(), start); err != nil {
+				proveRootReadInjectedDeadline(t, seat.root(), start)
+				if err := os.WriteFile(filepath.Join(seat.root(), "controlled-ledger"), nil, 0600); err != nil {
 					t.Fatal(err)
 				}
+				if _, err := readProjection(seat.root(), start); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if reads != 2 {
+				t.Fatalf("setup reads=%d, want both seats", reads)
 			}
 			launcher := newStewardSeatLauncher()
 			launcher.manager, launcher.repositoryTop, launcher.laneRoot = func() *launch.Manager { return bed.manager }, fakeTop(root), laneRootAt(home)
@@ -235,6 +461,7 @@ esac
 			}
 			tick := func(at time.Time) {
 				t.Helper()
+				beforeReads := readsByRoot[ownerKey]
 				now := at
 				clock := &steward.HandoffClock{Now: func() time.Time { return now }, Sleep: func(d time.Duration) {
 					now = now.Add(d)
@@ -250,6 +477,7 @@ esac
 								registered[i].verbs[j].run = func(args []string, out, errout io.Writer) int {
 									return runStewardRunWithDependencies(args, out, errout, func(r string, _ steward.WorkerCensus, revive func() error, interval time.Duration, cfg steward.TickConfig) error {
 										cfg.Now, cfg.ProviderHome, cfg.WorkStateRoot, cfg.RecoveryRegistry, cfg.Seat = at, home, root, registryPath, launcher
+										cfg.GoalProjection = readProjection
 										cfg.RearmAtBoundary, cfg.CompletedBoundary, cfg.KeepLandingLane = nil, nil, nil
 										return steward.RunLoop(r, seatTickCensus{}, revive, interval, cfg)
 									}, func(string, string) error { return exec.ErrNotFound }, clock, func(string) int { return 1 }, nil)
@@ -261,6 +489,9 @@ esac
 				var out, errout bytes.Buffer
 				if code := dispatchWithFamiliesAndRepositoryTop([]string{"steward", "run", "--repo", owner}, &out, &errout, registered, fakeTop(owner)); code != 0 {
 					t.Fatalf("public runner exit %d: %s", code, errout.String())
+				}
+				if readsByRoot[ownerKey] == beforeReads {
+					t.Fatalf("public tick bypassed the controlled projection: %s %s", &out, &errout)
 				}
 				if strings.Contains(errout.String(), "seat recovery requests:") && scenario != "unreadable" && scenario != "old-interval" && scenario != "no-terminal" && scenario != "bad-time" {
 					t.Fatalf("recovery failed: %s", errout.String())
@@ -301,7 +532,15 @@ esac
 			if _, err := outage.Observe(home, "claude", "fixture-model", "", "", "second-success", success.Add(3*time.Minute)); err != nil {
 				t.Fatal(err)
 			}
+			recoveryRoot, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeRecovery := readsByRoot[recoveryRoot]
 			tick(success.Add(5 * time.Minute))
+			if scenario != "no-terminal" && readsByRoot[recoveryRoot] == beforeRecovery {
+				t.Fatal("recovery bypassed the controlled projection")
+			}
 			assertCount(0)
 			switch scenario {
 			case "stopped":
@@ -370,7 +609,7 @@ esac
 					if len(questions) != 1 || len(unreadable) != 0 || questions[0].Recovery == nil || questions[0].Recovery.Launch != "other-failed" {
 						t.Fatalf("second seat was skipped or duplicated: %+v %v", questions, unreadable)
 					}
-					obligation := steward.ReconcileRecoveryRequests(owner, steward.TickConfig{Now: at, ProviderHome: home, RecoveryRegistry: registryPath, Seat: launcher, WorkStateRoot: root}, seatTickCensus{})
+					obligation := steward.ReconcileRecoveryRequests(owner, steward.TickConfig{Now: at, ProviderHome: home, RecoveryRegistry: registryPath, Seat: launcher, WorkStateRoot: root, GoalProjection: readProjection}, seatTickCensus{})
 					want := map[string]string{"old-interval": "lacks a readable recovery interval declaration", "no-terminal": "has no confirmed terminal observation", "bad-time": "provider episode or failed launch time is unreadable"}[scenario]
 					if obligation == nil || !strings.Contains(obligation.Error(), "seat "+root+":") || !strings.Contains(obligation.Error(), want) {
 						t.Fatalf("first seat's source obligation was hidden: %v", obligation)
@@ -510,7 +749,7 @@ esac
 				}
 			} else if scenario == "automatic" {
 				selection := steward.SeatSelection{Goal: bed.id, Held: true, ApprovalOpid: failed.ApprovalOpid}
-				if record, err := steward.StartSeat(root, steward.TickConfig{Now: at, Seat: launcher, ProviderHome: home, WorkStateRoot: root}, seatTickCensus{}, selection); err != nil || record.LaunchID == "" {
+				if record, err := steward.StartSeat(root, steward.TickConfig{Now: at, Seat: launcher, ProviderHome: home, WorkStateRoot: root, GoalProjection: readProjection}, seatTickCensus{}, selection); err != nil || record.LaunchID == "" {
 					refusals, _ := bed.manager.Store.Refusals()
 					t.Fatalf("automatic recovery: %+v %v; refusals %+v", record, err, refusals)
 				}

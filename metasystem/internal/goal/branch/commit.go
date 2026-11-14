@@ -27,6 +27,8 @@ type OpError struct {
 	// Cause is the error the refusal reports when it carries facts a caller
 	// reads with errors.As; nil for a refusal of its own.
 	Cause error
+	// CreatedCommit names a commit made before the final claim check failed.
+	CreatedCommit string
 }
 
 // Error is the refusal's words; its code is data ("Messages a Person
@@ -502,7 +504,7 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 		return "", err
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
-		return "", err
+		return "", &OpError{Code: NotHolderCode, Message: err.Error(), Cause: err, CreatedCommit: newTip}
 	}
 	return newTip, nil
 }

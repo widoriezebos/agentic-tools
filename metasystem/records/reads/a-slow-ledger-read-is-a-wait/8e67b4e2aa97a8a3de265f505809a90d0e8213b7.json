@@ -1,0 +1,86 @@
+{
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [
+      {
+        "change": "Optional: drive the expired case through goal.FreshProjection with an injected context, or rename the test to say it proves orientation formatting with a substituted reader.",
+        "claim": "The in-process orientation test does not use the same ledger read that the real child 'goal next' uses. Its expired case checks an error message that production 'goal next' never prints.",
+        "class": "other",
+        "evidence": "Production goal next (cmd/metasystem/goal.go:537-551) reads through goal.FreshProjection, which uses a context deadline, and wraps a failure as 'fresh ledger unavailable: ...'. TestCloneOrientationWithControlledLedgerRead replaces that whole read with controlledRecoveryProjection, which goes through goal.ProjectWithDeadline (the older path), and expects 'fresh canonical ledger fetch timed out after 4s'. The test still proves the brief's requirement, that the orientation line is produced in process without wall time, because nextSyncedWithInputs is the real function. But its name suggests it also proves the child's own timeout path, which it does not.",
+        "id": "code-critic-12ea6f3a1a7a8a183d2414d1:1",
+        "material": false,
+        "relation": "brief U2.2 acceptance (orientation proven in an injectable in-process test)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/provider_recovery_test.go"
+      },
+      {
+        "change": "Optional: select each wait against the read's done channel, so an early error reports itself instead of hanging.",
+        "claim": "If the production read fails before acceptance starts, the controlled-reader helpers hang instead of failing.",
+        "class": "other",
+        "evidence": "controlledRecoveryProjection waits on \u003c-held.entered and then \u003c-held.cleaned with no way out. proveRootReadInjectedDeadline does the same with a blocking named-pipe read. If the read errors before Capture, or never calls Release, the test blocks until the package's go test timeout instead of reporting a failure. This happens only when something else has already gone wrong; every scenario passed in the frozen check. Not reproduced.",
+        "id": "code-critic-12ea6f3a1a7a8a183d2414d1:2",
+        "material": false,
+        "relation": "R-104-m1e (time-bound tests on an artificial clock); diagnosability only",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/provider_recovery_test.go"
+      },
+      {
+        "change": "Optional: drop the clock variable, or add a comment that 'held past 4 s' means the injected deadline is never fired.",
+        "claim": "The '5 seconds advanced while acceptance is held' step is only for show: the local clock value is never given to the production read.",
+        "class": "other",
+        "evidence": "In controlledRecoveryProjection, 'clock = clock.Add(5 * time.Second)' only feeds a Fatalf message. What actually stops the read from timing out is that the injected deadline channel is never fired. The test still satisfies the brief, because the read can expire only by an explicit send. The variable just suggests more than it does.",
+        "id": "code-critic-12ea6f3a1a7a8a183d2414d1:3",
+        "material": false,
+        "relation": "brief U2.1 acceptance wording",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/provider_recovery_test.go"
+      }
+    ],
+    "id": "code-critic-12ea6f3a1a7a8a183d2414d1",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-slow-ledger-read-is-a-wait/metasystem/artifacts/agents/code-critic-12ea6f3a1a7a8a183d2414d1/rounds/1/return.md",
+    "subject": {
+      "commit": "8e67b4e2aa97a8a3de265f505809a90d0e8213b7",
+      "diffDigest": "d7e2ae607983c427b449ad6613eba8fb2987fbbda07176553681d8455af09163",
+      "kind": "commit",
+      "parent": "2d53fa86379ae45a35a4268616c0edd2f211b84e",
+      "tree": "2f1780214a124456845cfed7ea106db10a5b2ae7"
+    }
+  },
+  "readDigest": "2cf56c2ba023a942603605d018d2a71e47764d8c23af6b655137d9f12f09bb13",
+  "schemaVersion": 1,
+  "goal": "a-slow-ledger-read-is-a-wait",
+  "unit": "U2",
+  "subject": {
+    "commit": "8e67b4e2aa97a8a3de265f505809a90d0e8213b7",
+    "parent": "2d53fa86379ae45a35a4268616c0edd2f211b84e",
+    "tree": "2f1780214a124456845cfed7ea106db10a5b2ae7",
+    "patchDigest": "d7e2ae607983c427b449ad6613eba8fb2987fbbda07176553681d8455af09163",
+    "unitDigest": "aae77afaafa0d607c6485e3d9bb72d0a391bcba3c22f9713bb71c26a83581303"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-12ea6f3a1a7a8a183d2414d1",
+    "round": 1,
+    "closureSha256": "72bddbd38039aa9fc2426f7ed110f00bb602c24d8d1914f23b780beef86edd15"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "2f1780214a124456845cfed7ea106db10a5b2ae7",
+    "runId": "goal-read-gate-20261114t041024z-f4fe5980f5149912"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/provider_recovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-12ea6f3a1a7a8a183d2414d1"
+    },
+    {
+      "path": "metasystem/internal/seat/launch/integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-12ea6f3a1a7a8a183d2414d1"
+    }
+  ],
+  "sha256": "b3a4022b222532c2a04af9800982b7b3b88ae92e1e80349a7d848993828d5f8b"
+}
