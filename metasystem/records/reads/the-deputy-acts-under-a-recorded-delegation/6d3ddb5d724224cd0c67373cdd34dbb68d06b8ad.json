@@ -1,0 +1,141 @@
+{
+  "canonicalRead": {
+    "id": "20261114t081640-f1a75d1a01-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "430b09c609fbd20342f44137e1308d74685ea279a7816941eb27da04041aab66",
+      "diffDigest": "430b09c609fbd20342f44137e1308d74685ea279a7816941eb27da04041aab66"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261114t081640-f1a75d1a01-r2-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "grant add help and the duration-refusal hints still say one week / 7 days for every general grant",
+        "evidence": "intent_planning.go:269 'at most one week'; grant_everything.go:15 grantEndExamples and :19 grantEndOthers (the nextReason of the duration refusal) say 'within 7 days'; summary of the same refusal names 30 days",
+        "where": "metasystem/cmd/metasystem/grant_everything.go",
+        "change": "fold forward: name the 30-day delegated-only limit in grantEndExamples, grantEndOthers and the grant add help (help file is outside the owner files: OPEN)",
+        "relation": "a verb's help and refusal hints state its contract"
+      },
+      {
+        "id": "20261114t081640-f1a75d1a01-r2-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "the reworded creation and recorded-entry refusals dropped the latest end and the entry's since/until, and merge two distinct faults into one text",
+        "evidence": "general_attorney.go:59 and root.go:229 replaced messages that carried the latest end and the entry's until/since",
+        "where": "metasystem/internal/goal/root.go",
+        "change": "fold forward: keep both limits and restore the concrete end and since/until values",
+        "relation": "refusals name the concrete values a person needs"
+      },
+      {
+        "id": "20261114t081640-f1a75d1a01-r2-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "the 30-day limit is a bare literal and both limits are hard-coded in three messages",
+        "evidence": "root.go:101 returns 30 * 24 * time.Hour; '30 days'/'7 days' literals in grant_everything.go:80, general_attorney.go:59, root.go:229",
+        "where": "metasystem/internal/goal/root.go",
+        "change": "optional: name the constant and format messages from the constants",
+        "relation": "one source for a limit"
+      },
+      {
+        "id": "20261114t081640-f1a75d1a01-r2-s3:4",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "measured size exceeds the doubled estimate",
+        "evidence": "production 35 changed lines vs 30; tests 84 vs 60; within the 250-line unit bound",
+        "where": "metasystem/internal/goal/root.go",
+        "change": "none; report only"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261114t081640-f1a75d1a01-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "8589212ddd5f7f825d6b54fdff3e0b91c58086b9bff90c992914c14210570909",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1a4",
+  "subject": {
+    "commit": "6d3ddb5d724224cd0c67373cdd34dbb68d06b8ad",
+    "parent": "4301c698172166a394f99f708132bfc9a65a1ac4",
+    "tree": "7cd62c355838357d0aafa1b810a6ee7d90423fe6",
+    "patchDigest": "430b09c609fbd20342f44137e1308d74685ea279a7816941eb27da04041aab66",
+    "unitDigest": "86118fc301b6fb094d3d0b0e0ed7ffe50b93836022f489a63c6bb0de5e537c09"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261114t081640-f1a75d1a01-r2-s3",
+    "closureSha256": "cd7e7a8313a89f5e2424f4d45c89dd81cfd1ad1c756cbaba1a16d383ccada69d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7cd62c355838357d0aafa1b810a6ee7d90423fe6",
+    "runId": "goal-read-gate-20261114t120526z-af647abe1985a3fe"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6fbd34817b92575c8b41aaaff800dc5cdaf1c305",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "97e0517226d1fc113e8d21330da025d40e3cedfa",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "e0f1a9b99ef77d3dad33e7bcda65203b2e7acabd",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    },
+    {
+      "kind": "read",
+      "commit": "c779455cb6d3cf09e91df82013468ac72e6141a1",
+      "digest": "346a113098cb0ecda3ff9bb76ac2f379d2900beac3cd54da827f6c5153e911dd"
+    },
+    {
+      "kind": "read",
+      "commit": "9257d0aefd7ef8d14545d03aaf4881d8f36e7570",
+      "digest": "88c5730677887e2b5ee70c15f2b1d438bbdbf0e3cff978ddd90dd7ecd7df84f5"
+    },
+    {
+      "kind": "read",
+      "commit": "b7e70347de57c59569daeca6f0c13f4b8a782e4d",
+      "digest": "4e2cac66b5ad22bdb4a3dffb7fba96317e148544fea136ae11ce83ebefe6f3a2"
+    },
+    {
+      "kind": "read",
+      "commit": "e011a269079fae99d2948cffeccddf19564f357f",
+      "digest": "68dfb924825f7e94c02a11e971d87a9e2dd68d50b993939cacb9ef7f07de5158"
+    },
+    {
+      "kind": "read",
+      "commit": "fbc485ff63d5a3e1094135445ff0ce8940f47290",
+      "digest": "91bb36e248e9bd45aaf9a971a2afa4e0db413e610a21f87644ccb2053162021b"
+    },
+    {
+      "kind": "read",
+      "commit": "4d7aa8e71c53b55600533b7e22cd02f3e9c2bfe8",
+      "digest": "e4fde84ac563771b4cda2c35647ef577144b44f76ace15356b15a112c366465e"
+    },
+    {
+      "kind": "read",
+      "commit": "4301c698172166a394f99f708132bfc9a65a1ac4",
+      "digest": "82e295b2b8f0e7352813dccccb08da86e8ff8277113c953cc90f59f338beefb6"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/goal/general_attorney_test.go",
+      "readerWord": "reviewed by unit read 20261114t081640-f1a75d1a01-r2-s3"
+    }
+  ],
+  "sha256": "99275b1662fb2be39496216a7e20e1db0085f50faab468b6fe78fbc40d43938d"
+}
