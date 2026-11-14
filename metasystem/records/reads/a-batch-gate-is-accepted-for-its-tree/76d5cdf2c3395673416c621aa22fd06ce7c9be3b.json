@@ -1,0 +1,71 @@
+{
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [
+      {
+        "change": "None needed for this slice. Later, a real-git test could record a gate through prepareGate and then merge the same tree again.",
+        "claim": "The new test gets its recorded plan hash from the same function the code under test uses to recompute it (scopeDecision.impactPlan, run in the install directory). In production, the recorded hash comes from prepareGate, which runs ReadImpactPlan in the proof worktree. So the test cannot catch a mismatch between those two directories. It does prove the decision logic: same base and same plan are reused, while a different base or a different plan is refused.",
+        "class": "other",
+        "evidence": "impact_test.go in the unit: 'planned.impactPlan(seams, install)' produces first.PlanHash. impact.go acceptsGate: 'd.impactPlan(s, install)'. gate_impact.go:66-70 computes the production hash with 'ReadImpactPlan(seams, dir, ...)', where dir is the proof worktree (prove.go ~1373-1397). The slice works and is safe without a fix: any mismatch only refuses reuse.",
+        "id": "code-critic-e3198840b9faf77814f25590:1",
+        "material": false,
+        "relation": "R-124 later-when-it-hurts list (adds proof the slice's first use does not need)",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/impact_test.go"
+      },
+      {
+        "change": "None for this slice. If reuse is seen not to happen in the lane, compute the plan from a worktree of the commit.",
+        "claim": "acceptsGate recomputes the impact plan in the install directory's working tree, not in a clean export of the commit. Uncommitted or untracked files there could give a different plan than the one recorded. The only effect is a false negative: reuse is refused and the gate runs again, which is the behaviour before this change. It never accepts a wrong tree, because the tree and base are checked first. Noted with the reason 'no reproduction or traced path' to a wrong outcome.",
+        "class": "other",
+        "evidence": "impact.go acceptsGate: 'd.impactPlan(s, install)'. goadapter/impact.go:60-71: unitImpact calls SelectWorkingUnitPackages(moduleRoot, commit), which reads the working tree. The tree identity is already checked ('result.Tree != tree') before the plan comparison.",
+        "id": "code-critic-e3198840b9faf77814f25590:2",
+        "material": false,
+        "relation": "R-124 later-when-it-hurts list (no customer impact: failure mode is the previous behaviour)",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/impact.go"
+      }
+    ],
+    "id": "code-critic-e3198840b9faf77814f25590",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-batch-gate-is-accepted-for-its-tree/metasystem/artifacts/agents/code-critic-e3198840b9faf77814f25590/rounds/1/return.md",
+    "subject": {
+      "commit": "76d5cdf2c3395673416c621aa22fd06ce7c9be3b",
+      "diffDigest": "86584e658ec73b349b1a568c63db3697cdcf2d1161e76deb742e44a325f33883",
+      "kind": "commit",
+      "parent": "ff82ec5a3d81798f81ca71f9dcdd134b4297798c",
+      "tree": "ca4a006b063f1b1676bcc1bbe8b52af1f0a30da2"
+    }
+  },
+  "readDigest": "7ffd8ece49f6fcb33cd46ce0c7a879ed503212e0372911977cd766b0e85ba4cf",
+  "schemaVersion": 1,
+  "goal": "a-batch-gate-is-accepted-for-its-tree",
+  "unit": "U1",
+  "subject": {
+    "commit": "76d5cdf2c3395673416c621aa22fd06ce7c9be3b",
+    "parent": "ff82ec5a3d81798f81ca71f9dcdd134b4297798c",
+    "tree": "ca4a006b063f1b1676bcc1bbe8b52af1f0a30da2",
+    "patchDigest": "86584e658ec73b349b1a568c63db3697cdcf2d1161e76deb742e44a325f33883",
+    "unitDigest": "7a61a8895a770ed987c4e2f5b3d9c00f797efda6e67dd0d25888bace9ac8837d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-e3198840b9faf77814f25590",
+    "round": 1,
+    "closureSha256": "a95c0191de0e38d8889e8e255eb5a433172c3e3fb48b065e921bb13976d8535e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ca4a006b063f1b1676bcc1bbe8b52af1f0a30da2",
+    "runId": "goal-read-gate-20261113t234005z-3824d7b0f68ed3df"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/landing/plain/impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-e3198840b9faf77814f25590"
+    }
+  ],
+  "sha256": "014da4e88f4e8846dd3d5968cc2b76ce53f42386e925bd5d5b9aacd7353fb72a"
+}
