@@ -199,7 +199,7 @@ func TestGrantGeneralRecordsOneGrantPerCheckout(t *testing.T) {
 
 	for want, g := range map[string]GeneralGrant{
 		"ends after now":              {Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "l", Until: human.Now.Add(-time.Minute)},
-		"at most one week later":      {Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "l", Until: human.Now.Add(169 * time.Hour).Truncate(time.Minute)},
+		"7 days otherwise":            {Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "l", Until: human.Now.Add(169 * time.Hour).Truncate(time.Minute)},
 		"checkout with no whitespace": {Machine: "mac-a", Checkout: "/seat/my checkout", Lineage: "l", Until: until},
 		"by an absolute path":         {Machine: "mac-a", Checkout: "seat", Lineage: "l", Until: until},
 		"lineage with no whitespace":  {Machine: "mac-a", Checkout: "/seat/checkout", Until: until},

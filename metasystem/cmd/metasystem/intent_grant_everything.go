@@ -111,7 +111,7 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 			next: retry, nextReason: "try again", Details: []string{err.Error()}})
 	}
 	zone := inv.owners.helm.withDefaults().zone
-	end, err := parseGrantEnd(now, zone, inv.input.text("for"), inv.input.text("until"))
+	end, err := parseGrantEnd(now, zone, inv.input.text("for"), inv.input.text("until"), classes...)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + ", so nothing was done",
 			next: append(withoutOption(withoutOption(retry, "for"), "until"), "--for", "24h"), nextReason: grantEndOthers})
