@@ -55,8 +55,8 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 		return PublishResult{}, fmt.Errorf("a general power of attorney ends on a whole minute")
 	}
 	since := r.Now.UTC().Truncate(time.Second)
-	if !until.After(since) || until.Sub(since) > GeneralAttorneyMax {
-		return PublishResult{}, fmt.Errorf("a general power of attorney ends after now and at most one week later (by %s)", since.Add(GeneralAttorneyMax).Format(time.RFC3339))
+	if !until.After(since) || until.Sub(since) > GeneralAttorneyLimit(g.Classes) {
+		return PublishResult{}, fmt.Errorf("a general grant ends after now: 30 days for delegated classes only, 7 days otherwise")
 	}
 	entry := PowerOfAttorneyEntry{ID: r.opid(), By: r.Actor.historyActor(), Verbs: []string{GeneralAct},
 		For: g.Machine, Checkout: g.Checkout, Lineage: g.Lineage, Classes: g.Classes, Reason: g.Reason, Since: since.Format(time.RFC3339), Until: until.Format(time.RFC3339)}

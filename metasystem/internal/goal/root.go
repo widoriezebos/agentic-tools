@@ -72,8 +72,7 @@ type PowerOfAttorneyEntry struct {
 // person may make, bar the hard limits, for the seat's main session.
 const GeneralAct = "everything"
 
-// GeneralAttorneyMax bounds a general entry's life: an end at most one week
-// of elapsed time after it was granted.
+// GeneralAttorneyMax bounds general grants that do not name delegated classes only.
 const GeneralAttorneyMax = 168 * time.Hour
 
 // General reports whether the entry is a general power of attorney.
@@ -93,6 +92,16 @@ var retiredAttorneyClasses = []string{"mechanical", "stale-releases"}
 // DelegatedClasses are acts a grant carries only when it names them, and
 // only for a child of decision record.
 var DelegatedClasses = []string{"budget", "lane-recovery", "run-release"}
+
+// GeneralAttorneyLimit bounds a general grant's elapsed life by its classes.
+func GeneralAttorneyLimit(classes []string) time.Duration {
+	if len(classes) > 0 && !slices.ContainsFunc(classes, func(class string) bool {
+		return !slices.Contains(DelegatedClasses, class)
+	}) {
+		return 30 * 24 * time.Hour
+	}
+	return GeneralAttorneyMax
+}
 
 // Carries reports whether the entry names a class that may still be granted.
 func (e PowerOfAttorneyEntry) Carries(class string) bool {
@@ -194,7 +203,7 @@ func (e PowerOfAttorneyEntry) LiveAt(now time.Time) (bool, string) {
 }
 
 // generalWithinBounds is WithinBounds for a general entry: since before
-// until, at most one week apart, until on a whole minute, an absolute
+// until within its classes' duration limit, until on a whole minute, an absolute
 // checkout and a named machine and lineage.
 func (e PowerOfAttorneyEntry) generalWithinBounds() (bool, string) {
 	for i, class := range e.Classes {
@@ -216,8 +225,8 @@ func (e PowerOfAttorneyEntry) generalWithinBounds() (bool, string) {
 	if err != nil {
 		return false, "until " + e.Until + " is not RFC3339"
 	}
-	if !until.After(since) || until.Sub(since) > GeneralAttorneyMax {
-		return false, "until " + e.Until + " is not within one week after " + e.Since
+	if !until.After(since) || until.Sub(since) > GeneralAttorneyLimit(e.Classes) {
+		return false, "a general grant must end after it starts: 30 days for delegated classes only, 7 days otherwise"
 	}
 	if !until.Equal(until.Truncate(time.Minute)) {
 		return false, "until " + e.Until + " is not on a whole minute"

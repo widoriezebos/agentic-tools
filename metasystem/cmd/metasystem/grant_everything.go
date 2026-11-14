@@ -25,9 +25,9 @@ var grantClockPattern = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):([0-5][0-9])$`)
 // d = 24 hours, w = 168 hours of elapsed time) and --until (HH:MM today or,
 // once passed, tomorrow; tomorrow; YYYY-MM-DD, the end of that day), in
 // zone. A local deadline that does not exist or happens twice is refused,
-// never shifted; the end is on a whole minute, after now, and at most one
-// week later.
-func parseGrantEnd(now time.Time, zone *time.Location, forValue, until string) (time.Time, error) {
+// never shifted; the end is on a whole minute, after now, within the classes'
+// duration limit. Without classes, the limit is one week.
+func parseGrantEnd(now time.Time, zone *time.Location, forValue, until string, classes ...string) (time.Time, error) {
 	forValue, until = strings.TrimSpace(forValue), strings.TrimSpace(until)
 	if now.IsZero() || zone == nil {
 		return time.Time{}, fmt.Errorf("the clock can't be read")
@@ -76,8 +76,8 @@ func parseGrantEnd(now time.Time, zone *time.Location, forValue, until string) (
 	if !end.After(now) {
 		return time.Time{}, fmt.Errorf("the grant's end %s is already past", end.In(zone).Format("15:04 MST (2006-01-02)"))
 	}
-	if latest := now.Add(goal.GeneralAttorneyMax).Truncate(time.Minute); end.After(latest) {
-		return time.Time{}, fmt.Errorf("a general grant lasts at most one week; the latest end is %s (--for 1w)", latest.In(zone).Format("15:04 MST (2006-01-02)"))
+	if latest := now.Add(goal.GeneralAttorneyLimit(classes)).Truncate(time.Minute); end.After(latest) {
+		return time.Time{}, fmt.Errorf("latest end is %s: 30 days for delegated classes only, 7 days otherwise", latest.In(zone).Format("15:04 MST (2006-01-02)"))
 	}
 	return end, nil
 }
