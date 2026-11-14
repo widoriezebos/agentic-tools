@@ -1,0 +1,103 @@
+{
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [
+      {
+        "change": "None required. Optionally say in the work commit output that the cheap check was reused.",
+        "claim": "Not material: the person-facing 'work commit' check now reuses the lane-fix cache. Its committedImpactCheck step calls 'test impact --check', so when the staged tree, base, selection and settings are identical to an earlier run, the commit's cheap check is skipped. The person then sees the earlier run's form and timing from repair-check.json. This follows from the brief's point 3 (test impact --check reads the cache at cheap strength) and does not weaken publication.",
+        "class": "scope",
+        "evidence": "test_impact.go:390-395 returns 0 on reuse without saving; test_impact.go:672-681 (committedImpactCheck) then reads the existing repair-check.json.",
+        "id": "code-critic-da024603c71b58d5e04dd0c4:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/test_impact.go"
+      },
+      {
+        "change": "None required.",
+        "claim": "Not material: cache records written before this change have no evidence, so the first lane-fix check after deploy runs once more. A run that selects no groups no longer writes repair-check.json, because the save now needs evidence.",
+        "class": "other",
+        "evidence": "test_impact.go:135 returns early when identity.Evidence is nil; landing_check_skip_test.go:153 now asserts that a record without evidence is refused.",
+        "id": "code-critic-da024603c71b58d5e04dd0c4:2",
+        "material": false,
+        "relation": "R-124-m1u: a finding that adds rigor or a corner the slice's first use does not need is not material",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/test_impact.go"
+      }
+    ],
+    "id": "code-critic-da024603c71b58d5e04dd0c4",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-publication-consumes-the-units-check/metasystem/artifacts/agents/code-critic-da024603c71b58d5e04dd0c4/rounds/1/return.md",
+    "subject": {
+      "commit": "eda17e0e9a243f7079ede51a71f553be2ec12035",
+      "diffDigest": "2debbce6a7718c6b5afcf4a95d24536459dea1b40abdb6ac1d62eb45ed73fd4c",
+      "kind": "commit",
+      "parent": "e086a0f96c9ebcdd89d30dfae48f9821ea53cc3f",
+      "tree": "61cf0dd59113a9c09f4936873ea367829e8891c1"
+    }
+  },
+  "readDigest": "4ad98cd1643bca7b1df5ed5ca8c67426eea6f8c74d4e443ebafb7c43025332dc",
+  "schemaVersion": 1,
+  "goal": "a-publication-consumes-the-units-check",
+  "unit": "D2-U4",
+  "subject": {
+    "commit": "eda17e0e9a243f7079ede51a71f553be2ec12035",
+    "parent": "e086a0f96c9ebcdd89d30dfae48f9821ea53cc3f",
+    "tree": "61cf0dd59113a9c09f4936873ea367829e8891c1",
+    "patchDigest": "2debbce6a7718c6b5afcf4a95d24536459dea1b40abdb6ac1d62eb45ed73fd4c",
+    "unitDigest": "80a574714f0dca83cf564b2c9cf3eb192c7070134e00feb42a065ead159f9b7a"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-da024603c71b58d5e04dd0c4",
+    "round": 1,
+    "closureSha256": "62da2c8e035b6735da52ad9cadcf3933d9ad28c47e02bceccf418718bf9f6358"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "61cf0dd59113a9c09f4936873ea367829e8891c1",
+    "runId": "goal-read-gate-20261114t001056z-d01373e57b7b30ee"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "46c1b647ff4322a4ebd901e95918ca126fcf1a17",
+      "digest": "006479f85c0af660a5ab9a6a00494ce726bdc795c73b14a1075a4966e5ae3b59"
+    },
+    {
+      "kind": "read",
+      "commit": "a2786e3716d7a3c4c56e065ad84b77e11ea665ba",
+      "digest": "e7c30a2f4c3504761f3cc07e62ae06df4476534f755aa632eb314c25db22cd53"
+    },
+    {
+      "kind": "read",
+      "commit": "7e53c0fee1901e6b46aaca6e6dbd303c38ec2efb",
+      "digest": "ff9884a9edef82de5d03f09e8c3c401f2e83cf455adb4aa98905acb5d8996004"
+    },
+    {
+      "kind": "read",
+      "commit": "e086a0f96c9ebcdd89d30dfae48f9821ea53cc3f",
+      "digest": "4efff10dbf61641834853e73379db71ec14eb4d0671b56006ea8004ca6be3a15"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_carry_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-da024603c71b58d5e04dd0c4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_carry_full_test.go",
+      "readerWord": "reviewed by critic root code-critic-da024603c71b58d5e04dd0c4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_skip_test.go",
+      "readerWord": "reviewed by critic root code-critic-da024603c71b58d5e04dd0c4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-da024603c71b58d5e04dd0c4"
+    }
+  ],
+  "sha256": "c69ec48d17bdcbbf57523d1acc2542b7e427c5f4a605d9d781649c534a3d08f8"
+}
