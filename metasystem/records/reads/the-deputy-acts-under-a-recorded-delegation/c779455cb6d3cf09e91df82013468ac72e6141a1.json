@@ -1,0 +1,88 @@
+{
+  "coveredUnits": [
+    "U1a1",
+    "U1a2",
+    "U1a3",
+    "U1b1a"
+  ],
+  "canonicalRead": {
+    "engine": "05745cfc635bdefb8d228bb9ade4de4634a46d79",
+    "findings": [
+      {
+        "change": "When U1b1b or U2b2 makes a delegated class live, either bind the decision id to the act's argv or remove METASYSTEM_DECISION from the environment before starting a long-lived descendant.",
+        "claim": "METASYSTEM_DECISION is inherited by every process the decision's child starts. A long-lived descendant in the main session's process tree, such as a keeper or a detached run, would still carry the decision id. It could later be admitted for a delegated class under a decision that was never recorded for that act.",
+        "class": "other",
+        "evidence": "intent_decision.go:158 appends the variable to the child's environment. attorney_admits.go:209-214 checks only that it is present and has no spaces, never that a decision record with that id exists. Today no delegated class reaches an effect: there is no budget route, work stop run: requires a direct person proof, and the lane verbs refuse grants. No reproduction or traced path, so this is noted only.",
+        "id": "code-critic-ca35537147207fd192f1d692:1",
+        "material": false,
+        "relation": "rule: a delegated act runs only inside its decision record (design D2)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/attorney_admits.go"
+      },
+      {
+        "change": "None needed now. The help text could name reason beside classes in its rebuild warning.",
+        "claim": "Every new general grant now writes reason= and may name a new class. An engine that has not been rebuilt refuses the reason key and the new classes when it reads such a grant line, so a seat still on an old engine cannot read the ledger.",
+        "class": "other",
+        "evidence": "The base engine's parseAttorneyEntry accepts a closed list of keys, and reason is not on it (base root.go). general_attorney.go:62 always sets Reason, defaulting to 'no reason given'. The grant add help already says to rebuild every seat's engine before the first grant with classes. Central delivery (R-151-m1e) and the goal's NextStep (grant only after the units deploy) bound this window.",
+        "id": "code-critic-ca35537147207fd192f1d692:2",
+        "material": false,
+        "relation": "rule: engines older than a ledger refuse it (existing classes precedent)",
+        "severity": "low",
+        "where": "metasystem/internal/goal/root.go"
+      }
+    ],
+    "id": "code-critic-ca35537147207fd192f1d692",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-deputy-acts-under-a-recorded-delegation/metasystem/artifacts/agents/code-critic-ca35537147207fd192f1d692/rounds/1/return.md",
+    "subject": {
+      "commit": "c779455cb6d3cf09e91df82013468ac72e6141a1",
+      "diffDigest": "b20a50ebc34474c0effa6576fac7c336e2b4bca78ae1e22bd56dfca3a3dcddb7",
+      "kind": "commit",
+      "parent": "1211bf45d7e2b63832936fba61f749249edb35b3",
+      "tree": "f68d4c68a00ca37ef3593fed689b55cc3d687896"
+    }
+  },
+  "readDigest": "e4cbc62e49c412bb7cefd2f71ec3a61653800447d3b21bfbe525c2e346011033",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1b1a",
+  "subject": {
+    "commit": "c779455cb6d3cf09e91df82013468ac72e6141a1",
+    "parent": "1211bf45d7e2b63832936fba61f749249edb35b3",
+    "tree": "f68d4c68a00ca37ef3593fed689b55cc3d687896",
+    "patchDigest": "b20a50ebc34474c0effa6576fac7c336e2b4bca78ae1e22bd56dfca3a3dcddb7",
+    "unitDigest": "346a113098cb0ecda3ff9bb76ac2f379d2900beac3cd54da827f6c5153e911dd"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ca35537147207fd192f1d692",
+    "round": 1,
+    "closureSha256": "ef4bc32846e2a8b3691bba7a54ccb4749e74e75ec6f505cf48f57bb295aad87d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "f68d4c68a00ca37ef3593fed689b55cc3d687896",
+    "runId": "goal-read-gate-20261114t023446z-769d22a17e53594f"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6fbd34817b92575c8b41aaaff800dc5cdaf1c305",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "97e0517226d1fc113e8d21330da025d40e3cedfa",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "e0f1a9b99ef77d3dad33e7bcda65203b2e7acabd",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "e5bd8b03a4fc3bcdaac60802ece9171b205f464548b17b764345cbe1b2f77a2d"
+}
