@@ -29,6 +29,16 @@ func ContinueSelection(install string, record lane.Record, keeper lane.AgentKeep
 	return keeper.Run()
 }
 
+// ContinueDelegated executes a selection without carrying a person's overrides.
+func ContinueDelegated(install string, record lane.Record, keeper lane.AgentKeeper) lane.AgentRun {
+	keeper.Explicit, keeper.PersonAct = true, false
+	keeper.PersonSelection, keeper.Continuation = nil, nil
+	keeper.DelegatedSelection = func(r lane.Record, state lane.AgentState) bool { return DelegatedSelectionHolds(install, r, state) }
+	keeper.Prepare = func(r lane.Record) error { _, err := RecordedDelegatedBatch(install, r, ""); return err }
+	keeper.DelegatedContinuation = func(r lane.Record) string { return DelegatedBatchContinuation(install, r, keeper.Home) }
+	return keeper.Run()
+}
+
 // Resume recovers only work whose recorded owners permit the next transition.
 func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run ResumeRun, err error) {
 	s = s.transitionAs("resume")

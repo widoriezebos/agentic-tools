@@ -330,6 +330,29 @@ func RecordedDelegatedBatch(install string, registered lane.Record, id string) (
 	return batch, nil
 }
 
+// DelegatedSelectionHolds matches the selection to the keeper's barren episode.
+func DelegatedSelectionHolds(install string, registered lane.Record, state lane.AgentState) bool {
+	batch, err := RecordedDelegatedBatch(install, registered, "")
+	if err != nil {
+		return false
+	}
+	hold := batch.Delegated.Hold
+	last := ""
+	if len(state.BarrenLaunches) > 0 {
+		last = state.BarrenLaunches[len(state.BarrenLaunches)-1]
+	}
+	return hold.BarrenAt == state.BarrenAt && hold.Fingerprint == state.BarrenFingerprint && hold.Launch == last
+}
+
+// DelegatedBatchContinuation reads the recorded batch without passing a pause.
+func DelegatedBatchContinuation(install string, registered lane.Record, home string) string {
+	batch, err := RecordedDelegatedBatch(install, registered, "")
+	if _, paused := lane.ReadPause(home); err != nil || paused {
+		return ""
+	}
+	return batch.ID
+}
+
 // PersonBatchContinuation reads atomic snapshots without taking the queue lock.
 // A selection covers only the pause standing when the person selected it.
 func PersonBatchContinuation(install string, registered lane.Record, home string) string {
