@@ -134,6 +134,7 @@ func processTransition(scope processScope, scale int) *stoptransition.Transition
 		Families: stoptransition.LocalFamilies(stoptransition.LocalConfig{
 			Root: installation, Checkout: scope.Checkout, Installation: installation,
 			Binary: scope.Binary, ScaleMilli: scale, CancelJob: delegateCancel(installation),
+			LaunchStatus: engineHost{}.UnitLaunchStatus,
 		}),
 	}
 }

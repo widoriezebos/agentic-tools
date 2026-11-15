@@ -513,9 +513,13 @@ func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []strin
 		return append(lines, "running work: unavailable: "+err.Error())
 	}
 	running := 0
+	var launchStatus func(string) (string, error)
+	if inv.owners.processes.launches != nil {
+		launchStatus = engineHost{launches: inv.owners.processes.launches()}.UnitLaunchStatus
+	}
 	paths, _ := filepath.Glob(layout.InstallationRoot.Path("artifacts", "agents", "jobs", "*.json"))
 	for _, path := range paths {
-		if object, readErr := dispatchcore.ReadRecordObject(path); readErr == nil && !dispatchcore.TerminalStatus(fmt.Sprint(object["status"])) {
+		if object, readErr := dispatchcore.ReadRecordObject(path); readErr == nil && !dispatchcore.TerminalStatus(fmt.Sprint(object["status"])) && !dispatchcore.UnitLaunchEnded(object, launchStatus) {
 			running++
 		}
 	}

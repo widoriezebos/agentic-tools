@@ -34,7 +34,8 @@ type LocalConfig struct {
 	// lifecycle (the owned cancel, or the job's runtime) and returns its
 	// report. The lifecycle composes above this package (design 6.3), so
 	// the command layer supplies it.
-	CancelJob func(job string) (string, error)
+	CancelJob    func(job string) (string, error)
+	LaunchStatus func(string) (string, error)
 }
 
 // LocalFamilies returns every per-checkout process family in stop order.
@@ -198,7 +199,7 @@ func (f *jobFamily) Inventory() ([]Item, error) {
 			return nil, &InventoryReadError{Path: path, Err: readErr}
 		}
 		lens := dispatch.JobRecordOf(record)
-		if dispatch.TerminalStatus(lens.Status()) {
+		if dispatch.TerminalStatus(lens.Status()) || dispatch.UnitLaunchEnded(record, f.config.LaunchStatus) {
 			continue
 		}
 		machine := lens.MachineID()
