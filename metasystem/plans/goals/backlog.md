@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 242
+- Revision: 243
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -326,4 +326,6 @@ History:
 - 2026-11-12T23:04:21Z S47MBQS600KAXWF2HKVE9HM4Z5-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-session-owns-its-merge displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T20:43:53Z ack
 - 2026-11-13T13:40:41Z HSEGJKZJ608Q23K1HZAARZVZ02-m1e-cc2e8fc8 ack actor=human:Wido targets=the-deputy-acts-under-a-recorded-delegation displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T23:05:49Z ack
 - 2026-11-13T13:40:41Z HSEGJKZJ608Q23K1HZAARZVZ02-m1e-cc2e8fc8 ack actor=human:Wido targets=the-deputy-acts-under-a-recorded-delegation displaced=m1e+main-1792389436-6018-51cc28@2026-11-12T23:04:21Z ack
-Integrity: sha256=265b19a028b432c0742be38d2b62f341f2afa01d7f5e73e15502a087b4a61849
+- 2026-11-15T16:48:24Z 5299N1N05Q278XYVJ16JJ6GPVX-m1f-71c5cb39 ack actor=m1f+steward-seat targets=the-carry-check-classifies-a-flake displaced=m1f+steward-seat@2026-11-06T12:31:04Z ack
+- 2026-11-15T16:48:24Z 5299N1N05Q278XYVJ16JJ6GPVX-m1f-71c5cb39 ack actor=m1f+steward-seat targets=the-carry-check-classifies-a-flake displaced=m1f+steward-seat@2026-11-06T20:02:30Z ack
+Integrity: sha256=bde706cc2a07c8303b0080f2162d7e2ba0a39568fa9d42504ce778c7cc1ffffd
