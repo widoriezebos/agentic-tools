@@ -1208,6 +1208,9 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		}
 	} else if inv.input.has("batch") {
 		selected, selectionErr = plain.RecordedPersonBatch(record.Install, record, inv.input.text("batch"))
+		if selectionErr != nil {
+			selected, selectionErr = plain.RecordedDelegatedBatch(record.Install, record, inv.input.text("batch"))
+		}
 	} else {
 		selected, selectionErr = plain.SelectBatch(record.Install, root, record, seams)
 	}
@@ -1225,10 +1228,11 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(result)
 	}
 	recorded := selected != nil && selected.Person != nil && selected.State != plain.BatchClosed
+	delegated := selected != nil && selected.Delegated != nil && selected.State != plain.BatchClosed
 	// Recording the choice succeeds independently of execution readiness.
 	// Its continuation uses only the durable batch identity at the destination.
 	if !inv.insideLaneCheckout(root) {
-		if recorded {
+		if recorded || delegated {
 			inv.input.values["batch"] = []string{selected.ID}
 		}
 		return inv.handOffLandingRun(record)
@@ -1264,6 +1268,10 @@ func runIntentLandingRun(inv *intentInvocation) int {
 				_, err := plain.RecordedPersonBatch(current.Install, current, selected.ID)
 				return err
 			}
+			if delegated {
+				_, err := plain.RecordedDelegatedBatch(current.Install, current, selected.ID)
+				return err
+			}
 			fresh, err := plain.ReadBatch(current.Install)
 			if err != nil {
 				return err
@@ -1282,6 +1290,12 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 	keeper.Helmed = func(root string) bool { return owners.helm(root).Active }
 	keeper.Continuation = func(current lane.Record) string { return plain.PersonBatchContinuation(current.Install, current, home) }
+	keeper.DelegatedSelection = func(current lane.Record, state lane.AgentState) bool {
+		return plain.DelegatedSelectionHolds(current.Install, current, state)
+	}
+	keeper.DelegatedContinuation = func(current lane.Record) string {
+		return plain.DelegatedBatchContinuation(current.Install, current, home)
+	}
 	keeper.Explicit = true
 	if !personAct {
 		_, personProblem := inv.landingPersonCheck("start the landing agent", root)
