@@ -83,10 +83,11 @@ func TestTheAdmitterAdmitsOnlyTheGrantsClasses(t *testing.T) {
 		{"alert ack a1", "acks"}, {"question withdraw q1", "acks"},
 		{"work stop j2:j1", "recovery"}, {"work stop read:r1", "recovery"}, {"work stop G", "recovery"},
 		{"work stop run:r1", "run-release"},
+		{"landing resume", "lane-recovery"}, {"landing resume --json --verbose", "lane-recovery"},
 		{"goal release C --because=x", ""},
 	}
 	for _, argv := range []string{
-		"goal budget G 1d/10/720m/1/3", "landing resume", "machine revive m1e",
+		"goal budget G 1d/10/720m/1/3", "landing resume G", "machine revive m1e",
 		"goal approve F --budget norm", "goal approve F N", "goal approve N", "goal approve F -- N",
 		"goal release D --reason x", "goal release G --reason x", "goal release missing --reason x",
 		"goal release F --reason x", "goal release C --reason-file x", "goal release C --reason x --repo /elsewhere",

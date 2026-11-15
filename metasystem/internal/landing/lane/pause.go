@@ -143,12 +143,6 @@ func (pause Pause) Who() string {
 	return by + " (" + pause.Reason + ")"
 }
 
-// ClearPause ends a pause, a readable one or not; a lane not paused is
-// unchanged.
-func ClearPause(home string) (changed bool, err error) {
-	return ClearPauseAt(home, "a person", time.Now())
-}
-
 func ReadResume(home string) (resume Pause, present bool, err error) {
 	present, err = readJSON(filepath.Join(HostDir(home), "landing-lane-resumed.json"), &resume)
 	return

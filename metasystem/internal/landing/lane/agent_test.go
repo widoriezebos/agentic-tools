@@ -127,7 +127,7 @@ func TestKeeperWakesForQueuedWork(t *testing.T) {
 	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "paused") {
 		t.Fatalf("an unreadable pause: %q, starts %d; want it held as paused", line, len(agent.starts))
 	}
-	if _, err := ClearPause(home); err != nil {
+	if _, err := ClearPauseAt(home, "a person", clock); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(pausePath(home)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -191,7 +191,7 @@ func TestKeeperStartsOutsideTheLaneLock(t *testing.T) {
 	if len(agent.starts) != 1 || !slices.Equal(cancelled, []string{"landing-1"}) || !strings.Contains(line, "stopped again") {
 		t.Fatalf("paused during the start: %q, starts %d, cancelled %v", line, len(agent.starts), cancelled)
 	}
-	if _, err := ClearPause(home); err != nil {
+	if _, err := ClearPauseAt(home, "a person", clock); err != nil {
 		t.Fatal(err)
 	}
 	keeper.Start = start

@@ -75,7 +75,7 @@ func TestViewPausedAndUnknownAgent(t *testing.T) {
 		!strings.Contains(*view.Owner.RetryHint, "metasystem landing start") || !strings.Contains(view.Summary, "stopped by Wido") {
 		t.Fatalf("paused view = %+v %+v", view.Owner, view.Summary)
 	}
-	if _, err := ClearPause(home); err != nil {
+	if _, err := ClearPauseAt(home, "a person", laneNow); err != nil {
 		t.Fatal(err)
 	}
 	sources := viewSources(home, false)

@@ -36,7 +36,7 @@ func TestCorruptPauseReadsPaused(t *testing.T) {
 			if name == "directory" {
 				return
 			}
-			if changed, err := ClearPause(home); err != nil || !changed {
+			if changed, err := ClearPauseAt(home, "a person", laneNow); err != nil || !changed {
 				t.Fatalf("ClearPause over an unreadable pause = %v %v; want it cleared", changed, err)
 			}
 			if _, paused := ReadPause(home); paused {

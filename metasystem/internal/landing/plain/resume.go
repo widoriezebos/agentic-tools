@@ -39,6 +39,58 @@ func ContinueDelegated(install string, record lane.Record, keeper lane.AgentKeep
 	return keeper.Run()
 }
 
+// ResumeDelegated selects waiting work only on the engine's unchanged barren hold.
+func ResumeDelegated(home string, d DelegatedProvenance, now time.Time, s ProveSeams) (run ResumeRun, err error) {
+	record, present, err := lane.Read(home)
+	if err != nil || !present {
+		return run, errors.Join(err, errors.New("no landing lane is registered"))
+	}
+	if s.ResumeKeeper == nil {
+		return run, errors.New("the landing agent's keeper is unavailable")
+	}
+	s = s.transitionAs("resume")
+	s.Now, s.Person = func() time.Time { return now }, nil
+	keeper := *s.ResumeKeeper
+	// Selection calls this reader under the queue and lane locks.
+	fingerprint := func(root string) (string, error) {
+		_, _, live, err := ReadRunning(record.Install, s)
+		if err != nil || live {
+			return "", errors.Join(err, errors.New("a check is in progress; a delegated resume waits for it"))
+		}
+		batch, err := ReadBatch(record.Install)
+		if err != nil {
+			return "", err
+		}
+		if batch != nil && batch.State != BatchClosed && (batch.Open || batch.SealedAt != "" || batch.State == BatchRunning) {
+			return "", errors.New("restarting or reopening a batch needs a person's resume")
+		}
+		if keeper.Fingerprint == nil {
+			return "", errors.New("the barren fingerprint reader is unavailable")
+		}
+		return keeper.Fingerprint(root)
+	}
+	entries, err := Waiting(record.Install)
+	if err != nil {
+		return run, err
+	}
+	slices.SortStableFunc(entries, func(a, b Entry) int { return strings.Compare(a.At, b.At) })
+	goals := []string{}
+	for _, entry := range entries {
+		goals = append(goals, entry.Goal)
+	}
+	if len(goals) == 0 {
+		return run, errors.New("a barren hold with no waiting goal needs a person's check")
+	}
+	d.CheckedAt = now
+	if _, err := SelectDelegatedBatch(record.Install, home, record.Root, record, goals, d, fingerprint, s); err != nil {
+		return run, err
+	}
+	run.Changed, run.Lines = true, []string{"recorded the selection " + strings.Join(goals, ", ")}
+	run.Agent = ContinueDelegated(record.Install, record, keeper)
+	run.Lines = append(run.Lines, run.Agent.Line)
+	return run, nil
+}
+
 // Resume recovers only work whose recorded owners permit the next transition.
 func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run ResumeRun, err error) {
 	s = s.transitionAs("resume")
@@ -136,7 +188,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		return run, err
 	}
 	if blocked {
-		return resumeContinuation(home, record, keeper, run)
+		return resumeContinuation(home, record, keeper, run, now)
 	}
 	_, live, agentErr := keeper.Running()
 	batch, batchErr := ReadBatch(record.Install)
@@ -157,7 +209,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 	}
 	if proofLive {
 		drainChanged, drainErr := ClearDrain(record.Install)
-		pauseChanged, pauseErr := lane.ClearPause(home)
+		pauseChanged, pauseErr := lane.ClearPauseAt(home, "a person", now)
 		run.Changed = run.Changed || drainChanged || pauseChanged
 		run.Lines = append(run.Lines, landingstate.Phrase("the-running-proof-continues"))
 		return run, errors.Join(drainErr, pauseErr)
@@ -227,10 +279,10 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		run.Lines = append(run.Lines, line)
 		run.Changed = true
 	}
-	return resumeContinuation(home, record, keeper, run)
+	return resumeContinuation(home, record, keeper, run, now)
 }
 
-func resumeContinuation(home string, record lane.Record, keeper lane.AgentKeeper, run ResumeRun) (ResumeRun, error) {
+func resumeContinuation(home string, record lane.Record, keeper lane.AgentKeeper, run ResumeRun, now time.Time) (ResumeRun, error) {
 	batch, err := ReadBatch(record.Install)
 	if err != nil {
 		return run, err
@@ -240,7 +292,7 @@ func resumeContinuation(home string, record lane.Record, keeper lane.AgentKeeper
 	if err != nil {
 		return run, err
 	}
-	changed, err = lane.ClearPause(home)
+	changed, err = lane.ClearPauseAt(home, "a person", now)
 	run.Changed = run.Changed || changed
 	if err != nil {
 		return run, err

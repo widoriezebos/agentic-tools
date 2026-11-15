@@ -30,7 +30,15 @@ func landingResumeCommand() intentCommand {
 		s.ResumeKeeper = &keeper
 		s.AgentRunning = func() (bool, error) { _, live, err := keeper.Running(); return live, err }
 		provenance := plain.ActProvenance{Person: person.Name, Root: person.Root, TerminalGeneration: person.Proof.TerminalGeneration, TerminalRef: person.Proof.TerminalRef}
-		run, err := plain.Resume(admitted.home, provenance, admitted.owners.now(), s)
+		var run plain.ResumeRun
+		var err error
+		if d := person.Delegated; d != nil {
+			keeper.Fingerprint = delegatedSelectionFingerprint(admitted.installation, keeper)
+			run, err = plain.ResumeDelegated(admitted.home, plain.DelegatedProvenance{Kind: "resume", Grant: d.Grant,
+				Decision: d.Decision, Session: d.Session, Class: d.Act, Delegate: d.By}, admitted.owners.now(), s)
+		} else {
+			run, err = plain.Resume(admitted.home, provenance, admitted.owners.now(), s)
+		}
 		if err != nil {
 			return inv.render(landingLaneFailure(laneTargets(admitted.record.Root), "the lane's resume could not finish", err))
 		}

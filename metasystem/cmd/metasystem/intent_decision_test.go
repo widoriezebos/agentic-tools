@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -1086,7 +1087,7 @@ func TestAnAgentIsRefusedBeforeTheChild(t *testing.T) {
 		{"mismatch", []string{"--class", "recovery"}, []string{"goal", "prioritize", bedGoal, "3"}, "ordering, not recovery", false},
 		{"unknown", []string{"--class", "values"}, []string{"goal", "prioritize", bedGoal, "3"}, strings.Join(goal.AttorneyClasses, ", "), false},
 		{"unclassified", []string{"--class", "ordering"}, []string{"goal", "budget", bedGoal, "1d/10/720m/1/3"}, "in no class", false},
-		{"resume", []string{"--class", "recovery"}, []string{"landing", "resume"}, "in no class", false},
+		{"resume", []string{"--class", "recovery"}, []string{"landing", "resume"}, "lane-recovery, not recovery", false},
 		{"revive", []string{"--class", "recovery"}, []string{"machine", "revive", "mac-cli"}, "in no class", false},
 		{"stop-run", []string{"--class", "recovery"}, []string{"work", "stop", "run:ID"}, "run-release, not recovery", false},
 		{"revoked", []string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3"}, "grant", true},
@@ -1114,6 +1115,68 @@ func TestAnAgentIsRefusedBeforeTheChild(t *testing.T) {
 			if b.calls != 0 || b.locks != 0 || b.trace.Len() != 0 || b.repo.accepted != before || len(lines) != 0 || bad != 0 || err != nil {
 				t.Fatalf("refusal changed state: calls=%d locks=%d lines=%+v err=%v", b.calls, b.locks, lines, err)
 			}
+		})
+	}
+}
+
+func TestLandingResumeRunsUnderARecordedDelegation(t *testing.T) {
+	t.Parallel()
+	for _, paused := range []bool{false, true} {
+		t.Run(fmt.Sprintf("paused=%t", paused), func(t *testing.T) {
+			t.Parallel()
+			d := newDecisionAgentBed(t)
+			helmMust(t, os.MkdirAll(filepath.Join(d.root(), ".git"), 0700))
+			d.lineage = ""
+			code, grant := d.runJSON(d.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--classes", "lane-recovery", "--lineage", "seat", "--for", "24h")
+			if code != 0 {
+				t.Fatalf("grant: %d %+v", code, grant)
+			}
+			d.lineage = launch.SeatOwnerLineage
+			b := newSelectionBed(t)
+			b.barrenKeeper()
+			b.keeper.Observe = nil
+			helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=auto\n"), 0600))
+			state := lane.AgentState{Barren: 2, BarrenAt: b.now.Format(time.RFC3339Nano), BarrenFingerprint: "unchanged"}
+			writeQuestionFixture(t, lane.AgentStatePath(b.home), state)
+			absent := exec.Command("/bin/sh", "-c", "exit 128").Run()
+			git := b.owners.landing.plainProve.Git
+			b.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
+				if args[len(args)-1] == "MERGE_HEAD^{commit}" {
+					return "", absent
+				}
+				return git(root, args...)
+			}
+			if paused {
+				_, err := lane.SetPause(b.home, "Wido", b.now)
+				helmMust(t, err)
+			}
+			d.owners.landing, d.owners.policies = b.owners.landing, b.owners.policies
+			d.owners.policies.ConfPath = func(root string) (string, error) { return filepath.Join(root, "metasystem.conf"), nil }
+			machine := d.owners.dependencies.machine
+			d.owners.dependencies.machine = func(root string) (string, error) {
+				if root == b.lane {
+					return "fixture", nil
+				}
+				return machine(root)
+			}
+			d.owners.landing.person = func(string) (string, error) { return "", errors.New("a delegate has no person's proof") }
+			at, err := d.commandNow(d.root())
+			helmMust(t, err)
+			d.owners.commandNow = func(string) (time.Time, error) { return at, nil }
+			code, got := d.record([]string{"--class", "lane-recovery"}, []string{"landing", "resume"})
+			batch, err := plain.ReadBatch(b.lane)
+			helmMust(t, err)
+			if paused {
+				if code == 0 || batch != nil || b.starts != 0 {
+					t.Fatalf("delegated resume cleared a pause: %d %+v batch=%+v", code, got, batch)
+				}
+				return
+			}
+			lines, bad, err := humanauthority.ReadDecisions(d.home)
+			if code != 0 || d.calls != 1 || b.starts != 1 || batch == nil || batch.Person != nil || batch.Delegated == nil || len(lines) != 1 || bad != 0 || err != nil || batch.Delegated.Decision != lines[0].ID || batch.Delegated.Grant != grant.Targets[0].ID {
+				t.Fatalf("resume lost its recorded delegation: %d %+v batch=%+v decisions=%+v err=%v", code, got, batch, lines, err)
+			}
+			t.Logf("decision record --class lane-recovery -- landing resume: %s; starts=%d", got.Summary, b.starts)
 		})
 	}
 }
