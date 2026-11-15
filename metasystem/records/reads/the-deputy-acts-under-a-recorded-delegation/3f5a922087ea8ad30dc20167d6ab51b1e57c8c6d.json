@@ -1,0 +1,106 @@
+{
+  "canonicalRead": {
+    "id": "20261114t122345-77e7232fe2-r4-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "e027eeb830ab88ce96cd0a2a1e524d0b5d7ee4db4e18a90e789f56d6d30a9c00",
+      "diffDigest": "e027eeb830ab88ce96cd0a2a1e524d0b5d7ee4db4e18a90e789f56d6d30a9c00"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [],
+    "output": "/Users/wido/.metasystem/launch/20261114t122345-77e7232fe2-r4-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "81ce06d05d5999b82bf2c1f8279e25c3cd6d1042dd84ad807679653d46abddf9",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1b1c",
+  "subject": {
+    "commit": "3f5a922087ea8ad30dc20167d6ab51b1e57c8c6d",
+    "parent": "b379a3c169bcb9bce41937b3dc94d564baa33f9f",
+    "tree": "ba92acbcc6e475d91821261c03201730fd522ac2",
+    "patchDigest": "e027eeb830ab88ce96cd0a2a1e524d0b5d7ee4db4e18a90e789f56d6d30a9c00",
+    "unitDigest": "cf748d8143aca167a9ffd307f6aa7eaeb41456bc84cb38de78e21130af09b904"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261114t122345-77e7232fe2-r4-s3",
+    "closureSha256": "cdf78d926abe159717621907c4d9678c285d02649bb587230582cd566fda9fb7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ba92acbcc6e475d91821261c03201730fd522ac2",
+    "runId": "goal-read-gate-20261115t122428z-25b658ca1a748be8"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6fbd34817b92575c8b41aaaff800dc5cdaf1c305",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "97e0517226d1fc113e8d21330da025d40e3cedfa",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "e0f1a9b99ef77d3dad33e7bcda65203b2e7acabd",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    },
+    {
+      "kind": "read",
+      "commit": "c779455cb6d3cf09e91df82013468ac72e6141a1",
+      "digest": "346a113098cb0ecda3ff9bb76ac2f379d2900beac3cd54da827f6c5153e911dd"
+    },
+    {
+      "kind": "read",
+      "commit": "9257d0aefd7ef8d14545d03aaf4881d8f36e7570",
+      "digest": "88c5730677887e2b5ee70c15f2b1d438bbdbf0e3cff978ddd90dd7ecd7df84f5"
+    },
+    {
+      "kind": "read",
+      "commit": "b7e70347de57c59569daeca6f0c13f4b8a782e4d",
+      "digest": "4e2cac66b5ad22bdb4a3dffb7fba96317e148544fea136ae11ce83ebefe6f3a2"
+    },
+    {
+      "kind": "read",
+      "commit": "e011a269079fae99d2948cffeccddf19564f357f",
+      "digest": "68dfb924825f7e94c02a11e971d87a9e2dd68d50b993939cacb9ef7f07de5158"
+    },
+    {
+      "kind": "read",
+      "commit": "fbc485ff63d5a3e1094135445ff0ce8940f47290",
+      "digest": "91bb36e248e9bd45aaf9a971a2afa4e0db413e610a21f87644ccb2053162021b"
+    },
+    {
+      "kind": "read",
+      "commit": "4d7aa8e71c53b55600533b7e22cd02f3e9c2bfe8",
+      "digest": "e4fde84ac563771b4cda2c35647ef577144b44f76ace15356b15a112c366465e"
+    },
+    {
+      "kind": "read",
+      "commit": "4301c698172166a394f99f708132bfc9a65a1ac4",
+      "digest": "82e295b2b8f0e7352813dccccb08da86e8ff8277113c953cc90f59f338beefb6"
+    },
+    {
+      "kind": "read",
+      "commit": "b379a3c169bcb9bce41937b3dc94d564baa33f9f",
+      "digest": "d512124da89bf4d3969b0033706a8d1583f0eefaba8edc82e873c83bd94bcd15"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_decision_test.go",
+      "readerWord": "reviewed by unit read 20261114t122345-77e7232fe2-r4-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_selection_test.go",
+      "readerWord": "reviewed by unit read 20261114t122345-77e7232fe2-r4-s3"
+    }
+  ],
+  "sha256": "a587a7269349304b65b323cbb91ea575f67615e8b061ccf1ee108a61f9d11db0"
+}
