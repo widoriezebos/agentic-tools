@@ -313,6 +313,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 			return UnitResult{}, err
 		}
 	}
+	if err := runner.bookEndedRead(&record); err != nil {
+		return UnitResult{Record: record}, err
+	}
 	if request.Resume != "" && (request.FollowUp != "" || record.State != "awaiting-judgement") {
 		if request.FollowUp == "" {
 			for _, revision := range record.Revisions {
