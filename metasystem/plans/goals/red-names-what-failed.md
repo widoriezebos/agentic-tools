@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: U1 brief, Astra to zero or stop rule, Codex by hand after steward-duties-run-on-every-tick, Opus read, land by hand Struggle program item 7 (2026-11-10, /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/struggle-program-2026-11-10.md): a unit keeping package + test + candidate identity through the report boundary for grouped checks (internal/landing/plain/report.go:52,59); test TestGroupedFailureRetainsPackageAndTest. The diagnostic-green integration goes to the-carry-check-classifies-a-flake at its next safe boundary. Program the-route-holds-when-something-deviates (2026-11-12, D8): build first U-a (90) the classifier keeps failed tests of every check section (unit_attribution.go:87), U-b (80) verdict inputs carry how a run ended (cancelled, unavailable, deadline, exit), U-c (50) no comparison when it cannot change the verdict, U-d (90) the deadline classified at checkCause with phase and progress including queued-for-admission (amends a-unit-check-ends-on-progress); then the flake units as designed.
 - OpenedAt: 2026-10-15T06:37:02Z
-- Revision: 216
+- Revision: 217
 - Pinned: ui
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-15T06:37:31Z revision=2 opid=2MERMXTQAF7QHKF0A6QXG25CE5-m1e-670f65d0 authority=proven digest=bc4293371071947946e4135b2bcffcd3e8c2c20ede2081d327f972d69946131c episode=2
+- NormApproval: approvedRef=N7JQMBSJYY7B3GF90CJBNNZW4D-m1e-faead29d minutes=2400 reviewRounds=20 goalRevision=216
+- Approved: by=human:Wido at=2026-11-15T08:50:17Z revision=217 opid=N7JQMBSJYY7B3GF90CJBNNZW4D-m1e-faead29d authority=proven digest=fd67de4311bd7e4ba4b761fb41b20d6e7ebd9d5e204cb1d64eac21de02b2e2d7 episode=217
 
 History:
 - 2026-10-15T06:37:02Z QVJR0MXVWYCRTS77HZHRZBAZSX-m1e-670f65d0 open actor=human:Wido targets=red-names-what-failed
@@ -232,4 +233,5 @@ History:
 - 2026-11-14T22:27:38Z DV2X97ZYD9FT5N36F24X9N358B-m1e-2651bc90 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs reason=priority-order subject=red-names-what-failed from=1:9 to=1:11 requested-sequence=11
 - 2026-11-14T22:29:47Z 85FC5PB4QKXWNS7S4QCVSYKW09-m1e-d852a137 set-priority actor=human:Wido targets=a-returned-conflict-can-be-resolved,a-steward-tick-costs-seconds,a-unit-stop-asks-its-steward-first,red-names-what-failed,scenario-beds-compose-the-facts-their-path-needs,seat-recovers-a-dead-session,the-lane-returns-its-own-red,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=unit-run-truthful-and-self-advancing-2 from=1:11 to=1:10 requested-sequence=12
 - 2026-11-14T22:30:00Z 59HRT019K90C41DTZPFHWA70W0-m1e-d852a137 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,red-names-what-failed,the-lane-returns-its-own-red,unit-run-truthful-and-self-advancing-2 reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:10 to=1:9 requested-sequence=12
-Integrity: sha256=13fe69bbf506289de0e2be4ff94cc91ed79cdc25ebc3b5f6a77a4729731cc686
+- 2026-11-15T08:50:17Z N7JQMBSJYY7B3GF90CJBNNZW4D-m1e-faead29d approve actor=human:Wido targets=red-names-what-failed
+Integrity: sha256=9150a20ef982825e06600730f07df84f828de743d4bf6964902b030bf69965ea
