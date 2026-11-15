@@ -111,8 +111,8 @@ type TickConfig struct {
 	// Situation reads this checkout's situation for the page the runner
 	// writes each pass; nil writes no page.
 	Situation func(root string, now time.Time) Situation
-	// AskHome is the board the claim-quota ask is published on; empty is
-	// the host's board.
+	// AskHome is the board for claim-quota asks and decision reports;
+	// empty uses the host's board.
 	AskHome string
 	// RetireCards moves the cards of finished goals off the host board; nil
 	// retires nothing. It does not run under the helm.
@@ -451,6 +451,9 @@ func helmHealthPass(repoRoot string, cfg TickConfig) error {
 func runTickReports(repoRoot string, cfg TickConfig, health func() error) error {
 	healthErr := health()
 	patternErr := runPatterns(repoRoot, cfg)
+	if err := noticeDecisions(repoRoot, cfg); err != nil {
+		patternErr = errors.Join(patternErr, fmt.Errorf("decision delivery: %w", err))
+	}
 	if cfg.RetireCards != nil {
 		if err := cfg.RetireCards(repoRoot, cfg.now()); err != nil {
 			patternErr = errors.Join(patternErr, fmt.Errorf("card retirement: %w", err))

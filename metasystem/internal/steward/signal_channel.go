@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -60,6 +61,25 @@ func (c signalChannel) transport(notice string) func(string, string) error {
 		_, err := c.loaded.Provider.Post(ctx, c.loaded.Destination, notice, nil)
 		return err
 	}
+}
+
+func noticeDecisions(repoRoot string, cfg TickConfig) error {
+	channel := loadSignalChannel(repoRoot)
+	if !channel.configured {
+		return nil
+	}
+	home := cfg.AskHome
+	if home == "" {
+		var err error
+		home, err = board.Home()
+		if err != nil {
+			return err
+		}
+	}
+	_, err := DeliverDecisions(home, cfg.localNarrationLocation(), cfg.now(), func(text string) error {
+		return channel.transport("Decisions taken in your name under a grant:\n"+text)("", "")
+	})
+	return err
 }
 
 // signalTransport is a producer's transport for one notice: the channel's
