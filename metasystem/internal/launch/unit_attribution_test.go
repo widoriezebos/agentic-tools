@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,9 +17,88 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
+
+func TestARerunAloneLeavesCallerErrorsToItsCaller(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"refused", "retry"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			var resume []bool
+			if kind == "retry" {
+				resume = append(resume, true)
+			}
+			f, _ := attributionFixture(t, false, "", resume...)
+			var collected []string
+			f.runner.CollectLaunch = func(_ UnitRunRecord, r Record, _ string) error {
+				collected = append(collected, r.ID)
+				return nil
+			}
+			f.runner.BeforeModelLaunch = func(_ UnitRunRecord, spec StartSpec) error {
+				if kind == "refused" && strings.HasSuffix(spec.ID, "-alone") {
+					return refusal.New("OWNED-ELSEWHERE", "holder=other-session", errors.New("this checkout is held by other-session"))
+				}
+				return nil
+			}
+			start := f.starter.onStart
+			var written []byte
+			path := ""
+			f.starter.onStart = func(r Record) error {
+				if kind == "retry" && strings.HasSuffix(r.ID, "-alone") {
+					path = filepath.Join(f.runner.Root, strings.Split(r.ID, "-r1-")[0], "run.json")
+					data, err := os.ReadFile(path)
+					if err != nil {
+						return err
+					}
+					var record UnitRunRecord
+					if err := json.Unmarshal(data, &record); err != nil {
+						return err
+					}
+					record.Notes = append(record.Notes, "another command kept this note")
+					written, err = json.Marshal(record)
+					if err != nil {
+						return err
+					}
+					if err := os.WriteFile(path, written, 0600); err != nil {
+						return err
+					}
+				}
+				return start(r)
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			code := map[string]string{"refused": "UNIT_LAUNCH_UNAUTHORIZED", "retry": "UNIT_WAIT_RETRY"}[kind]
+			if !IsCode(err, code) {
+				t.Fatalf("alone %s returned %v, want %s", kind, err, code)
+			}
+			record, err := f.runner.Status(result.Record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := record.Rounds[0]
+			alone := round.Steps[1].Alone
+			if round.Stop != nil || round.Outcome != "" || round.Steps[1].RedCause != nil || alone.Outcome != "" || slices.Contains(collected, alone.LaunchID) {
+				t.Fatalf("caller error was recorded or collected: outcome=%s alone=%s collected=%v", round.Outcome, alone.Outcome, collected)
+			}
+			if kind == "refused" {
+				if _, err := f.manager.Store.Read(alone.LaunchID); !os.IsNotExist(err) {
+					t.Fatalf("refusal created an alone launch: %v", err)
+				}
+				return
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || written == nil || !bytes.Equal(after, written) {
+				t.Fatalf("alone start overwrote another command: equal=%v err=%v", bytes.Equal(after, written), err)
+			}
+			resumed, err := f.runner.Advance(UnitRequest{Resume: record.ID})
+			if err != nil || resumed.Record.Rounds[0].Cause != "own" || !slices.Contains(resumed.Record.Notes, "another command kept this note") || strings.Count(strings.Join(f.starter.ids, "\n"), alone.LaunchID) != 1 {
+				t.Fatalf("alone retry did not follow its launch: cause=%s err=%v ids=%v", resumed.Record.Rounds[0].Cause, err, f.starter.ids)
+			}
+		})
+	}
+}
 
 type attributionGit struct {
 	fixture        unitFixture

@@ -29,6 +29,10 @@ type unitComparison struct {
 	FinishedAt   string              `json:"finishedAt,omitempty"`
 }
 
+func attributionCallerError(err error) bool {
+	return IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") || IsCode(err, "UNIT_WAIT_RETRY") || IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED")
+}
+
 // Attribution reads retained executions; it never rebuilds a completed step.
 func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound, index int, plan UnitPlan, deadline time.Time) (bool, error) {
 	step := &round.Steps[index]
@@ -52,7 +56,7 @@ func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound
 	}
 	capped, err := runner.compareProof(record, round, index, plan, deadline)
 	if err != nil {
-		if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+		if attributionCallerError(err) {
 			return false, err
 		}
 		step.Cause, step.Reason = "unclassified", "the failed command cannot be attributed: "+err.Error()
@@ -241,16 +245,18 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 			return false, err
 		}
 		spec := StartSpec{ID: comparison.LaunchID, Kind: "proof", Goal: record.Goal, Tag: record.Unit, WorkingDirectory: command.Dir, Brief: brief, Round: round.Number, MaxRounds: record.MaxRounds}
-		if runner.BeforeModelLaunch != nil {
-			if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-				return false, err
-			}
+		if err := runner.beforeLaunch(*record, spec); err != nil {
+			return false, err
 		}
 		startedAt := runner.Manager.Now().UTC().Format(time.RFC3339Nano)
 		spec.wait = runner.CommandWait
 		started, startErr := runner.Manager.Start(spec)
 		if started.ID != "" {
 			cleanup = false
+		}
+		if IsCode(startErr, "UNIT_WAIT_RETRY") {
+			cleanup = false
+			return false, startErr
 		}
 		if startErr != nil && started.ID == "" {
 			comparison.StartedAt, comparison.FinishedAt = startedAt, runner.Manager.Now().UTC().Format(time.RFC3339Nano)
@@ -366,16 +372,17 @@ func (runner *UnitRunner) rerunAlone(record *UnitRunRecord, round *UnitRound, in
 			return run, false, err
 		}
 		spec := StartSpec{ID: alone.LaunchID, Actor: runner.Actor, Kind: "proof", Goal: record.Goal, Tag: record.Unit, WorkingDirectory: command.Dir, Brief: brief, Round: round.Number, MaxRounds: record.MaxRounds}
-		if runner.BeforeModelLaunch != nil {
-			if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-				return run, false, err
-			}
+		if err := runner.beforeLaunch(*record, spec); err != nil {
+			return run, false, err
 		}
 		alone.StartedAt = runner.Manager.Now().UTC().Format(time.RFC3339Nano)
 		spec.wait = runner.CommandWait
 		launch, err = runner.Manager.Start(spec)
+		if IsCode(err, "UNIT_WAIT_RETRY") {
+			return run, false, err
+		}
 		if err != nil && launch.ID == "" {
-			if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+			if attributionCallerError(err) {
 				return run, false, err
 			}
 			alone.Outcome, alone.FinishedAt = "environment", runner.Manager.Now().UTC().Format(time.RFC3339Nano)
