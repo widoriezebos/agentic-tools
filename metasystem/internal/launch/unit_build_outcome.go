@@ -40,8 +40,12 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	}
 	gap := false
 	if round.DeclaredLines == 0 {
+		before := round.Directory
+		if !runner.earlierProofExecuted(*record, round.Number) {
+			before = record.Rounds[0].Directory
+		}
 		var err error
-		if gap, err = runner.countBuildLines(round, plan, builds, round.Directory); err != nil {
+		if gap, err = runner.countBuildLines(round, plan, builds, round.Directory, filepath.Join(before, "build-before")); err != nil {
 			return false, err
 		}
 	}
@@ -105,11 +109,31 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	return true, nil
 }
 
+// earlierProofExecuted includes attempts whose later retry never executed.
+func (runner *UnitRunner) earlierProofExecuted(record UnitRunRecord, before int) bool {
+	for _, round := range record.Rounds {
+		if round.Number >= before {
+			continue
+		}
+		for _, step := range round.Steps {
+			if !strings.HasPrefix(step.Name, "proof:") {
+				continue
+			}
+			for _, id := range append([]string{step.LaunchID}, step.LaunchIDs...) {
+				if launch, err := runner.Manager.Store.Read(id); err == nil && launch.Executed() {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // countBuildLines adds the builder's changed lines, from directory's
-// worktree.diff against the round's starting diff, and its declared lines;
+// worktree.diff against the supplied starting diff, and its declared lines;
 // gap is a change that is empty.
-func (runner *UnitRunner) countBuildLines(round *UnitRound, plan UnitPlan, builds int, directory string) (bool, error) {
-	diff, err := runner.diffSince(UnitRunRecord{Worktree: plan.Worktree, Base: plan.Base}, UnitRound{Directory: filepath.Join(round.Directory, "build-before")}, UnitRound{Number: round.Number, Directory: directory}, "records", "metasystem/records")
+func (runner *UnitRunner) countBuildLines(round *UnitRound, plan UnitPlan, builds int, directory, before string) (bool, error) {
+	diff, err := runner.diffSince(UnitRunRecord{Worktree: plan.Worktree, Base: plan.Base}, UnitRound{Directory: before}, UnitRound{Number: round.Number, Directory: directory}, "records", "metasystem/records")
 	if err != nil {
 		return false, err
 	}
@@ -170,7 +194,7 @@ func (runner *UnitRunner) countFailedBuild(round *UnitRound, plan UnitPlan, buil
 	round.ProductionLines, round.DeclaredProduction = nil, nil
 	err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(directory, "worktree.diff"))
 	if err == nil {
-		_, err = runner.countBuildLines(round, plan, builds, directory)
+		_, err = runner.countBuildLines(round, plan, builds, directory, filepath.Join(round.Directory, "build-before"))
 	}
 	if err == nil {
 		round.GapMessage, err = runner.builderMessage(*round, builds)
