@@ -1,0 +1,86 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "None for U4b1. U4b2's T5(b) already plans this case.",
+        "claim": "No U4b1 test covers a non-holder's follow-up (work revise run:R --brief B) on a judged run. Contract item 1 refuses that request and writes nothing, and the code does so: request.FollowUp is non-empty, so the judged-run early return is skipped and UNIT_LAUNCH_UNAUTHORIZED is returned before any write. The slice works and is safe without the test (R-124), and U4b2's planned T5(b) covers this case.",
+        "class": "other",
+        "evidence": "internal/launch/unit_run.go (BeforeResume block in Advance): the condition 'record.State == \"awaiting-judgement\" \u0026\u0026 request.FollowUp == \"\" \u0026\u0026 !freshReadUnsettled(record)' returns early only when there is no follow-up. Neither intent_unit_run_holder_test.go nor intent_unit_late_read_test.go calls work revise as a non-holder.",
+        "id": "code-critic-289a12c4bf2a05da1204b43c:1",
+        "material": false,
+        "relation": "R-124-m1u (works-without-it test: added proof goes to the later list)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_unit_run_holder_test.go"
+      }
+    ],
+    "id": "code-critic-289a12c4bf2a05da1204b43c",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-289a12c4bf2a05da1204b43c/rounds/1/return.md",
+    "subject": {
+      "commit": "950dda55949c9691448d8788f1006f37f3ff206c",
+      "diffDigest": "c6d19f457575e8c31a4b6c9cb4bb95f164c26735ea0781b6581ff3e2e5d8892e",
+      "kind": "commit",
+      "parent": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+      "tree": "52ed1f254094a6b26608a00c8b73c0fb8eea2956"
+    }
+  },
+  "readDigest": "e8f62aa5f9e45f8b2a95b30db82d33fe90f4175226df91b4f36f5a4f535177e5",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U4b1",
+  "subject": {
+    "commit": "950dda55949c9691448d8788f1006f37f3ff206c",
+    "parent": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+    "tree": "52ed1f254094a6b26608a00c8b73c0fb8eea2956",
+    "patchDigest": "c6d19f457575e8c31a4b6c9cb4bb95f164c26735ea0781b6581ff3e2e5d8892e",
+    "unitDigest": "eec24844ed3a783f10e707eb51603493120f4ce404a601c75c13dcdfc60ef6ae"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-289a12c4bf2a05da1204b43c",
+    "round": 1,
+    "closureSha256": "e2a78ccfa08d2cf2d0696fa3985b78d49166a5751563cd437cfa6a4806b9f179"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "52ed1f254094a6b26608a00c8b73c0fb8eea2956",
+    "runId": "goal-read-gate-20261115t224342z-79636f5a003d98ef"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    },
+    {
+      "kind": "read",
+      "commit": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "digest": "a0def01a53bfb8ad3fd7f9511fae6c0badec706bee597682ab9f41c030dc7918"
+    },
+    {
+      "kind": "read",
+      "commit": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+      "digest": "b3808658d850bb8d57f08615d09c66fdd94851d9786d72817fdffc25320ff692"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_late_read_test.go",
+      "readerWord": "reviewed by critic root code-critic-289a12c4bf2a05da1204b43c"
+    }
+  ],
+  "sha256": "906c0f811d70127100e055e481cdd9b4bf77e1f56b4fae6fad882d93fbfe5d54"
+}
