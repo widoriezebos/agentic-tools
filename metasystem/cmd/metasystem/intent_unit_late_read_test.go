@@ -69,6 +69,28 @@ func assertLateReadBooked(t *testing.T, b *workBed, run string, step launch.Unit
 	return record
 }
 
+func TestALateReadWaitsForAnAuthorizedLook(t *testing.T) {
+	t.Parallel()
+	b, _, run, _, step := lateFreshRead(t, nil)
+	endLateFreshRead(t, b, step)
+	before := workIdemSnapshot(t, b.unitRoot)
+	launched := len(b.starter.launched())
+	code, result := collectWithOwners(t, b, run, nonHolderOwners(b))
+	assertCallerErrorSummary(t, result, "The next step could not start; no failure was recorded")
+	if code != 1 || result.Outcome != intentRefused || len(b.starter.launched()) != launched {
+		t.Fatalf("non-holder booked the late read: %d %s", code, result.Summary)
+	}
+	workIdemSameFiles(t, "refused late-read wait", before, workIdemSnapshot(t, b.unitRoot))
+	record := callerErrorRun(t, b, run)
+	if fresh := record.Rounds[0].Steps[len(record.Rounds[0].Steps)-1]; fresh.Name != "read:fresh" || fresh.State != launch.StepRunning {
+		t.Fatalf("fresh read changed: %+v", fresh)
+	}
+	if code, result := collectWithOwners(t, b, run, b.workOwners()); code != 0 {
+		t.Fatalf("holder could not book the late read: %d %s", code, result.Summary)
+	}
+	assertLateReadBooked(t, b, run, step, 0)
+}
+
 func TestALateFreshReadIsBookedByTheNextWait(t *testing.T) {
 	t.Parallel()
 	for _, wait := range []bool{true, false} {

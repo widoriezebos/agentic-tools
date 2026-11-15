@@ -544,6 +544,14 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return findings, nil
 	}
 	runner.Excluded = func(path string) bool { return branch.PathClass(path) == branch.ClassExcluded }
+	runner.BeforeResume = func(record launch.UnitRunRecord, _ launch.UnitRequest) error {
+		conn := inv.connection()
+		endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
+		if err != nil {
+			return err
+		}
+		return branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), record.Goal, endpoint))
+	}
 	runner.BeforeModelLaunch = func(record launch.UnitRunRecord, spec launch.StartSpec) error {
 		settings := runner.Manager.Settings
 		if len(settings.Values) == 0 {
