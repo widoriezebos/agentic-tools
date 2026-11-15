@@ -1,0 +1,196 @@
+{
+  "canonicalRead": {
+    "id": "20261115t153928-eed5a54009-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-deputy-acts-under-a-recorded-delegation",
+      "reviewedProjectTree": "cb9c488beda16178d3abba573241fa2a0d5632e846a29cb51512764b3094ad55",
+      "diffDigest": "cb9c488beda16178d3abba573241fa2a0d5632e846a29cb51512764b3094ad55"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261115t153928-eed5a54009-r2-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The delegated resume sets keeper.Fingerprint to delegatedSelectionFingerprint, and ResumeDelegated hands that keeper to ContinueDelegated, so the start-time fingerprint and barren reads use the selection's hold reader; landing run passes it to the selection only.",
+        "evidence": "intent_landing_resume.go:35 assigns the wrapper; resume.go:53 copies *s.ResumeKeeper and :89 continues with it; lane/agent.go:351 records k.Fingerprint(root) at start. A probe in TestLandingResumeRunsUnderARecordedDelegation/paused=false recorded \"unchanged\", so no effect was observed in the bed; if a hold reports at start, the launch records an empty fingerprint and countBarren skips it.",
+        "where": "metasystem/cmd/metasystem/intent_landing_resume.go",
+        "change": "Pass the selection reader to ResumeDelegated separately, or restore the keeper's own fingerprint before ContinueDelegated.",
+        "relation": "the continuation keeps the keeper's own fingerprint reader; the selection reader serves the selection only"
+      },
+      {
+        "id": "20261115t153928-eed5a54009-r2-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "Kind \"resume\" passed to ResumeDelegated is overwritten with \"selection\" by selectRecordedBatch, so the recorded batch cannot tell a delegated resume from a delegated landing run --goals.",
+        "evidence": "batch.go selectRecordedBatch sets d.Kind = \"selection\"; RecordedDelegatedBatch (batch.go:318) requires Kind == \"selection\". The decision log still names the argv.",
+        "where": "metasystem/internal/landing/plain/batch.go",
+        "change": "Either record the act kind separately or drop the dead Kind value from the command; this is base behaviour that C7's wording did not account for.",
+        "relation": "recorded provenance names the act"
+      },
+      {
+        "id": "20261115t153928-eed5a54009-r2-s3:3",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "pendingSelection now appends the reason to the summary while keeping it as Details[0], so text output repeats it, for person selections too.",
+        "evidence": "intent_landing.go:1248; this keeps U1b2a's T3c(a) 'the line names the provider hold' true after the delegated provider row moved to the saved report; TestAuditOutputLayout* passed.",
+        "where": "metasystem/cmd/metasystem/intent_landing.go",
+        "change": "Drop the reason from Details when it is in the summary, or leave it as is."
+      },
+      {
+        "id": "20261115t153928-eed5a54009-r2-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "T3e's oldest-first order does not depend on ResumeDelegated's sort: the bed queues older before newer, so removing SortStableFunc would not fail the held row.",
+        "evidence": "resume_test.go:154 held row expects [older, newer]; b.queue writes them in that order, and Waiting returns them in time order already.",
+        "where": "metasystem/internal/landing/plain/resume_test.go",
+        "change": "Queue the newer goal first with an earlier-looking file order, or give the entries out-of-order At values.",
+        "relation": "each asserted property has a row that fails without it"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261115t153928-eed5a54009-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "d5ede5b6f77b9a91e9de96b5b54eaf47bce28f9dc9d484af19f292bed893d691",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U1b2b",
+  "subject": {
+    "commit": "8b4426b485c60403f8455c4b2be981849584599b",
+    "parent": "ff3ec303b437662a3d1b5eeb4ced902116d8c3e5",
+    "tree": "a1d80c321d7bb3515a6a8d168c37aabf454d3748",
+    "patchDigest": "cb9c488beda16178d3abba573241fa2a0d5632e846a29cb51512764b3094ad55",
+    "unitDigest": "a09cf8e2bce92f4b100aedb3128e022014d957fbdfb2efcb51e86538e3a8dfff"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261115t153928-eed5a54009-r2-s3",
+    "closureSha256": "cd02074f9476c026e73f7e7be75526d89e9180b6063add7ed804c7c349ebe60a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a1d80c321d7bb3515a6a8d168c37aabf454d3748",
+    "runId": "goal-read-gate-20261115t195952z-15fcff02c851c73f"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6fbd34817b92575c8b41aaaff800dc5cdaf1c305",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "97e0517226d1fc113e8d21330da025d40e3cedfa",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "e0f1a9b99ef77d3dad33e7bcda65203b2e7acabd",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    },
+    {
+      "kind": "read",
+      "commit": "c779455cb6d3cf09e91df82013468ac72e6141a1",
+      "digest": "346a113098cb0ecda3ff9bb76ac2f379d2900beac3cd54da827f6c5153e911dd"
+    },
+    {
+      "kind": "read",
+      "commit": "9257d0aefd7ef8d14545d03aaf4881d8f36e7570",
+      "digest": "88c5730677887e2b5ee70c15f2b1d438bbdbf0e3cff978ddd90dd7ecd7df84f5"
+    },
+    {
+      "kind": "read",
+      "commit": "b7e70347de57c59569daeca6f0c13f4b8a782e4d",
+      "digest": "4e2cac66b5ad22bdb4a3dffb7fba96317e148544fea136ae11ce83ebefe6f3a2"
+    },
+    {
+      "kind": "read",
+      "commit": "e011a269079fae99d2948cffeccddf19564f357f",
+      "digest": "68dfb924825f7e94c02a11e971d87a9e2dd68d50b993939cacb9ef7f07de5158"
+    },
+    {
+      "kind": "read",
+      "commit": "fbc485ff63d5a3e1094135445ff0ce8940f47290",
+      "digest": "91bb36e248e9bd45aaf9a971a2afa4e0db413e610a21f87644ccb2053162021b"
+    },
+    {
+      "kind": "read",
+      "commit": "4d7aa8e71c53b55600533b7e22cd02f3e9c2bfe8",
+      "digest": "e4fde84ac563771b4cda2c35647ef577144b44f76ace15356b15a112c366465e"
+    },
+    {
+      "kind": "read",
+      "commit": "4301c698172166a394f99f708132bfc9a65a1ac4",
+      "digest": "82e295b2b8f0e7352813dccccb08da86e8ff8277113c953cc90f59f338beefb6"
+    },
+    {
+      "kind": "read",
+      "commit": "b379a3c169bcb9bce41937b3dc94d564baa33f9f",
+      "digest": "d512124da89bf4d3969b0033706a8d1583f0eefaba8edc82e873c83bd94bcd15"
+    },
+    {
+      "kind": "read",
+      "commit": "808ac11b2763049466bf9c3dc4698dc632c53cb3",
+      "digest": "65dbe44dcaaf3ad715f06d9b737f6b549ce4b815e5907f03d7abcdb58902b8fa"
+    },
+    {
+      "kind": "read",
+      "commit": "ff3ec303b437662a3d1b5eeb4ced902116d8c3e5",
+      "digest": "f678a727b42735cad495be786c102ffa02f7700243f040647702417a3f48e7b9"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/attorney_admits_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_decision_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_execution_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_observation_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_run_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_selection_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/lane/agent_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/lane/pause_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/lane/view_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/observation_correction_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/resume_test.go",
+      "readerWord": "reviewed by unit read 20261115t153928-eed5a54009-r2-s3"
+    }
+  ],
+  "sha256": "08056cf2320ef0bf9a2992cc0403560ec4c0e89e6a03b2931b5ba10fde5569fa"
+}
