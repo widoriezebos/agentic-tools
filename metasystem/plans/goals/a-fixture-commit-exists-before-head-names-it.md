@@ -7,10 +7,10 @@
 - Tier: 1
 - Intent: TestWorkCommitRealLaneFixImpactPlanGitAdapter passes on every computer of the fleet: its fixture no longer points HEAD at an object the repository does not hold (update-ref HEAD with a nonexistent object, work_commit_impact_test.go:159), which git 2.50.1 on the Intel MacBook refuses and git 2.54.0 on the laptop let pass.
 - Origin: human
-- Next step: Diagnose on the MacBook (seat m1f; the failure reproduces only there: lane proofs of 2026-11-07 and 2026-11-15 08:02Z and their repeats, logs under the MacBook's agentic-tools-landing/metasystem/artifacts/agents/landing/proofs). Fix the fixture so the commit exists before HEAD names it, whatever the git version; test-only change, one unit (--last). The two tests that failed once and passed on the repeat in the same proof (TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress, TestGitAdapterGoManifestInventoryMatchesNativeGoList) are noted in the report, not fixed here.; ASKED KG2DNPRH4AVTTDYXBX0ZTTSBXP (other): Let the fix for main's red test land while main is still red? The lane holds it back because of that same red.; ASKED N68M0J5HKPBVR2G0FXBXN8XJ3X (other): The lane stopped while proving the fix for main's red. Start its check yourself and then resume the lane?
+- Next step: Diagnose on the MacBook (seat m1f; the failure reproduces only there: lane proofs of 2026-11-07 and 2026-11-15 08:02Z and their repeats, logs under the MacBook's agentic-tools-landing/metasystem/artifacts/agents/landing/proofs). Fix the fixture so the commit exists before HEAD names it, whatever the git version; test-only change, one unit (--last). The two tests that failed once and passed on the repeat in the same proof (TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress, TestGitAdapterGoManifestInventoryMatchesNativeGoList) are noted in the report, not fixed here.; ASKED KG2DNPRH4AVTTDYXBX0ZTTSBXP (other): Let the fix for main's red test land while main is still red? The lane holds it back because of that same red.; ASKED N68M0J5HKPBVR2G0FXBXN8XJ3X (other): The lane stopped while proving the fix for main's red. Start its check yourself and then resume the lane?; WITHDRAWN N68M0J5HKPBVR2G0FXBXN8XJ3X: Done by a1 in Wido's name: the gate was started in a gap at 23:45 and went green for d902c6db9580 after 56 minutes; the lane was resumed at 00:5x on 2026-11-16.
 - OpenedAt: 2026-11-15T12:59:34Z
 - FirstClaimAt: 2026-11-15T18:14:18Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1f
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -27,4 +27,5 @@ History:
 - 2026-11-15T18:14:18Z S4GZBAE2EV1W91747S9JTAQGXZ-m1f-71c5cb39 claim actor=m1f+steward-seat targets=a-fixture-commit-exists-before-head-names-it reason=areas unknown for goal a-fixture-commit-exists-before-head-names-it: no accepted design declares areas
 - 2026-11-15T19:41:21Z DPP2729RJ7C0C5YYTB5BQ3CEXY-m1f-71c5cb39 ask actor=m1f+steward-seat targets=a-fixture-commit-exists-before-head-names-it
 - 2026-11-15T21:33:15Z 1RCVMNQZXRP84WKNW28D4PJK15-m1f-71c5cb39 ask actor=m1f+steward-seat targets=a-fixture-commit-exists-before-head-names-it
-Integrity: sha256=644763518b686e2fcfb573e9fd8695367ff820e2ebcdbd527cfc044b88a2fc89
+- 2026-11-15T23:49:16Z KG0D6AEG40ER43H7T3D5M18HGB-m1f-76faa029 withdraw-question actor=m1f+steward targets=a-fixture-commit-exists-before-head-names-it reason=question N68M0J5HKPBVR2G0FXBXN8XJ3X
+Integrity: sha256=85d04c9659fad4b06d0f09ba4ab7f081129ba589739ade0a8dba00da9da7cd88
