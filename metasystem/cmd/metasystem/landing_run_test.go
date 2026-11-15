@@ -68,7 +68,7 @@ func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 
 func TestLandingRunContinuesTheRecordedDelegatedBatch(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"start", "person policy", "provider", "helm", "batch", "hold time", "hold fingerprint", "hold launch", "pause", "continue", "continue provider", "continue pause", "handoff"} {
+	for _, name := range []string{"start", "person policy", "provider", "helm", "batch", "hold time", "hold fingerprint", "hold launch", "pause", "continue", "continue provider", "continue pause", "continue mismatched", "handoff"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newSelectionBed(t)
@@ -111,9 +111,9 @@ func TestLandingRunContinuesTheRecordedDelegatedBatch(t *testing.T) {
 				case "pause", "continue pause":
 					_, err := lane.SetPauseBecause(b.home, "Wido", "maintenance", b.now)
 					helmMust(t, err)
-				case "hold time", "hold fingerprint", "hold launch":
+				case "hold time", "hold fingerprint", "hold launch", "continue mismatched":
 					changed := state
-					if name == "hold time" {
+					if name == "hold time" || name == "continue mismatched" {
 						changed.BarrenAt = b.now.Format(time.RFC3339Nano)
 					}
 					if name == "hold fingerprint" {
@@ -169,7 +169,7 @@ func TestLandingRunContinuesTheRecordedDelegatedBatch(t *testing.T) {
 				if b.starts != 0 || seen.Outcome != lane.AgentPaused {
 					t.Fatalf("pause bypassed: %d %s %+v", code, out, seen)
 				}
-			case "hold time", "hold fingerprint", "hold launch":
+			case "hold time", "hold fingerprint", "hold launch", "continue mismatched":
 				if b.starts != 0 || seen.Outcome != lane.AgentHeld {
 					t.Fatalf("different episode cleared: %d %s %+v", code, out, seen)
 				}
@@ -182,6 +182,8 @@ func TestLandingRunContinuesTheRecordedDelegatedBatch(t *testing.T) {
 					t.Fatalf("delegated batch not started: %d %s %+v starts=%d", code, out, seen, b.starts)
 				}
 				if name == "batch" {
+					data, err := json.Marshal(state)
+					helmMust(t, err, os.WriteFile(lane.AgentStatePath(b.home), data, 0600))
 					code, out = b.run(t, b.lane, "landing", "run", "--batch", saved.ID)
 					if code != 0 || b.starts != 2 {
 						t.Fatalf("recorded batch refused: %d %s starts=%d", code, out, b.starts)
