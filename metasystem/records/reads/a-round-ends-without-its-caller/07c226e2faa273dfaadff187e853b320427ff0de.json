@@ -1,0 +1,77 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [],
+    "id": "code-critic-183dd4fb40b5d3cc1c96c775",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-183dd4fb40b5d3cc1c96c775/rounds/1/return.md",
+    "subject": {
+      "commit": "07c226e2faa273dfaadff187e853b320427ff0de",
+      "diffDigest": "fb4a27669f90063450889055b91b14db070bbe34fba2cd4049bafe122ce00c6f",
+      "kind": "commit",
+      "parent": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "tree": "991eb19df8a27074105618fc972f617bc029a105"
+    }
+  },
+  "readDigest": "bd2d93d8ad5ed463dcce0c7d7bf26d36a479683d80b6585840dfa64ef4fba94d",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U4a",
+  "subject": {
+    "commit": "07c226e2faa273dfaadff187e853b320427ff0de",
+    "parent": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+    "tree": "991eb19df8a27074105618fc972f617bc029a105",
+    "patchDigest": "fb4a27669f90063450889055b91b14db070bbe34fba2cd4049bafe122ce00c6f",
+    "unitDigest": "bcfc60dc4fe11da5278c1b4e079eb0cd877c5b9913f477c67357296f0b023ac4"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-183dd4fb40b5d3cc1c96c775",
+    "round": 1,
+    "closureSha256": "4c360e44fcf1dddec42c3e00917c3b256e8b2a4a48db8fce3048c209d3785242"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "991eb19df8a27074105618fc972f617bc029a105",
+    "runId": "goal-read-gate-20261115t195720z-29ac00f699b4741a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    },
+    {
+      "kind": "read",
+      "commit": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "digest": "a0def01a53bfb8ad3fd7f9511fae6c0badec706bee597682ab9f41c030dc7918"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_collect_round_test.go",
+      "readerWord": "reviewed by critic root code-critic-183dd4fb40b5d3cc1c96c775"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_tree_test.go",
+      "readerWord": "reviewed by critic root code-critic-183dd4fb40b5d3cc1c96c775"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-183dd4fb40b5d3cc1c96c775"
+    }
+  ],
+  "sha256": "04384fad051c5870605a5ed96a8ab1dc730af5ece195783e036f95c7d2abca1e"
+}
