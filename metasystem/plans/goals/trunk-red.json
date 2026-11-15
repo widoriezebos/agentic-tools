@@ -7044,7 +7044,15 @@
       },
       "holds": [],
       "opened": "2026-10-24T13:43:41Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-15T18:14:19Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "T552816XER336E2DEWJ4R6P46P-m1f-8537e23a",
+        "by": "Wido",
+        "why": "fixed by a-scratch-cleanup-test-drains-like-production, merge 9df3c12f42 on 11 Nov; passed in the lane proofs of 15 Nov"
+      },
       "class": "flake"
     },
     {
