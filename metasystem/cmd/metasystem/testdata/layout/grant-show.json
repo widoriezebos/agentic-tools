@@ -1,0 +1,45 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "grant show",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "Grant GRANT",
+  "data": {
+    "decisions": [
+      {
+        "act": "landing resume",
+        "at": "12:00 CEST (2026-09-01)",
+        "class": "lane-recovery",
+        "compensation": "landing stop --reason 'overruled 0'",
+        "id": "0",
+        "outcome": "confirmed",
+        "overrule": "metasystem decision record --overrules 0 --text 'overrule' --rejected 'the deputy'\\''s act' --undo 'landing resume' -- landing stop --reason 'overruled 0'",
+        "remainder": "proofs already started and goals already selected stay as they are"
+      },
+      {
+        "act": "landing resume",
+        "at": "12:00 CEST (2026-09-01)",
+        "class": "lane-recovery",
+        "compensation": "",
+        "id": "1",
+        "outcome": "refused",
+        "overrule": "",
+        "remainder": ""
+      }
+    ],
+    "grant": {
+      "by": "human:Wido",
+      "classes": [
+        "lane-recovery"
+      ],
+      "id": "GRANT",
+      "live": true,
+      "reason": "no reason given",
+      "until": "2026-09-02T10:00:00Z"
+    }
+  }
+}
+
+--

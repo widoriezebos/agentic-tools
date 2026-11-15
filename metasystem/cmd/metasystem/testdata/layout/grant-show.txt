@@ -1,0 +1,15 @@
+Grant GRANT
+
+by        human:Wido
+classes   [lane-recovery]
+reason    no reason given
+until     Wed 12:00
+live      true
+
+Decision 0  12:00 CEST (2026-09-01)
+  lane-recovery: landing resume; confirmed
+  metasystem decision record --overrules 0 --text 'overrule' --rejected 'the deputy'\''s act' --undo 'landing resume' -- landing stop --reason 'overruled 0'
+  proofs already started and goals already selected stay as they are
+
+Decision 1  12:00 CEST (2026-09-01)
+  lane-recovery: landing resume; refused
