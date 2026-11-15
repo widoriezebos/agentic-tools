@@ -1050,6 +1050,8 @@ func (runner *UnitRunner) judgeBuildResult(record *UnitRunRecord, round *UnitRou
 	return runner.save(*record)
 }
 
+// BLOCKED deliberately has no result block, whatever the candidate's state;
+// the engine's check can still judge the builder's retained change.
 func parseBuildResult(message string) (word, open string) {
 	lines := strings.Split(message, "\n")
 	for index, line := range lines {
