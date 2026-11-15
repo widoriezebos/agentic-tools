@@ -1236,7 +1236,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.handOffLandingRun(record)
 	}
 	pendingSelection := func(reason string, remedy ...*intentResult) int {
-		details := []string{reason}
+		var details []string
 		if syncErr != nil {
 			details = append(details, "question sync pending: "+syncErr.Error())
 		}
