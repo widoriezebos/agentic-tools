@@ -32,6 +32,13 @@ func attorneyActClass(args []string, subject func([]string) (attorneySubject, er
 		return "ordering", true
 	case "alert ack", "question withdraw":
 		return "acks", true
+	case "landing run":
+		for flag := range input.values {
+			if !slices.Contains([]string{"goals", "json", "verbose"}, flag) {
+				return "", false
+			}
+		}
+		return "lane-recovery", input.has("goals") && len(input.args) == 0
 	case "goal approve", "work stop":
 	default:
 		return "", false

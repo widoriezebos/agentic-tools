@@ -7,6 +7,7 @@ package main
 // one lane.View /api/board carries.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -62,7 +64,8 @@ type laneVerbOwners struct {
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// keeper is the landing agent's keeper of the lane checkout root, the
 	// one the lane checkout's steward runs each tick (landing run).
-	keeper func(home, root string) lane.AgentKeeper
+	keeper    func(home, root string) lane.AgentKeeper
+	runKeeper func(lane.AgentKeeper) lane.AgentRun
 	// pause writes a person's stop (lane.SetPauseBecause).
 	pause func(home, by, reason string, now time.Time) (bool, error)
 	// plainProve are landing prove's effects; the zero value starts the
@@ -151,6 +154,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.keeper == nil {
 		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
+	}
+	if owners.runKeeper == nil {
+		owners.runKeeper = func(keeper lane.AgentKeeper) lane.AgentRun { return keeper.Run() }
 	}
 	if owners.settle == nil {
 		agent := newLandingAgent()
@@ -1183,12 +1189,23 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		if !inv.input.has("goals") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "--by requires an explicit --goals selection; nothing was recorded", next: inv.publicArgv("landing", "run", "--goals", "GOALS")})
 		}
-		personAct = true
+		personAct = person.Delegated == nil
 		goals := strings.Split(inv.input.text("goals"), ",")
 		for i := range goals {
 			goals[i] = strings.TrimSpace(goals[i])
 		}
-		selected, selectionErr = plain.SelectPersonBatch(record.Install, root, record, goals, person.Proof, person.Root, person.Name, person.At, seams)
+		if d := person.Delegated; d != nil {
+			selected, selectionErr = plain.SelectDelegatedBatch(record.Install, home, root, record, goals,
+				plain.DelegatedProvenance{Kind: "selection", Grant: d.Grant, Decision: d.Decision, Session: d.Session,
+					Class: "lane-recovery", Delegate: d.By, CheckedAt: person.At}, delegatedSelectionFingerprint(record.Install, keeper), seams)
+			if selectionErr != nil {
+				return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+					Summary: "no landing selection was admitted: " + selectionErr.Error(),
+					next:    inv.typedArgv(), nextReason: "a person runs this at the enrolled calling terminal, without a helm or grant"})
+			}
+		} else {
+			selected, selectionErr = plain.SelectPersonBatch(record.Install, root, record, goals, person.Proof, person.Root, person.Name, person.At, seams)
+		}
 	} else if inv.input.has("batch") {
 		selected, selectionErr = plain.RecordedPersonBatch(record.Install, record, inv.input.text("batch"))
 	} else {
@@ -1271,7 +1288,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		personAct = personProblem == nil
 	}
 	keeper.PersonAct = personAct
-	run := keeper.Run()
+	run := owners.runKeeper(keeper)
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons, Problems: run.Problems}
 	details := []string{run.Line}
 	if recorded {
@@ -1347,6 +1364,60 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		}
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state"})
+	}
+}
+
+// delegatedSelectionFingerprint reads the keeper's other holds under the
+// selection locks, before any selection or stop record can change.
+func delegatedSelectionFingerprint(install string, keeper lane.AgentKeeper) func(string) (string, error) {
+	return func(root string) (string, error) {
+		barrenQuestionID := ""
+		state, err := lane.ReadAgentState(keeper.Home)
+		if err != nil {
+			return "", err
+		}
+		stops, err := plain.OpenStops(install)
+		if err != nil {
+			return "", err
+		}
+		questions, _ := channel.WalkQuestions(install)
+		for _, q := range questions {
+			if q.State == "closed" || channel.LaneStopCommand(q) == "" || !strings.HasPrefix(q.Facts[1], "lane stop: ") {
+				continue
+			}
+			var stop plain.Stop
+			if json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane stop: ")), &stop) == nil &&
+				stop.Loop == "lane-return" && stop.Subject == "lane" && stop.Class == "lane unchanged" &&
+				stop.Measure.Name == "lane fingerprint" && len(stops) == 1 && stops[0].At == stop.At &&
+				slices.Equal(stop.Measure.Now, []string{state.BarrenFingerprint}) && stop.Evidence == lane.AgentStatePath(keeper.Home) {
+				barrenQuestionID = q.ID
+			}
+		}
+		if keeper.ProviderHold != nil {
+			if reason, err := keeper.ProviderHold(root); err != nil || reason != "" {
+				if err != nil {
+					reason = err.Error()
+				}
+				return "", fmt.Errorf("provider hold prevents delegated selection: %s", reason)
+			}
+		}
+		for _, hold := range keeper.Holds {
+			reason, err := hold(root)
+			var question *lane.QuestionHoldError
+			if errors.As(err, &question) && barrenQuestionID != "" && slices.Equal(question.QuestionIDs, []string{barrenQuestionID}) {
+				continue
+			}
+			if err != nil {
+				return "", fmt.Errorf("keeper hold prevents delegated selection: %w", err)
+			}
+			if reason != "" {
+				return "", fmt.Errorf("keeper hold prevents delegated selection: %s", reason)
+			}
+		}
+		if keeper.Fingerprint == nil {
+			return "", errors.New("the lane fingerprint is unavailable")
+		}
+		return keeper.Fingerprint(root)
 	}
 }
 
