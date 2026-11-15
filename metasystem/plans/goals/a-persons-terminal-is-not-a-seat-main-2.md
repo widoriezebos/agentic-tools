@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: A person's terminal is not a seat main, part 2: the legacy candidate repair with the generation guard and withdrawal, wired at both census entrypoints, so an existing person-terminal announcement without dependent work is withdrawn and a successor acquires the checkout (U1c); worker identities carried through the census result, the lineage join and the live-main sentences on both paths (U2); the goal-scoped hold at both checks, the revive remedy and its replay, so a person's redirection no longer deadlocks the ladder (U3; ships with U2 if both stay under 250 production lines). Design: plans/designs/a-persons-terminal-is-not-a-seat-main.md (accepted 2026-10-16; U1a landed 2026-10-17, U1b 2026-10-19 under the first goal).
 - Origin: main
-- Next step: Brief U1c from the design page's D1 repair section and the owner inventory (both census entrypoints, generation guard); Codex builds it in a registered workspace, Opus reads, sharded gate, hand landing; then U2 (+U3 if both fit).
+- Next step: Brief U1c from the design page's D1 repair section and the owner inventory (both census entrypoints, generation guard); Codex builds it in a registered workspace, Opus reads, sharded gate, hand landing; then U2 (+U3 if both fit). AMENDED 2026-11-15 by design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-seat-stands-on-its-own.md (Astra DESIGN STANDS r3), decision S2: build U1c, then the visitor unit (in an automatic seat checkout a session whose owner lineage is neither launch.SeatOwnerLineage nor a mission's takes D1's non-main branch at announcement and classification; the repair's candidate predicate is extended to such signed visitors under U1c's guards; a person's claim there keeps the actual holder's lineage, else reserves for the seat's), then U2 and U3. Built by the m1e seat through the engine; each unit's brief cut just before its build with one Astra round.
 - OpenedAt: 2026-10-19T18:15:37Z
-- Revision: 194
+- Revision: 195
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -211,4 +211,5 @@ History:
 - 2026-11-15T12:49:06Z S045G2BE228V8GZ1PSH326RGAR-m1e-919a18ce unpark actor=human:Wido targets=a-persons-terminal-is-not-a-seat-main-2
 - 2026-11-15T12:49:20Z CQQK4GD81S8N8536M86Y5PFHK4-m1e-919a18ce approve actor=human:Wido targets=a-persons-terminal-is-not-a-seat-main-2
 - 2026-11-15T12:49:33Z 2WW535THHWFFK9D203YVW7VMD3-m1e-919a18ce set-pin actor=human:Wido targets=a-persons-terminal-is-not-a-seat-main-2
-Integrity: sha256=1941158875d629c8f2b34836e3378a8ffb813d11c60d1301ba5520a9d6a4879a
+- 2026-11-15T12:49:46Z 98WT4CTY2PVDV6W56KPQ775622-m1e-919a18ce edit actor=human:Wido targets=a-persons-terminal-is-not-a-seat-main-2
+Integrity: sha256=0ef1ca5804aade140e8e06210c227889bd5f62c156e4a0c3ff6ebc8688ec457e
