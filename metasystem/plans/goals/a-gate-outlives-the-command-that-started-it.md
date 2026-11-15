@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build from the agreed design page /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-gate-outlives-the-command-that-started-it.md; it is the design, no new design is written. The default roster cuts one brief per unit from it (each starts with an inventory; one Astra round per brief). U1 (estimate 60): the refusal in runIntentLandingProve for a public --wait with person == nil, placed before plain.Settled and plain.Start; the skill's gate routes and the batch refusal's next step (internal/landing/plain/batch.go:289) lose --wait and point to the one dispatch table of the page; acceptance items 1 to 7 of the page, including the helper-process lifetime fixture. U2 (estimate 30, --last): Stop.Words and the NoRepeat text say what the record shows. Not built: parent isolation of gaterun.LaunchDetached, a longer timeout, a cause caller-ended, a watchdog. After deploy: the live observation of the page's section 5 on the MacBook lane with a newly eligible batch; keep the listed evidence. Until this is deployed on a computer, a gate there that outlasts twenty minutes needs a person's landing prove --gate from a terminal.
 - OpenedAt: 2026-11-15T22:34:19Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1f
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=6XZD3ED6VBK38ZD80H5X2TAHXT-landing-367f2425 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-15T22:34:19Z 2GW86GYFWZT928G9152B7WVM26-landing-367f2425 open actor=human:Wido targets=a-gate-outlives-the-command-that-started-it
 - 2026-11-15T22:34:34Z 6XZD3ED6VBK38ZD80H5X2TAHXT-landing-367f2425 approve actor=human:Wido targets=a-gate-outlives-the-command-that-started-it
-Integrity: sha256=697811902c8563870485cc266a1a53f51f1612d7ef0ca4ee85e1ff96eb76949e
+- 2026-11-15T22:34:54Z AA0ERX75MPMYQCRT0AFE1TESG0-landing-367f2425 set-pin actor=human:Wido targets=a-gate-outlives-the-command-that-started-it
+Integrity: sha256=17c397dd0bc6ccbd2aa2a7f9c64d6966793d34c5767b5b3457a7e330194afe3a
