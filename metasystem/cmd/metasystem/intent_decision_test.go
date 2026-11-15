@@ -1011,6 +1011,45 @@ func (b *decisionAgentBed) record(flags, act []string) (int, intentResult) {
 	return code, got
 }
 
+func TestALateDecisionIsReportedNextTime(t *testing.T) {
+	t.Parallel()
+	b := newDecisionAgentBed(t)
+	at, err := b.commandNow(b.root())
+	helmMust(t, err)
+	at = time.Date(at.Year(), at.Month(), at.Day(), 23, 59, 0, 0, time.UTC)
+	b.owners.commandNow = func(string) (time.Time, error) { return at, nil }
+	var posts []string
+	post := func(text string) error { posts = append(posts, text); return nil }
+	// Send a completed day before the act that began on it finishes.
+	helmMust(t, humanauthority.AppendDecision(b.home, humanauthority.Decision{ID: "earlier", At: at.Add(-time.Hour),
+		Grant: b.grant, Class: "ordering", Argv: []string{"goal", "prioritize", "earlier", "2"}, Outcome: intentConfirmed}))
+	if n, err := steward.DeliverDecisions(b.home, time.UTC, at.Add(90*time.Second), post); n != 1 || err != nil {
+		t.Fatalf("first report: %d %v", n, err)
+	}
+	// The decision's clock is sampled before its child; delivery runs while it is in flight.
+	child := b.owners.delivery.ownerEnvelope
+	b.owners.delivery.ownerEnvelope = func(p intentProcess, verb string) (verbresult.Result, error) {
+		if n, err := steward.DeliverDecisions(b.home, time.UTC, at.Add(90*time.Second), post); n != 0 || err != nil {
+			t.Fatalf("in-flight report: %d %v", n, err)
+		}
+		return child(p, verb)
+	}
+	code, got := b.record([]string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3"})
+	if code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("late decision: %d %+v", code, got)
+	}
+	if n, err := steward.DeliverDecisions(b.home, time.UTC, at.Add(6*time.Minute), post); n != 1 || err != nil {
+		t.Fatalf("late report: %d %v", n, err)
+	}
+	if n, err := steward.DeliverDecisions(b.home, time.UTC, at.Add(7*time.Minute), post); n != 0 || err != nil {
+		t.Fatalf("repeat report: %d %v", n, err)
+	}
+	if len(posts) != 2 || !strings.Contains(posts[1], "23:59 ordering: goal prioritize "+bedGoal+" 3 -> confirmed") || strings.Contains(posts[1], "earlier") {
+		t.Fatalf("the late append was lost or repeated the earlier delivery: %q", posts)
+	}
+	t.Log("decision record appended its 23:59 act after midnight; the next report delivered it once")
+}
+
 func TestADelegatedClassRunsOnlyInsideADecision(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct{ name, classes, class string }{
