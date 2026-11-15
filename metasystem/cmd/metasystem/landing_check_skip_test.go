@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -318,6 +319,11 @@ func TestWorkCommitLaneFixCheckGitAdapter(t *testing.T) {
 
 func realImpactArchive(t *testing.T, ref string) string {
 	t.Helper()
+	command := exec.Command("git", "-C", "../../..", "cat-file", "-e", ref+"^{commit}")
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("saved fixture commit %q is missing from the source repository; the saved fixture must name a commit on main: %v\n%s", ref, err, output)
+	}
 	root := t.TempDir()
 	archive := filepath.Join(t.TempDir(), "module.zip")
 	testingFixtureGit(t, "../../..", "clone", "--quiet", "--shared", "--no-checkout", ".", root)
