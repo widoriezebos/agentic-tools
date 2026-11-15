@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -473,6 +475,200 @@ func (b *selectionBed) barrenKeeper() {
 		seams := b.owners.landing.plainProve
 		seams.Lane = func() (lane.Record, error) { return record, nil }
 		return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(b.home), b.now, seams)
+	}
+}
+
+func TestLandingSelectionUnderARecordedDelegation(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{
+		"delegated", "person", "budget", "no grant", "no decision", "no session", "by",
+		"provider hold", "provider unreadable", "keeper hold", "keeper unreadable", "untyped question hold", "person stop", "person proof",
+		"person question first", "person question later",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newSelectionBed(t)
+			b.barrenKeeper()
+			state := lane.AgentState{Barren: 2, BarrenAt: b.now.Add(-time.Minute).Format(time.RFC3339Nano),
+				BarrenFingerprint: "unchanged", BarrenLaunches: []string{"first", "last"}}
+			data, err := json.Marshal(state)
+			helmMust(t, err)
+			helmMust(t, os.WriteFile(lane.AgentStatePath(b.home), data, 0600))
+			seams := b.owners.landing.plainProve
+			seams.Lane = func() (lane.Record, error) { return b.record, nil }
+			helmMust(t, plain.RecordBarrenStop(b.lane, state, lane.AgentStatePath(b.home), b.now.Add(-time.Minute), seams))
+			helmMust(t, plain.SyncPolicyQuestion(b.lane, b.owners.landing.machine, b.now, seams))
+			grant := humanauthority.HelmGrant{By: "Wido", Grant: "G1", Act: "lane-recovery", Decision: "D1", Session: "main-1"}
+			switch name {
+			case "budget":
+				grant.Act = "budget"
+			case "no grant":
+				grant.Grant = ""
+			case "no decision":
+				grant.Decision = ""
+			case "no session":
+				grant.Session = ""
+			}
+			b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+				return humanauthority.HelmProof(root, grant, at)
+			}
+			if name == "person" {
+				b.owners.prove = enrolledPersonProver(t, b.lane, b.now)
+			}
+			var personActs []bool
+			b.owners.landing.runKeeper = func(keeper lane.AgentKeeper) lane.AgentRun {
+				personActs = append(personActs, keeper.PersonAct)
+				return keeper.Run()
+			}
+			absent := exec.Command("/bin/sh", "-c", "exit 128").Run()
+			git := b.owners.landing.plainProve.Git
+			b.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
+				if slices.Equal(args, []string{"rev-parse", "--verify", "MERGE_HEAD^{commit}"}) {
+					return "", absent
+				}
+				return git(root, args...)
+			}
+			providerChecks := 0
+			lockedHold := func(reason string) (string, error) {
+				for _, path := range []string{filepath.Join(plain.Dir(b.lane), "lane.lock"), lane.LockPath(b.home)} {
+					held, err := lock.File(path, 0600, lock.TryExclusive)
+					if held != nil {
+						held.Release()
+					}
+					if !lock.Busy(err) {
+						t.Fatalf("keeper hold read without its lock: %s: %v", path, err)
+					}
+				}
+				return reason, nil
+			}
+			wantHold := ""
+			switch name {
+			case "provider hold", "provider unreadable":
+				wantHold = "provider is held"
+				b.keeper.ProviderHold = func(string) (string, error) {
+					providerChecks++
+					reason, err := lockedHold(wantHold)
+					if name == "provider unreadable" {
+						return "", errors.New(wantHold)
+					}
+					return reason, err
+				}
+			case "keeper hold", "keeper unreadable":
+				wantHold = "keeper is held"
+				b.keeper.Holds = append(b.keeper.Holds, func(string) (string, error) {
+					reason, err := lockedHold(wantHold)
+					if name == "keeper unreadable" {
+						return "", errors.New(wantHold)
+					}
+					return reason, err
+				})
+			case "untyped question hold":
+				wantHold = plain.LaneQuestionHeadline(b.question(t))
+				b.keeper.Holds = append(b.keeper.Holds, func(string) (string, error) {
+					return lockedHold(wantHold)
+				})
+			case "person question first", "person question later":
+				barren := b.question(t)
+				id, first := "000-person-question", "000-person-question"
+				if name == "person question later" {
+					id, first = "zzz-person-question", barren.ID
+				}
+				q := channel.Question{ID: id, About: "lane", Machine: "fixture", State: "open", OpenedAt: barren.OpenedAt,
+					Facts: []string{"a person asks about the lane", "maintenance"}}
+				data, err := json.Marshal(q)
+				helmMust(t, err, os.WriteFile(filepath.Join(b.lane, "artifacts", "agents", "channel", "questions", id+".json"), data, 0600))
+				questions, unreadable := channel.WalkQuestions(b.lane)
+				if len(unreadable) != 0 || len(questions) != 2 || questions[0].ID != first {
+					t.Fatalf("question ordering: %+v unreadable=%v; want %s first", questions, unreadable, first)
+				}
+				wantHold = "keeper hold prevents delegated selection"
+			case "person stop":
+				wantHold = "pause"
+				_, err = lane.SetPauseBecause(b.home, "Wido", "maintenance", b.now)
+				helmMust(t, err)
+			case "person proof":
+				wantHold = "being proven"
+				proof := plain.Running{Pid: int64(os.Getpid()), Attempt: "person-proof", Tree: "main", Since: b.now.Format(time.RFC3339Nano),
+					Person: &plain.ActProvenance{Kind: "proof", Person: "Wido", Destination: b.record}}
+				data, err := json.Marshal(proof)
+				helmMust(t, err, os.WriteFile(filepath.Join(plain.Dir(b.lane), "running.json"), data, 0600))
+			}
+			snapshot := func() map[string]string {
+				t.Helper()
+				files := map[string]string{}
+				for _, dir := range []string{b.home, filepath.Join(b.lane, "artifacts")} {
+					helmMust(t, filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+						if err != nil || d.IsDir() || strings.HasSuffix(path, ".lock") || strings.HasSuffix(path, ".flock") {
+							return err
+						}
+						data, err := os.ReadFile(path)
+						files[path] = string(data)
+						return err
+					}))
+				}
+				return files
+			}
+			before := snapshot()
+			words := []string{"landing", "run", "--goals", "a,b", "--json"}
+			if name == "by" {
+				words = append(words, "--by", "Wido")
+			}
+			code, out := b.run(t, b.lane, words...)
+			var result intentResult
+			helmMust(t, json.Unmarshal([]byte(out), &result))
+			batch, err := plain.ReadBatch(b.lane)
+			helmMust(t, err)
+			if wantHold != "" {
+				after := snapshot()
+				if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, wantHold) || batch != nil || b.starts != 0 ||
+					result.Next == nil || !strings.Contains(result.Next.Reason, "a person") || !reflect.DeepEqual(before, after) {
+					t.Fatalf("delegate changed a held lane: code=%d output=%s batch=%+v starts=%d unchanged=%v", code, out, batch, b.starts, reflect.DeepEqual(before, after))
+				}
+				if strings.HasPrefix(name, "provider") && providerChecks == 0 {
+					t.Fatal("delegated selection did not read the provider hold")
+				}
+				if _, err := os.Stat(filepath.Join(plain.Dir(b.lane), "batch.json")); !os.IsNotExist(err) {
+					t.Fatalf("held selection wrote batch.json: %v", err)
+				}
+				return
+			}
+			if name == "person" {
+				if code != 0 || batch == nil || batch.Person == nil || batch.Delegated != nil || b.starts != 1 || !slices.Equal(personActs, []bool{true}) {
+					t.Fatalf("person selection lost its authority: code=%d output=%s batch=%+v starts=%d PersonAct=%v", code, out, batch, b.starts, personActs)
+				}
+				return
+			}
+			if name != "delegated" {
+				if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "this shell has no direct enrolled-terminal proof") || batch != nil || b.starts != 0 {
+					t.Fatalf("invalid delegation recorded a selection: code=%d result=%+v batch=%+v starts=%d", code, result, batch, b.starts)
+				}
+				return
+			}
+			if batch == nil || batch.Person != nil || batch.Delegated == nil {
+				t.Fatalf("delegated selection missing or carries person authority: code=%d result=%+v batch=%+v", code, result, batch)
+			}
+			if !slices.Equal(personActs, []bool{false}) {
+				t.Fatalf("delegated selection carries person authority: PersonAct=%v, want [false]", personActs)
+			}
+			d := batch.Delegated
+			if d.Kind != "selection" || d.Grant != "G1" || d.Decision != "D1" || d.Session != "main-1" || d.Class != "lane-recovery" || d.Delegate != "Wido" || !d.CheckedAt.Equal(b.now) || d.Destination != b.record || !slices.Equal(d.Subject, batch.Members) || d.Hold.BarrenAt != state.BarrenAt {
+				t.Fatalf("selection lost its delegation: %+v", d)
+			}
+			if b.starts != 0 {
+				t.Fatalf("delegate bypassed a keeper hold: code=%d output=%s starts=%d provider checks=%d", code, out, b.starts, providerChecks)
+			}
+			t.Logf("landing run --goals a,b --json: decision=%s class=%s person=%v starts=%d", d.Decision, d.Class, batch.Person, b.starts)
+		})
+	}
+	for _, words := range []string{"landing run --goals a,b", "landing run --goals a,b --json --verbose"} {
+		if class, ok := attorneyActClass(strings.Fields(words), nil, "", ""); !ok || class != "lane-recovery" {
+			t.Errorf("selection is unclassified: %s: %q %v", words, class, ok)
+		}
+	}
+	for _, words := range []string{"landing run", "landing run --batch B", "landing run --goals a,b --by Wido", "landing run --goals a,b --repo .", "landing run a --goals a,b"} {
+		if class, ok := attorneyActClass(strings.Fields(words), nil, "", ""); ok {
+			t.Errorf("classified another landing act: %s: %q", words, class)
+		}
 	}
 }
 

@@ -220,38 +220,54 @@ func (a landingAgent) reapOutage(id string) error {
 // the person, and the next one reads the answer with question show. A lane
 // question from another computer holds nothing here.
 func (a landingAgent) questionHold(module string) (string, error) {
+	err := a.questionHoldCause(module)
+	var question *lane.QuestionHoldError
+	if errors.As(err, &question) {
+		return question.Reason, nil
+	}
+	return "", err
+}
+
+func (a landingAgent) questionHoldCause(module string) error {
 	machineFn := a.machine
 	if machineFn == nil {
 		machineFn = goal.ResolveMachine
 	}
 	open, _ := channel.WalkQuestions(module)
-	var lane []channel.Question
+	var laneQuestions []channel.Question
 	for _, q := range open {
 		if len(q.Facts) > 1 && strings.HasPrefix(q.Facts[1], "lane steward: ") {
 			continue
 		}
 		if satisfied, err := plain.PolicyQuestionSatisfied(module, q); err != nil {
-			return "", err
+			return err
 		} else if satisfied {
 			continue
 		}
 		if q.Goal == "" && q.About == "lane" && (q.State == "open" || q.State != "closed" && channel.LaneStopCommand(q) != "") {
-			lane = append(lane, q)
+			laneQuestions = append(laneQuestions, q)
 		}
 	}
-	if len(lane) == 0 {
-		return "", nil
+	if len(laneQuestions) == 0 {
+		return nil
 	}
 	machine, err := machineFn(module)
 	if err != nil {
-		return "", fmt.Errorf("a question about the lane is open and this computer's name cannot be read: %w", err)
+		return fmt.Errorf("a question about the lane is open and this computer's name cannot be read: %w", err)
 	}
-	for _, q := range lane {
+	var hold lane.QuestionHoldError
+	for _, q := range laneQuestions {
 		if q.Machine == machine {
-			return plain.LaneQuestionHeadline(q), nil
+			if len(hold.QuestionIDs) == 0 {
+				hold.QuestionID, hold.Reason = q.ID, plain.LaneQuestionHeadline(q)
+			}
+			hold.QuestionIDs = append(hold.QuestionIDs, q.ID)
 		}
 	}
-	return "", nil
+	if len(hold.QuestionIDs) > 0 {
+		return &hold
+	}
+	return nil
 }
 
 // newLandingAgentKeeper is the keeper's landing-agent step for the steward
@@ -417,7 +433,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				if err != nil {
 					return "", err
 				}
-				return agent.questionHold(record.Install)
+				return "", agent.questionHoldCause(record.Install)
 			},
 		},
 		Running: agent.running, Unclaimed: agent.unclaimed, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
