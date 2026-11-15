@@ -105,8 +105,173 @@ func TestAGrantKeepsItsReason(t *testing.T) {
 	}
 }
 
+var _ = addLayoutCases(
+	layoutCase{name: "grant-show", args: []string{"grant", "show", "GRANT"}, bed: grantShowLayoutBed},
+	layoutCase{name: "grant-show-refusal", args: []string{"grant", "show", "unknown"}, bed: grantShowLayoutBed},
+)
+
+func grantShowLayoutBed(t *testing.T) layoutBed {
+	t.Helper()
+	b := newDecisionAgentBed(t)
+	b.lineage = ""
+	code, granted := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--classes", "lane-recovery", "--lineage", "seat", "--for", "24h")
+	if code != 0 {
+		t.Fatalf("grant: %d %+v", code, granted)
+	}
+	b.grant = granted.Targets[0].ID
+	now, _ := b.commandNow(b.root())
+	for i, outcome := range []string{intentConfirmed, intentRefused} {
+		helmMust(t, humanauthority.AppendDecision(b.home, humanauthority.Decision{ID: fmt.Sprint(i), At: now,
+			Grant: b.grant, Class: "lane-recovery", Argv: []string{"landing", "resume"}, Outcome: outcome}))
+	}
+	return layoutBed{owners: b.owners, cwd: b.root(), now: now, words: map[string]string{"GRANT": b.grant}, replace: []string{b.grant, "GRANT"}}
+}
+
+func TestGrantShowListsItsActs(t *testing.T) {
+	t.Parallel()
+	b := newDecisionAgentBed(t)
+	at, _ := b.commandNow(b.root())
+	b.lineage = ""
+	code, granted := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--classes", strings.Join(goal.AttorneyClasses, ","), "--lineage", "seat", "--for", "24h")
+	if code != 0 {
+		t.Fatalf("grant: %d %+v", code, granted)
+	}
+	b.grant, b.lineage = granted.Targets[0].ID, launch.SeatOwnerLineage
+	for i, class := range []string{"lane-recovery", "budget", "run-release", "ordering", "lane-recovery", "budget"} {
+		d := humanauthority.Decision{ID: fmt.Sprint(i), At: at, Grant: b.grant, Class: class,
+			Argv: []string{"goal", "budget", "--by", "X", "G", "one-more-day"}, Outcome: intentConfirmed}
+		if i == 0 {
+			laneBed := newSelectionBed(t)
+			laneBed.barrenKeeper()
+			laneBed.keeper.Observe = nil
+			writeQuestionFixture(t, lane.AgentStatePath(laneBed.home), lane.AgentState{Barren: 2,
+				BarrenAt: laneBed.now.Format(time.RFC3339Nano), BarrenFingerprint: "unchanged"})
+			absent := exec.Command("/bin/sh", "-c", "exit 128").Run()
+			git := laneBed.owners.landing.plainProve.Git
+			laneBed.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
+				if args[len(args)-1] == "MERGE_HEAD^{commit}" {
+					return "", absent
+				}
+				return git(root, args...)
+			}
+			b.owners.delivery.ownerEnvelope = func(p intentProcess, verb string) (verbresult.Result, error) {
+				laneBed.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+					return humanauthority.HelmProof(root, humanauthority.HelmGrant{By: "Wido", Grant: b.grant, Act: class,
+						Decision: strings.TrimPrefix(p.env[0], "METASYSTEM_DECISION="), Session: b.holder.MainId}, at)
+				}
+				child, args, _ := resolveIntentArgv(p.argv[1:])
+				var out, errout bytes.Buffer
+				code := runIntentIn(child, args, &out, &errout, laneBed.lane, laneBed.owners)
+				return verbresult.Read(out.Bytes(), verb, code, errout.String())
+			}
+			code, got := b.record([]string{"--class", class}, []string{"landing", "run", "--goals", "a,b"})
+			batch, err := plain.ReadBatch(laneBed.lane)
+			if code != 0 || err != nil || batch == nil || batch.Delegated == nil || batch.Delegated.Decision != got.Targets[0].ID {
+				t.Fatalf("delegated lane act: %d %+v batch=%+v err=%v", code, got, batch, err)
+			}
+			continue
+		}
+		if class == "run-release" {
+			d.Argv = []string{"work", "stop", "run:R"}
+		}
+		if class == "ordering" {
+			d.Argv = []string{"goal", "prioritize", "G", "3"}
+		}
+		if class == "lane-recovery" {
+			d.Argv = []string{"landing", "resume"}
+		}
+		if i == 4 {
+			d.Outcome = intentRefused
+		}
+		if i == 5 {
+			d.Outcome = intentFailed
+		}
+		helmMust(t, humanauthority.AppendDecision(b.home, d))
+	}
+	want, _, err := humanauthority.ReadDecisions(b.home)
+	helmMust(t, err)
+	helmMust(t, humanauthority.AppendDecision(b.home, humanauthority.Decision{ID: "foreign", Grant: "another-grant"}))
+	code, out, errout := b.run(b.owners, "grant", "show", b.grant, "--json")
+	var got struct {
+		Data struct {
+			Grant struct {
+				ID, By, Reason, Until string
+				Classes               []string
+				Live                  bool
+			} `json:"grant"`
+			Decisions []struct{ ID, At, Class, Act, Outcome, Overrule, Remainder, Compensation string }
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || code != 0 || len(got.Data.Decisions) != 6 {
+		t.Fatalf("grant show: %d %s %s err=%v", code, out, errout, err)
+	}
+	if g := got.Data.Grant; g.ID != b.grant || g.By != "human:Wido" || g.Reason != "no reason given" || g.Until == "" || !g.Live || !slices.Equal(g.Classes, goal.AttorneyClasses) {
+		t.Fatalf("grant details: %+v", g)
+	}
+	for i, d := range got.Data.Decisions {
+		if d.ID != want[i].ID || d.At != at.In(b.owners.helm.zone).Format("15:04 MST (2006-01-02)") || d.Act != shellCommand(want[i].Argv) || (d.Overrule != "") != (i < 3) {
+			t.Fatalf("decision %d: %+v", i, d)
+		}
+		if i == 1 && d.Compensation != "goal budget G undo-one-more-day 1" {
+			t.Fatalf("budget compensation: %+v", d)
+		}
+	}
+	code, out, errout = b.run(b.owners, "grant", "show", b.grant)
+	if code != 0 || !strings.Contains(out, "ordering") || !strings.Contains(out, "no reason given") || !strings.Contains(out, "undo-one-more-day") {
+		t.Fatalf("grant text: %d %s %s", code, out, errout)
+	}
+	code, refused := b.runJSON(b.owners, "grant", "show", "unknown")
+	if code == 0 || refused.Outcome != intentRefused || (refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "grant", "list"})) {
+		t.Fatalf("unknown grant: %d %+v", code, refused)
+	}
+	b.lineage = ""
+	if code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "revoke", b.grant); code != 0 {
+		t.Fatalf("revoke: %d %+v", code, got)
+	}
+	code, out, _ = b.run(b.owners, "grant", "show", b.grant, "--json")
+	if err := json.Unmarshal([]byte(out), &got); err != nil || code != 0 || got.Data.Grant.Live || len(got.Data.Decisions) != 6 {
+		t.Fatalf("closed grant: %d %s err=%v", code, out, err)
+	}
+	helmMust(t, os.WriteFile(humanauthority.DecisionLogPath(b.home), []byte("unreadable\n"), 0600))
+	code, shown := b.runJSON(b.owners, "grant", "show", b.grant)
+	if code != 0 || len(shown.Details) != 1 {
+		t.Fatalf("unreadable line: %d %+v", code, shown)
+	}
+	b.owners.decisions.home = func() (string, error) { return "", errors.New("no log home") }
+	code, shown = b.runJSON(b.owners, "grant", "show", b.grant)
+	if code == 0 || shown.Outcome != intentFailed {
+		t.Fatalf("unreadable log: %d %+v", code, shown)
+	}
+}
+
 func TestTheOverruleUndoesWhatItCan(t *testing.T) {
 	t.Parallel()
+	for _, outcome := range []string{intentRefused, intentFailed, intentUnchanged, intentPartial} {
+		t.Run(outcome, func(t *testing.T) {
+			t.Parallel()
+			b := newDecisionAgentBed(t)
+			b.lineage = ""
+			code, grant := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--classes", "lane-recovery", "--lineage", "seat", "--for", "24h")
+			if code != 0 {
+				t.Fatalf("grant: %d %+v", code, grant)
+			}
+			b.lineage = launch.SeatOwnerLineage
+			b.owners.delivery.ownerEnvelope = func(intentProcess, string) (verbresult.Result, error) {
+				return verbresult.Result{Outcome: outcome, Summary: "act answered"}, nil
+			}
+			_, out, errout := b.run(b.owners, "decision", "record", "--class", "lane-recovery", "--text", "recover", "--rejected", "wait", "--undo", "stop", "--", "landing", "resume")
+			lines, bad, err := humanauthority.ReadDecisions(b.home)
+			if err != nil || bad != 0 || len(lines) != 1 || lines[0].Outcome != outcome {
+				t.Fatalf("record: %+v %d %v", lines, bad, err)
+			}
+			inv := &intentInvocation{input: intentInput{values: map[string][]string{"overrules": {lines[0].ID}}}, owners: b.owners, stdout: io.Discard}
+			impact, denied := decisionOverrule(inv, b.home)
+			tookEffect := outcome == intentPartial
+			if denied != nil || strings.Contains(out+errout, "--overrules") != tookEffect || strings.Contains(impact, "Overruling runs") != tookEffect || strings.Contains(impact, "does not undo that act") == tookEffect {
+				t.Fatalf("outcome %s: %s %s; impact=%q denied=%+v", outcome, out, errout, impact, denied)
+			}
+		})
+	}
 	for _, class := range []string{"lane-recovery", "budget", "run-release"} {
 		t.Run(class, func(t *testing.T) {
 			t.Parallel()
@@ -114,7 +279,7 @@ func TestTheOverruleUndoesWhatItCan(t *testing.T) {
 			at, err := b.commandNow(b.root())
 			helmMust(t, err)
 			d := humanauthority.Decision{ID: "D1", At: at, Actor: "main-1", Grant: b.grant, By: "Wido", Class: class,
-				Argv: []string{"goal", "budget", "--json", "G", "one-more-day"}, Outcome: intentConfirmed}
+				Argv: []string{"goal", "budget", "--json", "--by", "X", "G", "one-more-day"}, Outcome: intentConfirmed}
 			if class == "run-release" {
 				d.Argv = []string{"work", "stop", "--", "run:R"}
 			}
@@ -135,14 +300,14 @@ func TestTheOverruleUndoesWhatItCan(t *testing.T) {
 					t.Fatalf("delegated decision: %d %s %s log=%+v err=%v", code, out, errout, lines, readErr)
 				}
 				d = lines[0]
-				line, remainder := humanauthority.OverruleLine(d)
+				line, remainder, _ := humanauthority.OverruleLine(d)
 				if !strings.Contains(out, line) || !strings.Contains(out, remainder) {
 					t.Fatalf("printed overrule missing: %s", out)
 				}
 			} else {
 				helmMust(t, humanauthority.AppendDecision(b.home, d))
 			}
-			line, remainder := humanauthority.OverruleLine(d)
+			line, remainder, _ := humanauthority.OverruleLine(d)
 			// Let the shell parse the exact printed line without running its command.
 			raw, err := exec.Command("/bin/sh", "-c", "set -- "+line+`; printf '%s\000' "$@"`).Output()
 			helmMust(t, err)
@@ -202,10 +367,10 @@ func TestTheOverruleUndoesWhatItCan(t *testing.T) {
 			t.Logf("%s: %s; %s", class, line, remainder)
 		})
 	}
-	if line, remainder := humanauthority.OverruleLine(humanauthority.Decision{Class: "ordering"}); line != "" || remainder != "" {
+	if line, remainder, compensation := humanauthority.OverruleLine(humanauthority.Decision{Class: "ordering", Outcome: intentConfirmed}); line != "" || remainder != "" || compensation != "" {
 		t.Fatalf("ordinary decision gained a compensation: %q %q", line, remainder)
 	}
-	if line, remainder := humanauthority.OverruleLine(humanauthority.Decision{Class: "budget"}); line != "" || remainder != "" {
+	if line, remainder, compensation := humanauthority.OverruleLine(humanauthority.Decision{Class: "budget", Outcome: intentConfirmed}); line != "" || remainder != "" || compensation != "" {
 		t.Fatalf("a budget command needs its goal: %q %q", line, remainder)
 	}
 }

@@ -1,0 +1,2 @@
+✗ no recorded grant unknown
+  → metasystem grant list  lists the grants with their ids
