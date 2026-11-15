@@ -1,0 +1,92 @@
+{
+  "canonicalRead": {
+    "engine": "855b4404322cf16943bbe809d5a6e091e9440361",
+    "findings": [
+      {
+        "change": "None required; if carry measures should exclude diagnostics, skip entries under an alone/ directory in carryMeasures.",
+        "claim": "The carry process-measure now counts the diagnostic alone reruns as attest steps, because the walker that collects carry check executions is recursive and the new alone directories carry their own observation.json files.",
+        "class": "other",
+        "evidence": "internal/launch/check_evidence.go ReadCheckExecutions walks the whole artifacts/unit-checks/carry root and accepts any observation.json whose executionId equals its directory name; internal/launch/unit_check.go execute writes observation.json for the alone-* execution. The unit run's own alone rerun is likewise a measured launch, so the extra minutes are consistent with the unit run; no reader breaks. Slice works and is safe without a change.",
+        "id": "code-critic-d490b552a73429214499c46d:1",
+        "material": false,
+        "relation": "R-124-m1u: a finding that adds a corner the slice's first use does not need goes to the later list",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_process_measure.go"
+      },
+      {
+        "change": "None for this unit; a one-line note on the design page that D6 now admits a flake-cleared cheap exit would keep the record current.",
+        "claim": "The accepted design a-check-guards-its-own-inputs (decision D6) stated that validGateObservation keeps requiring both exits green; this unit relaxes that for a recorded flake.",
+        "class": "other",
+        "evidence": "metasystem/plans/designs/a-check-guards-its-own-inputs.md D6 versus internal/goal/branch/check.go lines 58-67. The relaxation is exactly what the human-written goal Intent orders ('the retained check passes') and the goal was allowed build-without-design by Wido; the design text is stale, not the code.",
+        "id": "code-critic-d490b552a73429214499c46d:2",
+        "material": false,
+        "relation": "R-124-m1u: documentation consistency the slice's first use does not need",
+        "severity": "low",
+        "where": "metasystem/internal/goal/branch/check.go"
+      },
+      {
+        "change": "None required; if desired, treat a retained alone exit of -1 as not completed so a fresh alone attempt runs.",
+        "claim": "A timed-out alone rerun is retained with a complete result.json and is reused on every later carry invocation as 'environment' evidence, so the only way to attempt the rerun again is --rerun of the whole check.",
+        "class": "other",
+        "evidence": "intent_carry_check.go completed() accepts any result.json with one exit and equal selectors regardless of exit code; a -1 exit makes run.Exited false and ClassifyRed answers 'environment'. The unit run has the same stickiness (rerunAlone returns early when alone.Outcome is 'environment'), and the refusal names the --rerun remedy, so the hand route is not stuck.",
+        "id": "code-critic-d490b552a73429214499c46d:3",
+        "material": false,
+        "relation": "R-124-m1u: works and is safe without it",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_carry_check.go"
+      },
+      {
+        "change": "Optional: add a carryCheckBed script whose audits command fails alongside the flaky cheap command and assert refusal with no alone directory.",
+        "claim": "No carry-level test exercises a flaky cheap exit together with a red audits exit, nor a timed-out cheap exit; the table test proves the gate validator but the refusal path in carryFlake for those shapes is proven only by reading.",
+        "class": "weakened-test",
+        "evidence": "intent_carry_flake_test.go covers fresh flake, reuse, interrupted rerun, red-stays-red and unnamed red; check_test.go covers 'flake with red audits' at the validator. In carryFlake an audits red becomes a unit 'section/audits' with no tests and the ContainsFunc guard returns nil before any rerun; a cheap exit of -1 never names tests. The behaviour is correct by trace; the gap is coverage only.",
+        "id": "code-critic-d490b552a73429214499c46d:4",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_carry_flake_test.go"
+      }
+    ],
+    "id": "code-critic-d490b552a73429214499c46d",
+    "material": 0,
+    "model": "claude-fable-5-1",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1f-the-carry-check-classifies-a-flake/metasystem/artifacts/agents/code-critic-d490b552a73429214499c46d/rounds/1/return.md",
+    "subject": {
+      "commit": "feef35327db674d4b9b84f943af9d83b40ed1f4f",
+      "diffDigest": "959cc64bcf40e2485653b57ce0e527e14f2d9bba101f4f66365ad20d0cdba717",
+      "kind": "commit",
+      "parent": "3380283665c53d0c4c046a8720a2ce0a7f996972",
+      "tree": "6ce4f00af6ee84ea5fbbd6ccb094538eb1703718"
+    }
+  },
+  "readDigest": "978ee3f479fd838be3d8825be9f6199eba571346af3521d47e2de56733caede3",
+  "schemaVersion": 1,
+  "goal": "the-carry-check-classifies-a-flake",
+  "unit": "main",
+  "subject": {
+    "commit": "feef35327db674d4b9b84f943af9d83b40ed1f4f",
+    "parent": "3380283665c53d0c4c046a8720a2ce0a7f996972",
+    "tree": "6ce4f00af6ee84ea5fbbd6ccb094538eb1703718",
+    "patchDigest": "959cc64bcf40e2485653b57ce0e527e14f2d9bba101f4f66365ad20d0cdba717",
+    "unitDigest": "e1a1ac9b1f33da43fd8d24e94d74e0a70634fbc98472888bf369cea807d0ddf6"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d490b552a73429214499c46d",
+    "round": 1,
+    "closureSha256": "a7b42fa1954db6a4f50c7d97939f46e83052622e0737884205f5446a393ad817"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6ce4f00af6ee84ea5fbbd6ccb094538eb1703718",
+    "runId": "goal-read-gate-20261115t120845z-3692e636623f7c48"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_carry_recovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-d490b552a73429214499c46d"
+    }
+  ],
+  "sha256": "f900696b15477a0549626f25e34f47bd285ec073a270f84a38e6c4ff8fbc813a"
+}
