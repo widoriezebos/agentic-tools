@@ -33,9 +33,9 @@ func landingResumeCommand() intentCommand {
 		var run plain.ResumeRun
 		var err error
 		if d := person.Delegated; d != nil {
-			keeper.Fingerprint = delegatedSelectionFingerprint(admitted.installation, keeper)
-			run, err = plain.ResumeDelegated(admitted.home, plain.DelegatedProvenance{Kind: "resume", Grant: d.Grant,
-				Decision: d.Decision, Session: d.Session, Class: d.Act, Delegate: d.By}, admitted.owners.now(), s)
+			run, err = plain.ResumeDelegated(admitted.home, plain.DelegatedProvenance{Grant: d.Grant,
+				Decision: d.Decision, Session: d.Session, Class: d.Act, Delegate: d.By}, admitted.owners.now(),
+				delegatedSelectionFingerprint(admitted.installation, keeper), s)
 		} else {
 			run, err = plain.Resume(admitted.home, provenance, admitted.owners.now(), s)
 		}

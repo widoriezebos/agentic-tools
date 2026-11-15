@@ -190,8 +190,16 @@ func TestADelegateResumesOnlyTheBarrenHold(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := resumeSnapshot(t, b.home, b.install)
-			d := DelegatedProvenance{Kind: "resume", Grant: "G1", Decision: "D1", Session: "main-1", Class: "lane-recovery", Delegate: "Wido"}
-			run, err := ResumeDelegated(b.home, d, bedNow, b.seams)
+			if name == "held" {
+				waiting, err := Waiting(b.install)
+				if err != nil || len(waiting) != 2 || waiting[0].Goal != "newer" {
+					t.Fatalf("queue must need sorting: %+v %v", waiting, err)
+				}
+			}
+			selectionFingerprint := b.keeper.Fingerprint
+			b.keeper.Fingerprint = func(string) (string, error) { return "start fingerprint", nil }
+			d := DelegatedProvenance{Grant: "G1", Decision: "D1", Session: "main-1", Class: "lane-recovery", Delegate: "Wido"}
+			run, err := ResumeDelegated(b.home, d, bedNow, selectionFingerprint, b.seams)
 			if name != "held" {
 				want := map[string]string{"empty": "no waiting goal", "pause": "pause", "merge": "merge in progress", "incident": "incident", "gone proof": "process is gone", "live proof": "check is in progress", "open batch": "reopening", "sealed batch": "restarting"}[name]
 				if err == nil || !strings.Contains(err.Error(), want) || b.starts+b.proofs+b.aborts != 0 || !reflect.DeepEqual(before, resumeSnapshot(t, b.home, b.install)) {
@@ -202,6 +210,10 @@ func TestADelegateResumesOnlyTheBarrenHold(t *testing.T) {
 			batch, readErr := ReadBatch(b.install)
 			if err != nil || readErr != nil || batch == nil || batch.Person != nil || batch.Delegated == nil || batch.Delegated.Decision != d.Decision || batch.Delegated.CheckedAt != bedNow || !slices.Equal(batch.Members, []GoalSHA{{Goal: "older", SHA: "older"}, {Goal: "newer", SHA: "newer"}}) || b.starts != 1 || b.proofs != 0 || run.Agent.Outcome != lane.AgentStarted {
 				t.Fatalf("delegated selection or continuation lost: batch=%+v run=%+v err=%v %v", batch, run, err, readErr)
+			}
+			started, stateErr := lane.ReadAgentState(b.home)
+			if stateErr != nil || started.Fingerprint != "start fingerprint" || batch.Delegated.Hold.Fingerprint != "same" {
+				t.Fatalf("selection and start readers were mixed: state=%+v batch=%+v err=%v", started, batch.Delegated, stateErr)
 			}
 		})
 	}

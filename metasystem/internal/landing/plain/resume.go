@@ -40,7 +40,7 @@ func ContinueDelegated(install string, record lane.Record, keeper lane.AgentKeep
 }
 
 // ResumeDelegated selects waiting work only on the engine's unchanged barren hold.
-func ResumeDelegated(home string, d DelegatedProvenance, now time.Time, s ProveSeams) (run ResumeRun, err error) {
+func ResumeDelegated(home string, d DelegatedProvenance, now time.Time, selectionFingerprint func(string) (string, error), s ProveSeams) (run ResumeRun, err error) {
 	record, present, err := lane.Read(home)
 	if err != nil || !present {
 		return run, errors.Join(err, errors.New("no landing lane is registered"))
@@ -64,10 +64,10 @@ func ResumeDelegated(home string, d DelegatedProvenance, now time.Time, s ProveS
 		if batch != nil && batch.State != BatchClosed && (batch.Open || batch.SealedAt != "" || batch.State == BatchRunning) {
 			return "", errors.New("restarting or reopening a batch needs a person's resume")
 		}
-		if keeper.Fingerprint == nil {
+		if selectionFingerprint == nil {
 			return "", errors.New("the barren fingerprint reader is unavailable")
 		}
-		return keeper.Fingerprint(root)
+		return selectionFingerprint(root)
 	}
 	entries, err := Waiting(record.Install)
 	if err != nil {
