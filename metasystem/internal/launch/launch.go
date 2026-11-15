@@ -60,6 +60,7 @@ type StartSpec struct {
 	Model, Effort, UnitsPage, DiffFile, Package, File  string
 	Wide                                               bool
 	StopInputs                                         bool
+	UnitRun, UnitInstallation                          string `json:"-"`
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 	readMode                                           string
@@ -221,6 +222,10 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		}
 	}
 	setString(record.AdapterData, "brief", inputs[0].Path)
+	if spec.UnitRun != "" && filepath.IsAbs(spec.UnitInstallation) {
+		setString(record.AdapterData, "unitRun", spec.UnitRun)
+		setString(record.AdapterData, "unitInstallation", spec.UnitInstallation)
+	}
 	if spec.Kind == "read" && spec.StopInputs {
 		setString(record.AdapterData, "unitStopInputs", "true")
 		stateDir, stateErr := m.Store.StateDir(id)

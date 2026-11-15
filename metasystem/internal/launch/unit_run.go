@@ -217,6 +217,8 @@ type UnitRunner struct {
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
 	// CollectLaunch settles the physical execution through its reservation owner.
 	CollectLaunch func(UnitRunRecord, Record, string) error
+	// Installation is the caller's installation, whose dispatch ledger holds this runner's launch reservations.
+	Installation string
 	// PlanProof selects proof after the build. A nil result retains the
 	// caller's commands; selected commands are frozen for this round's retries.
 	PlanProof func(UnitPlan) ([]ProofCommand, error)
@@ -856,6 +858,7 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
 	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
 		spec.Actor = runner.Actor
+		spec.UnitRun, spec.UnitInstallation = record.ID, runner.Installation
 		spec.wait = runner.CommandWait
 		return runner.Manager.Start(spec)
 	},

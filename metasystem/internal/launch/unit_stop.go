@@ -469,6 +469,39 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	return runner.finishFreshRead(&record, round)
 }
 
+// BookEndedRead accounts ended launches and settles a late fresh read when the command locks are free.
+func (runner *UnitRunner) BookEndedRead(id string) error {
+	record, err := runner.read(id)
+	if err != nil {
+		return err
+	}
+	if runner.tree == nil {
+		_, err := treeCall(runner, record.Worktree, func(r *UnitRunner) (struct{}, error) { return struct{}{}, r.BookEndedRead(id) })
+		if IsCode(err, "UNIT_RUN_BUSY") {
+			return nil
+		}
+		return err
+	}
+	lock, err := runner.lock(id)
+	if IsCode(err, "UNIT_RUN_BUSY") {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer releaseUnitLock(lock)
+	record, err = runner.read(id)
+	if err != nil {
+		return err
+	}
+	for _, round := range record.Rounds {
+		if err := runner.collectLaunches(record, round); err != nil {
+			return err
+		}
+	}
+	return runner.bookEndedRead(&record)
+}
+
 func (runner *UnitRunner) finishFreshRead(record *UnitRunRecord, round *UnitRound) (UnitResult, error) {
 	result, err := runner.finish(record, round, "green")
 	if err == nil && round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") {
