@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
@@ -2800,5 +2801,79 @@ func TestARepeatFinishesFromTheManifest(t *testing.T) {
 				t.Fatalf("repeat frozen result: %+v %s", last, patch)
 			}
 		})
+	}
+}
+
+func TestALateFreshReadIsBookedOnceAndNotBeforeItEnds(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "", "branch", "round")
+	fixture.starter.skipStructured = true
+	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.manager.Seat.Machine = "late-" + first.Record.ID
+	fixture.starter.holdKind = "read"
+	fresh, err := fixture.runner.RetryUnknownRead(first.Record.ID)
+	if err != nil || !fresh.Capped {
+		t.Fatalf("fresh read did not yield: %+v %v", fresh, err)
+	}
+	step := stepNamed(t, fresh.Record.Rounds[0], FreshReadStep)
+	// An older read's terminal launch must never book its non-terminal step.
+	for i := range fresh.Record.Rounds[0].Steps {
+		if strings.HasPrefix(fresh.Record.Rounds[0].Steps[i].Name, "unknown:read") {
+			fresh.Record.Rounds[0].Steps[i].State = StepRunning
+		}
+	}
+	if err := fixture.runner.save(fresh.Record); err != nil {
+		t.Fatal(err)
+	}
+	started := len(fixture.starter.ids)
+	// Preservation: a live read is left alone, including the old read's step.
+	running, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID})
+	if err != nil || !reflect.DeepEqual(running.Record.Rounds[0], fresh.Record.Rounds[0]) || len(fixture.starter.ids) != started {
+		t.Fatalf("running read was changed: %+v %v", running, err)
+	}
+	probe := fixture.manager.Prober.(*fakeProber)
+	probe.states[10], probe.states[20] = identity.Dead, identity.Dead
+	// Regression: Status reconciles the dead pair before the round is booked.
+	booked, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, err := fixture.manager.Store.Read(step.LaunchID)
+	round := booked.Record.Rounds[0]
+	if err != nil || execution.State != Failed || execution.Reason != "supervisor-lost" || stepNamed(t, round, FreshReadStep).State != StepFailed || round.Stop == nil || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || round.UnknownRetries != 1 || len(fixture.starter.ids) != started {
+		t.Fatalf("dead reader was not booked: %+v %+v %v", booked, execution, err)
+	}
+	retryPath := filepath.Join(round.Directory, "unknown-retry.json")
+	data, err := os.ReadFile(retryPath)
+	var retry struct{ Decision, Handoff string }
+	if err != nil || json.Unmarshal(data, &retry) != nil || retry.Decision != "stop" || retry.Handoff != round.Stop.Handoff {
+		t.Fatalf("retry retained continue: %s %v", data, err)
+	}
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"), retryPath,
+		filepath.Join(home, "host", "board", fixture.manager.Seat.Machine, "goal.json")}
+	before := make([][]byte, len(paths))
+	for i, path := range paths {
+		before[i], err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixture.manager.Sleep(time.Minute)
+	// Regression: a second resume neither saves nor republishes the round.
+	if _, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID}); err != nil {
+		t.Fatal(err)
+	}
+	for i, path := range paths {
+		after, err := os.ReadFile(path)
+		if err != nil || string(after) != string(before[i]) {
+			t.Fatalf("second resume rewrote %s: %v", path, err)
+		}
 	}
 }

@@ -135,6 +135,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			return UnitRevisionResult{}, err
 		}
 	}
+	if err := runner.bookEndedRead(&record); err != nil {
+		return UnitRevisionResult{}, err
+	}
 	briefDigest := digestHex(request.Brief)
 	if request.Rebase != nil {
 		original, err := os.ReadFile(plan.Build.Brief)
