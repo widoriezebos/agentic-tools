@@ -1114,7 +1114,9 @@ func jobGoal(job intentJob) string {
 func (inv *intentInvocation) listJobs(all bool) ([]intentJob, string, *intentResult) {
 	var jobs []intentJob
 	var records []launch.Record
+	var launchStatus func(string) (string, error)
 	if inv.owners.processes.launches != nil {
+		launchStatus = engineHost{launches: inv.owners.processes.launches()}.UnitLaunchStatus
 		listed, err := inv.owners.processes.launches().List()
 		if err != nil {
 			return nil, "", &intentResult{Outcome: intentFailed, code: 1, Summary: "your launches could not be read, so nothing was listed",
@@ -1138,7 +1140,7 @@ func (inv *intentInvocation) listJobs(all bool) ([]intentJob, string, *intentRes
 				continue
 			}
 			status, _ := object["status"].(string)
-			if all || !dispatchcore.TerminalStatus(status) {
+			if all || !dispatchcore.TerminalStatus(status) && !dispatchcore.UnitLaunchEnded(object, launchStatus) {
 				jobs = append(jobs, intentJob{id: strings.TrimSuffix(filepath.Base(path), ".json"), kind: "dispatch", dispatch: object, recordPath: path})
 			}
 		}

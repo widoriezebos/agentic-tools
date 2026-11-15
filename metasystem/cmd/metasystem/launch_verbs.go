@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -108,6 +109,7 @@ func launchSeatInstallation(executable string) string {
 }
 
 var launchManager = newLaunchManager
+var launchOwners = defaultIntentOwners
 
 func runLaunchSupervise(args []string, stdout, stderr io.Writer) int {
 	id, ok := launchID(args, "supervise", stdout, stderr)
@@ -118,6 +120,20 @@ func runLaunchSupervise(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, "launch supervise:", err)
 		return 1
+	}
+	var run, installation string
+	_ = json.Unmarshal(record.AdapterData["unitRun"], &run)
+	_ = json.Unmarshal(record.AdapterData["unitInstallation"], &installation)
+	if run == "" || !filepath.IsAbs(installation) {
+		fmt.Fprintln(stderr, "launch supervise: no unit run and installation stamp; end booking skipped")
+	} else {
+		inv := &intentInvocation{cwd: installation, owners: launchOwners(), stdout: stdout, stderr: stderr}
+		defer inv.leaveStores()
+		if problem := inv.resolveLayout(); problem != nil {
+			fmt.Fprintln(stderr, "launch supervise: end booking:", problem.Summary)
+		} else if err := inv.unitRunner().BookEndedRead(run); err != nil {
+			fmt.Fprintln(stderr, "launch supervise: end booking:", err)
+		}
 	}
 	if record.ExitCode != nil {
 		return *record.ExitCode

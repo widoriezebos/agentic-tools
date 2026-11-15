@@ -569,6 +569,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return nil
 	}
 	runner.Manager.SandboxAct = inv.consumedSandboxAct
+	runner.Installation = inv.layout.InstallationRoot.Path()
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
 		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
 			round := unit.Rounds[len(unit.Rounds)-1]

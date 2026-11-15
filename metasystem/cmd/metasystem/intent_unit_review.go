@@ -43,6 +43,9 @@ func retriesBuilder(round launch.UnitRound) bool {
 func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	targets := []intentTarget{{Kind: "unit", ID: run}}
 	runner := inv.unitRunner()
+	if err := runner.BookEndedRead(run); err != nil {
+		fmt.Fprintln(inv.stderr, "warning: the ended read could not be booked:", err)
+	}
 	current, err := runner.Status(run)
 	if err == nil && current.State == "cancelled" {
 		return inv.cancelledWorkResult(current.Goal)
@@ -117,10 +120,11 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	if err == nil && inv.freshReadDue {
 		inv.freshReadDue = false
 		fresh, freshErr := runner.RetryUnknownRead(run)
-		if freshErr != nil {
+		if freshErr != nil && !launch.IsCode(freshErr, "UNIT_WAIT_RETRY") {
 			return inv.unitOutcome(runner, fresh, freshErr, targets, inv.workArgv(current, "wait"))
 		}
-		if fresh.Capped {
+		running := func() intentResult {
+			fresh.Capped = true
 			yielded := inv.unitOutcome(runner, fresh, nil, targets, inv.workArgv(current, "wait"))
 			if yielded.Outcome == intentInProgress {
 				yielded.Summary = fmt.Sprintf("the fresh read of attempt %d is running", len(fresh.Record.Rounds))
@@ -128,7 +132,13 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 			}
 			return yielded
 		}
+		if fresh.Capped && freshErr == nil {
+			return running()
+		}
 		err = runner.ReviewSubject(run, bind)
+		if err == nil && inv.freshReadDue {
+			return running()
+		}
 	}
 	if err == nil {
 		return result
