@@ -96,7 +96,7 @@ func TestLandingHealthCapturesBeforeViewAndRetakesResume(t *testing.T) {
 	owners.landing.view = func(home string) lane.View {
 		views++
 		if views == 1 {
-			if _, err := lane.ClearPause(home); err != nil {
+			if _, err := lane.ClearPauseAt(home, "a person", laneTestNow); err != nil {
 				t.Fatal(err)
 			}
 			current, _, _ := state.Read(plain.Dir(bed.landingA))

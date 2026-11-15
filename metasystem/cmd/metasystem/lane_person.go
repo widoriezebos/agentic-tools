@@ -73,7 +73,7 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 		}
 		return refused(reason, err)
 	}
-	if grant := observed.Proof.Helm; grant != nil && grant.Grant != "" && grant.Act == "lane-recovery" && grant.Decision != "" && grant.Session != "" && act == "select the landing batch" && !inv.input.has("by") {
+	if grant := observed.Proof.Helm; grant != nil && grant.Grant != "" && grant.Act == "lane-recovery" && grant.Decision != "" && grant.Session != "" && (act == "select the landing batch" || act == "resume the landing lane") && !inv.input.has("by") {
 		observed.Delegated, observed.Name = grant, grant.By
 		return observed, nil
 	}

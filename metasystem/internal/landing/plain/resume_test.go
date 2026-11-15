@@ -3,6 +3,7 @@ package plain
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -148,6 +149,82 @@ func (b *resumeBed) resume(t *testing.T) ResumeRun {
 		t.Fatal(err)
 	}
 	return run
+}
+
+func TestADelegateResumesOnlyTheBarrenHold(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"held", "empty", "pause", "merge", "incident", "gone proof", "live proof", "open batch", "sealed batch"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newResumeBed(t)
+			b.hold(t)
+			state := lane.AgentState{Barren: 2, BarrenAt: bedNow.Add(-time.Minute).Format(time.RFC3339Nano), BarrenFingerprint: "same"}
+			data, _ := json.Marshal(state)
+			if err := os.WriteFile(lane.AgentStatePath(b.home), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if name != "empty" {
+				b.queue(t)
+			}
+			var err error
+			switch name {
+			case "pause":
+				_, err = lane.SetPause(b.home, "Wido", bedNow)
+			case "merge":
+				b.merge = "tip"
+			case "incident":
+				b.incidents = []goal.TrunkRedEntry{{Identity: "red", Opened: bedNow.Format(time.RFC3339)}}
+			case "gone proof":
+				err = writeRunning(b.install, Running{Attempt: "gone", Pid: 99})
+			case "live proof":
+				err = writeRunning(b.install, Running{Attempt: "live", Pid: 99})
+				b.seams.Alive = func(Running) bool { return true }
+			case "open batch", "sealed batch":
+				batch := &Batch{ID: "old", Lane: b.record, Base: "base", State: BatchRunning, Open: name == "open batch"}
+				if name == "sealed batch" {
+					batch.SealedAt = bedNow.Format(time.RFC3339)
+				}
+				err = writeBatch(b.install, batch)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := resumeSnapshot(t, b.home, b.install)
+			d := DelegatedProvenance{Kind: "resume", Grant: "G1", Decision: "D1", Session: "main-1", Class: "lane-recovery", Delegate: "Wido"}
+			run, err := ResumeDelegated(b.home, d, bedNow, b.seams)
+			if name != "held" {
+				want := map[string]string{"empty": "no waiting goal", "pause": "pause", "merge": "merge in progress", "incident": "incident", "gone proof": "process is gone", "live proof": "check is in progress", "open batch": "reopening", "sealed batch": "restarting"}[name]
+				if err == nil || !strings.Contains(err.Error(), want) || b.starts+b.proofs+b.aborts != 0 || !reflect.DeepEqual(before, resumeSnapshot(t, b.home, b.install)) {
+					t.Fatalf("delegated recovery crossed a hold: run=%+v err=%v", run, err)
+				}
+				return
+			}
+			batch, readErr := ReadBatch(b.install)
+			if err != nil || readErr != nil || batch == nil || batch.Person != nil || batch.Delegated == nil || batch.Delegated.Decision != d.Decision || batch.Delegated.CheckedAt != bedNow || !slices.Equal(batch.Members, []GoalSHA{{Goal: "older", SHA: "older"}, {Goal: "newer", SHA: "newer"}}) || b.starts != 1 || b.proofs != 0 || run.Agent.Outcome != lane.AgentStarted {
+				t.Fatalf("delegated selection or continuation lost: batch=%+v run=%+v err=%v %v", batch, run, err, readErr)
+			}
+		})
+	}
+	for _, live := range []bool{false, true} {
+		t.Run(fmt.Sprintf("person clock live=%t", live), func(t *testing.T) {
+			t.Parallel()
+			b := newResumeBed(t)
+			if _, err := lane.SetPause(b.home, "Wido", bedNow.Add(-time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			if live {
+				if err := writeRunning(b.install, Running{Attempt: "live", Pid: 99}); err != nil {
+					t.Fatal(err)
+				}
+				b.seams.Alive = func(Running) bool { return true }
+			}
+			b.resume(t)
+			stamp, present, err := lane.ReadResume(b.home)
+			if err != nil || !present || stamp.At != bedNow.Format(time.RFC3339Nano) {
+				t.Fatalf("resume lost the injected clock: %+v %t %v", stamp, present, err)
+			}
+		})
+	}
 }
 
 func TestResumeMergeIdentityAndWriters(t *testing.T) {

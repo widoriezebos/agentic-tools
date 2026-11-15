@@ -1198,7 +1198,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 			selected, selectionErr = plain.SelectDelegatedBatch(record.Install, home, root, record, goals,
 				plain.DelegatedProvenance{Kind: "selection", Grant: d.Grant, Decision: d.Decision, Session: d.Session,
 					Class: "lane-recovery", Delegate: d.By, CheckedAt: person.At}, delegatedSelectionFingerprint(record.Install, keeper), seams)
-			if selectionErr != nil {
+			if selectionErr != nil && selected == nil {
 				return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 					Summary: "no landing selection was admitted: " + selectionErr.Error(),
 					next:    inv.typedArgv(), nextReason: "a person runs this at the enrolled calling terminal, without a helm or grant"})
@@ -1207,16 +1207,16 @@ func runIntentLandingRun(inv *intentInvocation) int {
 			selected, selectionErr = plain.SelectPersonBatch(record.Install, root, record, goals, person.Proof, person.Root, person.Name, person.At, seams)
 		}
 	} else if inv.input.has("batch") {
-		selected, selectionErr = plain.RecordedPersonBatch(record.Install, record, inv.input.text("batch"))
-		if selectionErr != nil {
-			selected, selectionErr = plain.RecordedDelegatedBatch(record.Install, record, inv.input.text("batch"))
-		}
+		selected, selectionErr = recordedLandingBatch(record.Install, record, inv.input.text("batch"))
 	} else {
 		selected, selectionErr = plain.SelectBatch(record.Install, root, record, seams)
 	}
+	recorded := selected != nil && selected.Person != nil && selected.State != plain.BatchClosed
+	delegated := selected != nil && selected.Delegated != nil && selected.State != plain.BatchClosed
+	saved := recorded || delegated
 	syncErr := plain.SyncPolicyQuestion(record.Install, owners.machine, owners.now())
 	if selectionErr != nil {
-		if selected != nil && selected.Person != nil {
+		if saved {
 			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started", Data: selected, Details: []string{selectionErr.Error()}, next: inv.publicArgv("landing", "run"), nextReason: "retries the chosen goals"})
 		}
 		result := landingLaneFailure(targets, "no landing selection was admitted", selectionErr)
@@ -1227,12 +1227,10 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		}
 		return inv.render(result)
 	}
-	recorded := selected != nil && selected.Person != nil && selected.State != plain.BatchClosed
-	delegated := selected != nil && selected.Delegated != nil && selected.State != plain.BatchClosed
 	// Recording the choice succeeds independently of execution readiness.
 	// Its continuation uses only the durable batch identity at the destination.
 	if !inv.insideLaneCheckout(root) {
-		if recorded || delegated {
+		if saved {
 			inv.input.values["batch"] = []string{selected.ID}
 		}
 		return inv.handOffLandingRun(record)
@@ -1247,7 +1245,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 			next, why = remedy[0].next, remedy[0].nextReason+"; then landing run retries the chosen goals"
 			details = append(details, remedy[0].Details...)
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started", Data: selected, Details: details, next: next, nextReason: why})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started; " + reason, Data: selected, Details: details, next: next, nextReason: why})
 	}
 	if owners.helm(root).Active && !recorded {
 		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets,
@@ -1257,7 +1255,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(result)
 	}
 	if refused := inv.laneNotReady(owners, root); refused != nil {
-		if recorded {
+		if saved {
 			return pendingSelection(refused.Summary, refused)
 		}
 		return inv.render(*refused)
@@ -1305,7 +1303,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	run := owners.runKeeper(keeper)
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons, Problems: run.Problems}
 	details := []string{run.Line}
-	if recorded {
+	if saved {
 		data.BatchID, data.Members = selected.ID, selected.Members
 		details = append(details, "recorded batch "+selected.ID)
 		if selected.Selector.Value == "unknown" {
@@ -1325,7 +1323,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	switch run.Outcome {
 	case lane.AgentStarted:
 		summary := "started the landing agent " + run.Launch + " for " + wakeWords(run.Reasons) + observation
-		if recorded {
+		if saved {
 			members := []string{}
 			for _, member := range selected.Members {
 				members = append(members, member.Goal+" at "+shortLandingID(member.SHA))
@@ -1356,7 +1354,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 				page.Hint(textui.Hint{Reason: why})
 			}})
 	case lane.AgentPaused:
-		if recorded {
+		if saved {
 			return pendingSelection(run.Line, &intentResult{next: inv.publicArgv("landing", "start"), nextReason: "a person resumes the lane"})
 		}
 		summary := run.Line
@@ -1366,7 +1364,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "start"), nextReason: "resumes the lane; then run metasystem landing run again"})
 	default:
-		if recorded {
+		if saved {
 			return pendingSelection(run.Line)
 		}
 		summary := run.Line
@@ -1379,6 +1377,18 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state"})
 	}
+}
+
+// recordedLandingBatch preserves the refusal from the selection's own provenance.
+func recordedLandingBatch(install string, record lane.Record, id string) (*plain.Batch, error) {
+	batch, err := plain.ReadBatch(install)
+	if err != nil {
+		return nil, err
+	}
+	if batch != nil && batch.Delegated != nil {
+		return plain.RecordedDelegatedBatch(install, record, id)
+	}
+	return plain.RecordedPersonBatch(install, record, id)
 }
 
 // delegatedSelectionFingerprint reads the keeper's other holds under the
@@ -1549,7 +1559,7 @@ func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
 		}
 		summary := "the landing lane's engine bin/metasystem " + cause + ", so no landing agent was started"
 		if inv.input.has("batch") {
-			selected, err := plain.RecordedPersonBatch(install, record, inv.input.text("batch"))
+			selected, err := recordedLandingBatch(install, record, inv.input.text("batch"))
 			if err == nil {
 				return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started; " + summary, Data: selected,
 					next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then landing run retries the chosen goals"})

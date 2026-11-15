@@ -282,7 +282,7 @@ func TestLandingSelectionInternalSelectorNeedsItsRecord(t *testing.T) {
 		t.Fatalf("automatic preparation: %d %s starts=%d", code, out, automatic.starts)
 	}
 	proposal := automatic.batch(t)
-	if code, out := automatic.run(t, automatic.lane, "landing", "run", "--batch", proposal.ID); code == 0 || automatic.starts != 1 {
+	if code, out := automatic.run(t, automatic.lane, "landing", "run", "--batch", proposal.ID, "--json"); code == 0 || automatic.starts != 1 || !strings.Contains(out, "no person selection was recorded") {
 		t.Fatalf("internal selector without person record launched: %d %s starts=%d", code, out, automatic.starts)
 	}
 	b := newSelectionBed(t)
@@ -481,7 +481,7 @@ func (b *selectionBed) barrenKeeper() {
 func TestLandingSelectionUnderARecordedDelegation(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{
-		"delegated", "person", "budget", "no grant", "no decision", "no session", "by",
+		"delegated", "saved provider", "person", "budget", "no grant", "no decision", "no session", "by",
 		"provider hold", "provider unreadable", "keeper hold", "keeper unreadable", "untyped question hold", "person stop", "person proof",
 		"person question first", "person question later",
 	} {
@@ -489,6 +489,9 @@ func TestLandingSelectionUnderARecordedDelegation(t *testing.T) {
 			t.Parallel()
 			b := newSelectionBed(t)
 			b.barrenKeeper()
+			if name == "saved provider" {
+				helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=auto\n"), 0600))
+			}
 			state := lane.AgentState{Barren: 2, BarrenAt: b.now.Add(-time.Minute).Format(time.RFC3339Nano),
 				BarrenFingerprint: "unchanged", BarrenLaunches: []string{"first", "last"}}
 			data, err := json.Marshal(state)
@@ -518,6 +521,10 @@ func TestLandingSelectionUnderARecordedDelegation(t *testing.T) {
 			var personActs []bool
 			b.owners.landing.runKeeper = func(keeper lane.AgentKeeper) lane.AgentRun {
 				personActs = append(personActs, keeper.PersonAct)
+				if name == "saved provider" {
+					keeper.Observe = nil
+					keeper.ProviderHold = func(string) (string, error) { return "provider is held", nil }
+				}
 				return keeper.Run()
 			}
 			absent := exec.Command("/bin/sh", "-c", "exit 128").Run()
@@ -635,6 +642,14 @@ func TestLandingSelectionUnderARecordedDelegation(t *testing.T) {
 			if name == "person" {
 				if code != 0 || batch == nil || batch.Person == nil || batch.Delegated != nil || b.starts != 1 || !slices.Equal(personActs, []bool{true}) {
 					t.Fatalf("person selection lost its authority: code=%d output=%s batch=%+v starts=%d PersonAct=%v", code, out, batch, b.starts, personActs)
+				}
+				return
+			}
+			if name == "saved provider" {
+				var envelope struct{ Data plain.Batch }
+				helmMust(t, json.Unmarshal([]byte(out), &envelope))
+				if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "chosen goals are saved") || !strings.Contains(out, "provider is held") || batch == nil || envelope.Data.ID != batch.ID || !slices.Equal(envelope.Data.Members, batch.Members) || b.starts != 0 {
+					t.Fatalf("saved delegated act reported as failed: %d %s batch=%+v", code, out, batch)
 				}
 				return
 			}
@@ -931,7 +946,7 @@ func TestLandingSelectionSupersededSubjectIsNotAnswered(t *testing.T) {
 	_, _, err = plain.HandIn(b.lane, plain.Line{Goal: "a", SHA: "newer-a"})
 	helmMust(t, err)
 	before := b.starts
-	if code, out := b.run(t, b.lane, "landing", "run", "--batch", selected.ID); code == 0 || b.starts != before {
+	if code, out := b.run(t, b.lane, "landing", "run", "--batch", selected.ID, "--json"); code == 0 || b.starts != before || !strings.Contains(out, "goal a has a newer hand-in") {
 		t.Fatalf("stale recorded selector executed replacement: %d %s", code, out)
 	}
 }
@@ -949,7 +964,7 @@ func TestLandingSelectionCorruptRecordCannotAdmitAndPersonCanReplaceIdle(t *test
 	path := filepath.Join(plain.Dir(b.lane), "batch.json")
 	helmMust(t, os.WriteFile(path, corrupt, 0600))
 	before := b.starts
-	if code, out := b.run(t, b.lane, "landing", "run", "--batch", selected.ID); code == 0 || b.starts != before {
+	if code, out := b.run(t, b.lane, "landing", "run", "--batch", selected.ID, "--json"); code == 0 || b.starts != before || !strings.Contains(out, "incomplete provenance") {
 		t.Fatalf("incomplete record admitted authority: %d %s", code, out)
 	}
 	if code, out := b.run(t, b.lane, "landing", "run", "--goals", "a,b"); code != 0 {

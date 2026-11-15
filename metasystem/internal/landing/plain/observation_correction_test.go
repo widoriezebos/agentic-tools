@@ -259,7 +259,7 @@ func TestObservationRetakesPauseAndReferenceChanges(t *testing.T) {
 				}
 				switch change {
 				case "pause":
-					_, _ = lane.ClearPause(b.home)
+					_, _ = lane.ClearPauseAt(b.home, "a person", bedNow)
 				case "origin":
 					tip = "new"
 				case "merge":
@@ -323,7 +323,7 @@ func TestObservationStalledRefreshCannotRestorePause(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := RefreshShadow(b.home, bedNow, "A", seam); done <- err }()
 	<-captured
-	if _, err := lane.ClearPause(b.home); err != nil {
+	if _, err := lane.ClearPauseAt(b.home, "a person", bedNow); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := RefreshShadow(b.home, bedNow.Add(time.Minute), "B", shadowSeams()); err != nil {

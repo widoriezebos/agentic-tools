@@ -286,7 +286,7 @@ func TestLandingExecutionSelectedBatchDoesNotAdmitAgentTrunkProof(t *testing.T) 
 				return humanauthority.Proof{}, errors.New("agent")
 			}
 			if boundary == "proof-owner" {
-				_, err := lane.ClearPause(b.home)
+				_, err := lane.ClearPauseAt(b.home, "a person", b.now)
 				helmMust(t, err)
 				b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 					if args[0] == "rev-parse" {
@@ -429,7 +429,7 @@ func TestLandingExecutionInFlightProofRetainsEvidenceAfterLaterPause(t *testing.
 }
 
 func lanePauseAgain(home string, at time.Time) error {
-	if _, err := lane.ClearPause(home); err != nil {
+	if _, err := lane.ClearPauseAt(home, "a person", at); err != nil {
 		return err
 	}
 	_, err := lane.SetPause(home, "Wido", at)
