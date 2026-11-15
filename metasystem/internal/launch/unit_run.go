@@ -215,6 +215,9 @@ type UnitRunner struct {
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// BeforeResume checks authority before a resumed run writes any records.
+	// Its refusal may only return a settled judgement without changes.
+	BeforeResume func(UnitRunRecord, UnitRequest) error
 	// CollectLaunch settles the physical execution through its reservation owner.
 	CollectLaunch func(UnitRunRecord, Record, string) error
 	// Installation is the caller's installation, whose dispatch ledger holds this runner's launch reservations.
@@ -283,6 +286,14 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		plan, err = readUnitPlan(record.Plan, record.PlanDirectory)
 		if err != nil {
 			return UnitResult{}, err
+		}
+		if record.State != "cancelled" && runner.BeforeResume != nil {
+			if err := runner.BeforeResume(record, request); err != nil {
+				if record.State == "awaiting-judgement" && request.FollowUp == "" && !freshReadUnsettled(record) {
+					return UnitResult{Record: record, Round: len(record.Rounds)}, nil
+				}
+				return UnitResult{Record: record}, coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
+			}
 		}
 	}
 	if record.State != "cancelled" {
@@ -851,6 +862,12 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 	return readSequence{driver: runner.driver(record, round), model: round.ReadModel, diff: diffPath, serial: len(plan.Read.Outputs) > 0,
 		spec: StartSpec{StopInputs: true, Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
 			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, Round: round.Number, MaxRounds: record.MaxRounds}}
+}
+
+func freshReadUnsettled(record UnitRunRecord) bool {
+	return len(record.Rounds) > 0 && slices.ContainsFunc(record.Rounds[len(record.Rounds)-1].Steps, func(step UnitStep) bool {
+		return step.Name == FreshReadStep && (step.State == StepPending || step.State == StepStarting || step.State == StepRunning)
+	})
 }
 
 func (runner *UnitRunner) beforeLaunch(record UnitRunRecord, spec StartSpec) error {
