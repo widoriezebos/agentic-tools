@@ -1,0 +1,88 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "Later list only: if base-comparison reservations should settle at their supervisor's end, set UnitRun and UnitInstallation on those specs as well.",
+        "claim": "Base-comparison launches and round-result launches are unit launches with reservations, but the change leaves them unstamped. Their supervisors therefore never settle those reservations; the reservation stays pending until the next verb collects it, although the job readers already hide it once the launch has ended.",
+        "class": "other",
+        "evidence": "unit_attribution.go:251 and :376 and round_result.go:85 call runner.Manager.Start directly, not through the driver closure that sets UnitRun and UnitInstallation (unit_run.go:858-865). collectLaunches still settles their reservations later (unit_accounting.go:16-18). Decision 4 scopes stamping to 'every unit launch the driver starts', so this is consistent with the brief and the slice works and is safe without it. It belongs on the later list.",
+        "id": "code-critic-4a3f7e6048e574373f8bf0b6:1",
+        "material": false,
+        "relation": "R-124 (a finding the slice works and is safe without goes to the later list)",
+        "severity": "low",
+        "where": "metasystem/internal/launch/unit_attribution.go"
+      },
+      {
+        "change": "None needed for this slice. A later test could drive processTransition's own families if the wiring ever stops being equivalent to the default.",
+        "claim": "The wiring line added to system status's job inventory has the same effect as leaving it out, and T5 builds its own families instead of going through processTransition. So T5 cannot detect a missing or wrong wiring line in process_verbs.go.",
+        "class": "other",
+        "evidence": "process_verbs.go:137 passes engineHost{}.UnitLaunchStatus, which reads launch.Store{} (delegate_host.go:27-34). UnitLaunchEnded's nil default also reads launch.Store{} (dispatch/unit_launch.go:20-25). T5 sets b.families = stoptransition.LocalFamilies(...LaunchStatus: engineHost{launches: manager}...) directly (intent_unit_supervision_test.go, TestAnEndedUnitLaunchIsNoRunningJob). Production behaviour is still correct.",
+        "id": "code-critic-4a3f7e6048e574373f8bf0b6:2",
+        "material": false,
+        "relation": "R-124 (a finding the slice works and is safe without goes to the later list)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/process_verbs.go"
+      },
+      {
+        "change": "Optional: point the nil-default case at a root under t.TempDir() (for example through an environment override, if the store has one), or drop that assertion.",
+        "claim": "The new dispatch unit test calls UnitLaunchEnded with a nil status function, which reads the real default launch store on the host running the test rather than a temporary directory.",
+        "class": "other",
+        "evidence": "dispatch/unit_launch_ended_test.go: 'if UnitLaunchEnded(record, nil)' expects false for the id 'ended-projection-\u003cstate\u003e', which the default store (launch.DefaultRoot()) is assumed not to hold. The read is read-only and the id is unlikely to exist, so the test is unlikely to be flaky.",
+        "id": "code-critic-4a3f7e6048e574373f8bf0b6:3",
+        "material": false,
+        "relation": "R-104 (tests use injected state, never the live host)",
+        "severity": "low",
+        "where": "metasystem/internal/dispatch/unit_launch_ended_test.go"
+      }
+    ],
+    "id": "code-critic-4a3f7e6048e574373f8bf0b6",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-4a3f7e6048e574373f8bf0b6/rounds/1/return.md",
+    "subject": {
+      "commit": "a60f4cfe18dfe2e20d9a03e71fe41a1ab585397f",
+      "diffDigest": "c0ed61f556c3c90a2d34c24ca75dd252cb701d43dbd529ca9a70d0f9f8fe24c9",
+      "kind": "commit",
+      "parent": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "tree": "09ab559bf0b25c04f7eedce611dced472a301636"
+    }
+  },
+  "readDigest": "e840bf3926349e69141ea2eafada45680c7bd1b214d6b3ddbe1356748e5d3469",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U2",
+  "subject": {
+    "commit": "a60f4cfe18dfe2e20d9a03e71fe41a1ab585397f",
+    "parent": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+    "tree": "09ab559bf0b25c04f7eedce611dced472a301636",
+    "patchDigest": "c0ed61f556c3c90a2d34c24ca75dd252cb701d43dbd529ca9a70d0f9f8fe24c9",
+    "unitDigest": "18d3e9a3ac34e72374fd1330276f41ad8b6ea1528a914fd82c06c0460074e954"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-4a3f7e6048e574373f8bf0b6",
+    "round": 1,
+    "closureSha256": "5cd46f75f6397188508ba62c05e8689c567deb858d5d9c0ccdfd80b45f71c235"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "09ab559bf0b25c04f7eedce611dced472a301636",
+    "runId": "goal-read-gate-20261115t033806z-5cfab3c2050ebcbc"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "e7381b3101a14e808bef25f50d38239d3745297af3b56c06aef56446d7e5ffb5"
+}
