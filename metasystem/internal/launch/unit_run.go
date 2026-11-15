@@ -853,6 +853,18 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, Round: round.Number, MaxRounds: record.MaxRounds}}
 }
 
+func (runner *UnitRunner) beforeLaunch(record UnitRunRecord, spec StartSpec) error {
+	if runner.BeforeModelLaunch != nil {
+		if err := runner.BeforeModelLaunch(record, spec); err != nil {
+			if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") || IsCode(err, "LAUNCH_BUILD_CAPACITY") {
+				return err
+			}
+			return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
+		}
+	}
+	return nil
+}
+
 // driver starts a unit round's launches under the run's own launch ids,
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
@@ -869,13 +881,8 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 			return runner.save(*record)
 		}, unit: true, snapshot: runner.snapshotRepository, wait: runner.waitLaunch,
 		before: func(spec StartSpec) error {
-			if runner.BeforeModelLaunch != nil {
-				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-					if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") || IsCode(err, "LAUNCH_BUILD_CAPACITY") {
-						return err
-					}
-					return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
-				}
+			if err := runner.beforeLaunch(*record, spec); err != nil {
+				return err
 			}
 			if runner.named != nil {
 				return runner.named.verify(runner)
