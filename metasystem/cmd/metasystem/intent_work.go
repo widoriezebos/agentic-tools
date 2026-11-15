@@ -1577,6 +1577,29 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_WAIT_RETRY"):
+			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "This wait needs repeating; its error was not recorded as a work failure",
+				Data: unitData(record, runner.Manager), next: again, nextReason: "the same command continues it", Details: details}
+		case launch.IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED"):
+			next, reason := again, "after the cause in the details is repaired"
+			var held goalHeldElsewhere
+			var authorization *launch.CodedError
+			if errors.As(err, &held) {
+				next, reason = inv.claimRemedy(record.Goal, err), claimRemedyReason(err, "a person takes the goal over; or the session holding it builds")
+			} else if errors.As(err, &authorization) {
+				for cause := authorization.Reason; cause != nil; cause = errors.Unwrap(cause) {
+					var repair *refusal.Coded
+					if errors.As(cause, &repair) && repair.Run != "" {
+						reason = repair.Run
+					}
+					if refusal.CodeOf(cause) == "OWNED-ELSEWHERE" {
+						next, reason = inv.publicArgv("session", "isolate"), "then repeat the claim in the resulting writer session"
+						break
+					}
+				}
+			}
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "The next step could not start; no failure was recorded",
+				Data: unitData(record, runner.Manager), next: next, nextReason: reason, Details: details}
 		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
 			waits := "; no build was launched"
 			if len(record.Rounds) > 0 && slices.ContainsFunc(record.Rounds[len(record.Rounds)-1].Steps, func(step launch.UnitStep) bool { return step.State == launch.StepStarting && step.Kind == "attest" }) {
