@@ -476,3 +476,98 @@ func TestKeeperHeldReservationExplainsRetryAndCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestTheKeeperClearsOnlyTheBarrenHoldForADelegate(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"start", "helm", "observation", "stop question", "provider", "pause", "pause during wake", "pause during start"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			home, _, module := nestedLaneDirs(t)
+			clock := laneNow
+			reasons := []string{queuedReason}
+			agent := &fakeAgent{}
+			keeper := agent.keeper(home, module, &clock, wakeFor(&reasons))
+			keeper.Fingerprint = func(string) (string, error) { return "same", nil }
+			for range 2 {
+				if run := keeper.Run(); run.Outcome != AgentStarted {
+					t.Fatalf("initial start: %+v", run)
+				}
+				agent.running = ""
+				clock = clock.Add(time.Minute)
+			}
+			if run := keeper.Run(); run.Outcome != AgentHeld {
+				t.Fatalf("expected barren hold: %+v", run)
+			}
+			hold, err := ReadAgentState(home)
+			if err != nil || hold.BarrenAt == "" {
+				t.Fatalf("barren episode: %+v %v", hold, err)
+			}
+			keeper.Explicit = true
+			keeper.DelegatedSelection = func(_ Record, state AgentState) bool { return state.BarrenAt == hold.BarrenAt }
+			keeper.DelegatedContinuation = func(Record) string { return "delegated-batch" }
+			want, reason := AgentHeld, ""
+			pause := func() {
+				t.Helper()
+				if _, err := SetPauseBecause(home, "Wido", "maintenance", clock); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch name {
+			case "helm":
+				keeper.Helmed = func(string) bool { return true }
+				reason = "at the helm"
+			case "observation":
+				keeper.Observe = func(Record) error { return errors.New("observation unavailable") }
+				reason = "observation failed"
+			case "stop question":
+				keeper.Observe = func(Record) error { return &ObservationError{StopQuestion: errors.New("question unavailable")} }
+				reason = "stop question synchronization failed"
+			case "provider":
+				keeper.ProviderHold = func(string) (string, error) { return "provider is held", nil }
+				reason = "provider is held"
+			case "pause":
+				pause()
+				want = AgentPaused
+			case "pause during wake":
+				keeper.Sources.Reasons = func(string) ([]string, error) { pause(); return reasons, nil }
+				want = AgentPaused
+			case "pause during start":
+				start := keeper.Start
+				keeper.Start = func(root string, wake Wake) (string, error) { pause(); return start(root, wake) }
+				keeper.Cancel = func(string) error { agent.running = ""; return nil }
+				want = AgentPaused
+			default:
+				want = AgentStarted
+			}
+			run := keeper.Run()
+			starts := 2
+			if want == AgentStarted || name == "pause during start" {
+				starts++
+			}
+			if run.Outcome != want || len(agent.starts) != starts || !strings.Contains(run.Line, reason) {
+				t.Fatalf("delegate: %+v starts=%d; want %s, %d starts, %q", run, len(agent.starts), want, starts, reason)
+			}
+			if name == "pause during start" && agent.running != "" {
+				t.Fatal("pause left the new agent running")
+			}
+			if want != AgentStarted {
+				return
+			}
+			if agent.starts[2].BatchID != "delegated-batch" {
+				t.Fatalf("wake lost its batch: %+v", agent.starts[2])
+			}
+			agent.running = ""
+			clock = clock.Add(time.Minute)
+			if run := keeper.Run(); run.Outcome != AgentStarted {
+				t.Fatalf("second barren run: %+v", run)
+			}
+			agent.running = ""
+			clock = clock.Add(time.Minute)
+			run = keeper.Run()
+			state, err := ReadAgentState(home)
+			if err != nil || run.Outcome != AgentHeld || len(agent.starts) != 4 || state.BarrenAt == hold.BarrenAt {
+				t.Fatalf("old decision cleared a later episode: %+v state=%+v err=%v starts=%d", run, state, err, len(agent.starts))
+			}
+		})
+	}
+}

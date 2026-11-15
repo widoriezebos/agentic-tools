@@ -121,10 +121,14 @@ type AgentKeeper struct {
 	// AdmitWake rereads execution fences under the home lock, without taking the install lock.
 	AdmitWake func(string, Wake) (Wake, error)
 	// Explicit is a start asked for by name (landing run), not the keeper's
-	// own. Only a recorded person selection may clear a barren count.
+	// own. A recorded selection may clear the barren hold it covers.
 	Explicit bool
 	// PersonSelection reads an atomic selection snapshot without taking the queue lock.
 	PersonSelection func(Record) bool
+	// DelegatedSelection clears only the barren episode named by the selection.
+	DelegatedSelection func(Record, AgentState) bool
+	// DelegatedContinuation names a batch without bypassing a pause or helm.
+	DelegatedContinuation func(Record) string
 	// Continuation names a recorded batch admitted through the current fences.
 	// It reads snapshots only; the home lock must never acquire the queue lock.
 	Continuation func(Record) string
@@ -374,7 +378,7 @@ func (k AgentKeeper) Run() (out AgentRun) {
 		fresh, present, readErr := Read(k.Home)
 		changedLane := readErr != nil || !present || fresh != registered
 		currentScope := k.scope(registered)
-		if by, paused := pausedClosed(k.Home); (paused && currentScope == "" || currentScope != scope || changedLane) && k.Cancel != nil {
+		if by, paused := pausedClosed(k.Home); (paused && k.personScope(registered) == "" || currentScope != scope || changedLane) && k.Cancel != nil {
 			result.Outcome = AgentPaused
 			if err := k.Cancel(id); err != nil {
 				result.Outcome = AgentFailed
@@ -398,6 +402,16 @@ func (k AgentKeeper) Run() (out AgentRun) {
 }
 
 func (k AgentKeeper) scope(record Record) string {
+	if scope := k.personScope(record); scope != "" {
+		return scope
+	}
+	if k.DelegatedContinuation != nil {
+		return k.DelegatedContinuation(record)
+	}
+	return ""
+}
+
+func (k AgentKeeper) personScope(record Record) string {
 	if k.Continuation == nil {
 		return ""
 	}
@@ -412,10 +426,10 @@ func pausedLine(root, by string) string {
 // pause, and an agent that runs or is being started.
 func (k AgentKeeper) recheck(record Record) (AgentRun, bool) {
 	root := record.Root
-	if by, paused := pausedClosed(k.Home); paused && k.scope(record) == "" {
+	if by, paused := pausedClosed(k.Home); paused && k.personScope(record) == "" {
 		return agentRun(AgentPaused, root, pausedLine(root, by)), true
 	}
-	if k.Helmed != nil && k.Helmed(root) && k.scope(record) == "" {
+	if k.Helmed != nil && k.Helmed(root) && k.personScope(record) == "" {
 		return agentRun(AgentHeld, root, "the landing checkout is at the helm; only a recorded person selection may continue"), true
 	}
 	id, running, err := k.Running()
@@ -462,7 +476,7 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 			return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
 		}
 	}
-	if by, paused := pausedClosed(k.Home); paused && k.scope(record) == "" {
+	if by, paused := pausedClosed(k.Home); paused && k.personScope(record) == "" {
 		return agentRun(AgentPaused, root, pausedLine(root, by)), false
 	}
 	if reason, held, err := k.barrenHold(record); err != nil {
@@ -493,7 +507,7 @@ func (k AgentKeeper) countBarren(state *AgentState, root string) {
 }
 
 // barrenHold holds the keeper's own start after barrenLimit launches in a
-// row ended with the lane unchanged, until the lane changes or an explicit run retries a recorded person selection.
+// row ended with the lane unchanged, until the lane changes or a recorded selection covers the hold.
 func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 	root := record.Root
 	state, _ := ReadAgentState(k.Home)
@@ -501,6 +515,7 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 		return "", false, nil
 	}
 	clear := k.Explicit && k.PersonSelection != nil && k.PersonSelection(record)
+	clear = clear || k.Explicit && k.DelegatedSelection != nil && k.DelegatedSelection(record, state)
 	if !clear && state.Barren >= barrenLimit {
 		now, err := k.Fingerprint(root)
 		clear = err == nil && now != state.BarrenFingerprint

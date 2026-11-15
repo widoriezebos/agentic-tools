@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -62,6 +64,132 @@ func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 	// it hands off to the lane's own engine.
 	bed.cwd = bed.landingA
 	return bed, store
+}
+
+func TestLandingRunContinuesTheRecordedDelegatedBatch(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"start", "person policy", "provider", "helm", "batch", "hold time", "hold fingerprint", "hold launch", "pause", "continue", "continue provider", "continue pause", "handoff"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newSelectionBed(t)
+			if name != "person policy" {
+				helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=auto\nproof.trunk-every=1h\nproof.full=fixture-proof\n"), 0600))
+			}
+			b.barrenKeeper()
+			b.keeper.Observe = nil
+			state := lane.AgentState{Barren: 2, BarrenAt: b.now.Add(-time.Minute).Format(time.RFC3339Nano),
+				BarrenFingerprint: "unchanged", BarrenLaunches: []string{"first", "last"}}
+			data, err := json.Marshal(state)
+			helmMust(t, err, os.WriteFile(lane.AgentStatePath(b.home), data, 0600))
+			seams := b.owners.landing.plainProve
+			seams.Lane = func() (lane.Record, error) { return b.record, nil }
+			helmMust(t, plain.RecordBarrenStop(b.lane, state, lane.AgentStatePath(b.home), b.now.Add(-time.Minute), seams))
+			helmMust(t, plain.SyncPolicyQuestion(b.lane, b.owners.landing.machine, b.now, seams))
+			absent := exec.Command("/bin/sh", "-c", "exit 128").Run()
+			git := b.owners.landing.plainProve.Git
+			b.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
+				if args[len(args)-1] == "MERGE_HEAD^{commit}" {
+					return "", absent
+				}
+				return git(root, args...)
+			}
+			b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+				return humanauthority.HelmProof(root, humanauthority.HelmGrant{By: "Wido", Grant: "G1", Act: "lane-recovery", Decision: "D1", Session: "main-1"}, at)
+			}
+			var seen lane.AgentRun
+			var batch *plain.Batch
+			provider := func(string) (string, error) { return "provider is held", nil }
+			b.owners.landing.runKeeper = func(keeper lane.AgentKeeper) lane.AgentRun {
+				batch, err = plain.ReadBatch(b.lane)
+				helmMust(t, err)
+				if batch == nil || batch.Person != nil || batch.Delegated == nil {
+					t.Fatalf("delegated continuation lost its authority: batch=%+v", batch)
+				}
+				switch name {
+				case "provider", "continue provider":
+					keeper.ProviderHold = provider
+				case "pause", "continue pause":
+					_, err := lane.SetPauseBecause(b.home, "Wido", "maintenance", b.now)
+					helmMust(t, err)
+				case "hold time", "hold fingerprint", "hold launch":
+					changed := state
+					if name == "hold time" {
+						changed.BarrenAt = b.now.Format(time.RFC3339Nano)
+					}
+					if name == "hold fingerprint" {
+						changed.BarrenFingerprint = "different"
+					}
+					if name == "hold launch" {
+						changed.BarrenLaunches = []string{"other"}
+					}
+					data, err := json.Marshal(changed)
+					helmMust(t, err, os.WriteFile(lane.AgentStatePath(b.home), data, 0600))
+					keeper.Fingerprint = func(string) (string, error) { return changed.BarrenFingerprint, nil }
+				}
+				if strings.HasPrefix(name, "continue") {
+					keeper.PersonAct = true
+					keeper.PersonSelection = func(lane.Record) bool { return true }
+					keeper.Continuation = func(lane.Record) string { return "person-batch" }
+					seen = plain.ContinueDelegated(b.lane, b.record, keeper)
+				} else {
+					seen = keeper.Run()
+				}
+				return seen
+			}
+			if name == "helm" {
+				b.owners.landing.helm = func(string) helm.State { return helm.State{Active: true} }
+			}
+			cwd := b.lane
+			if name == "handoff" {
+				cwd = b.seat
+				binary := filepath.Join(b.lane, "bin", "metasystem")
+				helmMust(t, os.MkdirAll(filepath.Dir(binary), 0700))
+				helmMust(t, testexec.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\"\n"), 0700))
+			}
+			code, out := b.run(t, cwd, "landing", "run", "--goals", "a,b")
+			saved, err := plain.ReadBatch(b.lane)
+			helmMust(t, err)
+			if saved == nil || saved.Delegated == nil || saved.Person != nil {
+				t.Fatalf("selection missing: %d %s %+v", code, out, saved)
+			}
+			switch name {
+			case "helm":
+				if code == 0 || b.starts != 0 || !strings.Contains(out, "at the helm") {
+					t.Fatalf("helm bypassed: %d %s starts=%d", code, out, b.starts)
+				}
+			case "handoff":
+				if code != 0 || b.starts != 0 || !strings.Contains(out, "landing run --batch "+saved.ID) {
+					t.Fatalf("handoff lost batch: %d %s", code, out)
+				}
+			case "provider", "continue provider":
+				if b.starts != 0 || seen.Outcome != lane.AgentHeld || !strings.Contains(out, "provider is held") {
+					t.Fatalf("provider bypassed: %d %s %+v", code, out, seen)
+				}
+			case "pause", "continue pause":
+				if b.starts != 0 || seen.Outcome != lane.AgentPaused {
+					t.Fatalf("pause bypassed: %d %s %+v", code, out, seen)
+				}
+			case "hold time", "hold fingerprint", "hold launch":
+				if b.starts != 0 || seen.Outcome != lane.AgentHeld {
+					t.Fatalf("different episode cleared: %d %s %+v", code, out, seen)
+				}
+			case "person policy":
+				if b.starts != 0 || seen.Outcome != lane.AgentHeld || !strings.Contains(out, "person's answer") {
+					t.Fatalf("person selection policy bypassed: %d %s %+v", code, out, seen)
+				}
+			default:
+				if code != 0 || b.starts != 1 || seen.Outcome != lane.AgentStarted {
+					t.Fatalf("delegated batch not started: %d %s %+v starts=%d", code, out, seen, b.starts)
+				}
+				if name == "batch" {
+					code, out = b.run(t, b.lane, "landing", "run", "--batch", saved.ID)
+					if code != 0 || b.starts != 2 {
+						t.Fatalf("recorded batch refused: %d %s starts=%d", code, out, b.starts)
+					}
+				}
+			}
+		})
+	}
 }
 
 func landingLaunches(t *testing.T, store launch.Store) []launch.Record {
