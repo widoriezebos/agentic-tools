@@ -13,6 +13,7 @@ import (
 
 type lanePersonObservation struct {
 	Proof      humanauthority.Proof
+	Delegated  *humanauthority.HelmGrant
 	Name, Root string
 	At         time.Time
 }
@@ -71,6 +72,10 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 			reason = "this terminal is not enrolled for the landing install; type: " + strings.Join(remedy.Argv, " ")
 		}
 		return refused(reason, err)
+	}
+	if grant := observed.Proof.Helm; grant != nil && grant.Grant != "" && grant.Act == "lane-recovery" && grant.Decision != "" && grant.Session != "" && act == "select the landing batch" && !inv.input.has("by") {
+		observed.Delegated, observed.Name = grant, grant.By
+		return observed, nil
 	}
 	if observed.Proof.Helm != nil || !observed.Proof.EnrolledTerminalFor(observed.Root) {
 		return refused("this shell has no direct enrolled-terminal proof", nil)

@@ -830,6 +830,46 @@ func TestADelegatedClassRunsOnlyInsideADecision(t *testing.T) {
 	}
 }
 
+func TestNoClassAdmitsAValueAct(t *testing.T) {
+	t.Parallel()
+	for _, act := range [][]string{
+		{"goal", "accept-risk", bedGoal, "--finding", "F1", "--reason", "TEXT"},
+		{"work", "land", bedGoal, "--exception", "CODE"},
+		{"landing", "land-anyway", bedGoal},
+		{"goal", "approve", "--id", bedGoal, "--budget", "9d/40/4000m/9/9"},
+		{"goal", "budget", bedGoal, "1d/10/720m/1/3"},
+		{"goal", "budget", bedGoal, "norm"},
+		{"settings", "set", "host.load-max", "9"},
+		{"grant", "add", "--acts", "everything", "--for", "1h"},
+		{"system", "enroll", "--name", "X"},
+		{"helm", "take"},
+		{"question", "answer", "Q1", "yes"},
+	} {
+		t.Run(strings.Join(act, " "), func(t *testing.T) {
+			t.Parallel()
+			b := newDecisionAgentBed(t)
+			b.lineage = ""
+			code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything",
+				"--classes", strings.Join(goal.AttorneyClasses, ","), "--lineage", "seat", "--for", "24h")
+			if code != 0 || got.Outcome != intentConfirmed {
+				t.Fatalf("person's grant: %d %+v", code, got)
+			}
+			b.lineage = launch.SeatOwnerLineage
+			before := b.repo.accepted
+			for _, class := range goal.AttorneyClasses {
+				code, got := b.record([]string{"--class", class}, act)
+				if code != 2 || got.Outcome != intentRefused || !(strings.Contains(got.Summary, "in no class") || strings.Contains(got.Summary, ", not "+class)) {
+					t.Fatalf("value act was not refused at classification: class=%s code=%d result=%+v", class, code, got)
+				}
+				lines, bad, err := humanauthority.ReadDecisions(b.home)
+				if b.calls != 0 || b.locks != 0 || b.trace.Len() != 0 || b.repo.accepted != before || len(lines) != 0 || bad != 0 || err != nil {
+					t.Fatalf("value refusal changed state: class=%s calls=%d locks=%d lines=%+v err=%v", class, b.calls, b.locks, lines, err)
+				}
+			}
+		})
+	}
+}
+
 func TestNoGrantProofReachesAPersonOverride(t *testing.T) {
 	t.Parallel()
 	release := func(t *testing.T, b *decisionAgentBed, proof humanauthority.Proof, cascade bool) {

@@ -64,6 +64,16 @@ func ReadAgentState(home string) (AgentState, error) {
 	return state, nil
 }
 
+// QuestionHoldError identifies every question that holds a landing start.
+// QuestionID and Reason describe the first holding question.
+type QuestionHoldError struct {
+	QuestionID  string
+	QuestionIDs []string
+	Reason      string
+}
+
+func (e *QuestionHoldError) Error() string { return e.Reason }
+
 // AgentKeeper wakes the host lane's landing agent.
 type AgentKeeper struct {
 	// Refresh observes the shadow before any host lock or early return.
@@ -525,6 +535,10 @@ func (k AgentKeeper) held(root string) (string, bool) {
 	}
 	for _, hold := range holds {
 		reason, err := hold(root)
+		var question *QuestionHoldError
+		if errors.As(err, &question) {
+			reason, err = question.Reason, nil
+		}
 		if err != nil {
 			return fmt.Sprintf("the landing agent at %s is not started: whether it may start can't be read (%v)", root, err), true
 		}
