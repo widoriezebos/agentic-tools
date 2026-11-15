@@ -1,0 +1,88 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "No code change. Record the observed parent baseline for T6(a), a BUDGET_REFUSED refusal, in the unit's hand-in notes.",
+        "claim": "On the parent commit, T6's person case (TestANamedRevisionBooksTheLateReadFirst, person=true) fails differently from the way the brief predicts. The brief says that without U1 the revise 'starts round 2 over a round still holding read:fresh running'. Actually the round-2 build is refused with BUDGET_REFUSED, because the fresh read's pending reservation still counts against the goal's budget. The test is still a regression (it fails before the change and passes after), so the proof stands. Only the recorded baseline wording is inaccurate, which the brief asks the builder to report.",
+        "class": "other",
+        "evidence": "Ran on the parent e7b387240 with the commit's test file copied in: intent_unit_late_read_test.go:140 'named correction: 1 goal standing-validation has no budget for this launch ... BUDGET_REFUSED reservedJobMinutesLimit used=123+120 proposed limit=240'. The brief, T6 Baseline: 'on main (a) starts round 2 over a round still holding read:fresh running and its reservation pending'.",
+        "id": "code-critic-b72be46c7173eddc2a7b61d3:1",
+        "material": false,
+        "relation": "brief: 'where this brief and the page differ, the page wins and the builder reports the difference'",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_unit_late_read_test.go"
+      },
+      {
+        "change": "None for U1. If it ever matters, add it to the design's 'later, when it hurts' list.",
+        "claim": "Continue returns the recorded judgement without reaching Advance when the run's worktree identity cannot be resolved. In that rare case a fresh read that has ended stays unbooked. This is pre-existing behavior, outside the brief's named callers, and the next verb that can resolve the worktree books the read.",
+        "class": "other",
+        "evidence": "internal/launch/unit_named.go:105-112: if namedUnitIdentity fails and the run is awaiting judgement with no follow-up, it returns UnitResult{Record: record} before treeCall and Advance. No reproduction was run; this is noted only, not a defect.",
+        "id": "code-critic-b72be46c7173eddc2a7b61d3:2",
+        "material": false,
+        "relation": "R-124-m1u: a corner the slice's first use does not need",
+        "severity": "low",
+        "where": "metasystem/internal/launch/unit_named.go"
+      },
+      {
+        "change": "None for U1. U2's planned reread in work review (Scope U2, T4) covers it.",
+        "claim": "Until U2 lands, a work wait that books the fresh read while a work review is waiting on that same read now changes run.json during the review's wait. The review then returns UNIT_WAIT_RETRY ('the run changed during the wait; repeat the command'). Before U1, a work wait wrote nothing in this case. The situation recovers on its own: repeating the review reaches the booked round, and U2's planned single reread (brief T4) removes the extra step.",
+        "class": "other",
+        "evidence": "internal/launch/tree_reservation.go:484-490: CommandWait compares run.json before and after the wait and returns UNIT_WAIT_RETRY when it differs. unit_run.go:316: the new booking saves run.json through finish (unit_run.go:1108). This is a traced path only, not run, and recoverable by repeating the command.",
+        "id": "code-critic-b72be46c7173eddc2a7b61d3:3",
+        "material": false,
+        "relation": "brief Scope U2: work review rereads once after UNIT_WAIT_RETRY",
+        "severity": "low",
+        "where": "metasystem/internal/launch/unit_run.go"
+      }
+    ],
+    "id": "code-critic-b72be46c7173eddc2a7b61d3",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-b72be46c7173eddc2a7b61d3/rounds/1/return.md",
+    "subject": {
+      "commit": "b2dc2a0e4738fb5e32f3449c2db4794b90a43eae",
+      "diffDigest": "eaeb4ca7e8bb7ca98010acbd977ba0fcecc1d4bee681c4d143a8e62035e69573",
+      "kind": "commit",
+      "parent": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "tree": "7ea57e54978c8e3416a2df7a29307749c7e73109"
+    }
+  },
+  "readDigest": "d4684a75711f468bd8a24af0d72132f59f20ca6be162c2c16e7baba4a164fcce",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U1",
+  "subject": {
+    "commit": "b2dc2a0e4738fb5e32f3449c2db4794b90a43eae",
+    "parent": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+    "tree": "7ea57e54978c8e3416a2df7a29307749c7e73109",
+    "patchDigest": "eaeb4ca7e8bb7ca98010acbd977ba0fcecc1d4bee681c4d143a8e62035e69573",
+    "unitDigest": "80a6b622ccff61e4cb1e4528e5de034525e51bc4a6a2b7b2901639b8db67a3f2"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-b72be46c7173eddc2a7b61d3",
+    "round": 1,
+    "closureSha256": "5fe93e11df8d148828587594703d99f272ce107979834764ac1d8496e0169ee2"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7ea57e54978c8e3416a2df7a29307749c7e73109",
+    "runId": "goal-read-gate-20261115t002900z-a93aae042404d692"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/launch/unit_test.go",
+      "readerWord": "reviewed by critic root code-critic-b72be46c7173eddc2a7b61d3"
+    }
+  ],
+  "sha256": "328326f1d1e872ffcd348325c027eb4f1bd1ec5582c75ffea60de7589054c518"
+}
