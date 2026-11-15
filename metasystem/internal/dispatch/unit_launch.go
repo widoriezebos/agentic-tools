@@ -7,8 +7,25 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
+
+// UnitLaunchEnded excludes an ended physical launch from the running job projection.
+func UnitLaunchEnded(record map[string]any, launchStatus func(string) (string, error)) bool {
+	lens := JobRecordOf(record)
+	if asString(record["unitRun"]) == "" || lens.OperationID() != "unit-launch:"+lens.JobID() || TerminalStatus(lens.Status()) {
+		return false
+	}
+	if launchStatus == nil {
+		launchStatus = func(id string) (string, error) {
+			execution, err := (launch.Store{}).Read(id)
+			return string(execution.State), err
+		}
+	}
+	state, err := launchStatus(lens.JobID())
+	return err == nil && launch.State(state).Terminal()
+}
 
 // ReserveUnitLaunch binds a physical execution to its goal revision and unit
 // round before it starts. Repeating the same admission joins that reservation.
