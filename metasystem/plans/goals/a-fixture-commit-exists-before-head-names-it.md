@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Diagnose on the MacBook (seat m1f; the failure reproduces only there: lane proofs of 2026-11-07 and 2026-11-15 08:02Z and their repeats, logs under the MacBook's agentic-tools-landing/metasystem/artifacts/agents/landing/proofs). Fix the fixture so the commit exists before HEAD names it, whatever the git version; test-only change, one unit (--last). The two tests that failed once and passed on the repeat in the same proof (TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress, TestGitAdapterGoManifestInventoryMatchesNativeGoList) are noted in the report, not fixed here.
 - OpenedAt: 2026-11-15T12:59:34Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1f
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=NE0NP5MWGQG17Z9A7753ZSHKAE-m1e-666638bb minutes=1200 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-15T12:59:34Z HYVHQTQ6NYFB49F28QYZMG707N-m1e-666638bb open actor=human:Wido targets=a-fixture-commit-exists-before-head-names-it
 - 2026-11-15T12:59:51Z NE0NP5MWGQG17Z9A7753ZSHKAE-m1e-666638bb approve actor=human:Wido targets=a-fixture-commit-exists-before-head-names-it
-Integrity: sha256=d23a5a6bfc9d7414bd84843802dede55589f20afc09c4b5c7f2fb275151dd013
+- 2026-11-15T13:00:14Z XMG418XX6KXDW9H13Y64XF9QDW-m1e-666638bb set-pin actor=human:Wido targets=a-fixture-commit-exists-before-head-names-it
+Integrity: sha256=9b7a42ab27e853aad7918783582948f21baae71a75d4e23133e4c7360adbd7b9
