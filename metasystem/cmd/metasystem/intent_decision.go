@@ -202,6 +202,11 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	}
 	result := intentResult{Outcome: child.Outcome, code: child.Exit, Summary: "decision " + d.ID + " recorded: " + child.Summary,
 		Targets: []intentTarget{{Kind: "decision", ID: d.ID}}, Data: map[string]any{"decision": d}}
+	if agent {
+		if line, remainder := humanauthority.OverruleLine(d); line != "" {
+			result.text = []string{line, remainder}
+		}
+	}
 	if impact != "" {
 		result.Data.(map[string]any)["impact"] = impact
 	}
@@ -376,7 +381,16 @@ func decisionOverrule(inv *intentInvocation, home string) (string, *intentResult
 				}
 				shown = strings.Join(targets, ", ")
 			}
-			impact += fmt.Sprintf(" ran %s: %s; %s. Overruling records your decision; it does not undo that act. To undo it: %s.", shellCommand(d.Argv), d.Outcome, shown, d.Undo)
+			impact += fmt.Sprintf(" ran %s: %s; %s.", shellCommand(d.Argv), d.Outcome, shown)
+			if line, remainder := humanauthority.OverruleLine(d); d.Grant != "" && line != "" {
+				compensation := "no compensation"
+				if separator := strings.LastIndex(line, " -- "); d.Class != "run-release" && separator >= 0 {
+					compensation = line[separator+4:]
+				}
+				impact += " Overruling runs " + compensation + "; it cannot undo: " + remainder + "."
+			} else {
+				impact += " Overruling records your decision; it does not undo that act. To undo it: " + d.Undo + "."
+			}
 		}
 		out := inv.stdout
 		if inv.input.switched("json") {

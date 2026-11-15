@@ -105,6 +105,111 @@ func TestAGrantKeepsItsReason(t *testing.T) {
 	}
 }
 
+func TestTheOverruleUndoesWhatItCan(t *testing.T) {
+	t.Parallel()
+	for _, class := range []string{"lane-recovery", "budget", "run-release"} {
+		t.Run(class, func(t *testing.T) {
+			t.Parallel()
+			b := newDecisionAgentBed(t)
+			at, err := b.commandNow(b.root())
+			helmMust(t, err)
+			d := humanauthority.Decision{ID: "D1", At: at, Actor: "main-1", Grant: b.grant, By: "Wido", Class: class,
+				Argv: []string{"goal", "budget", "--json", "G", "one-more-day"}, Outcome: intentConfirmed}
+			if class == "run-release" {
+				d.Argv = []string{"work", "stop", "--", "run:R"}
+			}
+			if class == "lane-recovery" {
+				b.lineage = ""
+				code, grant := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--classes", class, "--lineage", "seat", "--for", "24h")
+				if code != 0 {
+					t.Fatalf("grant: %d %+v", code, grant)
+				}
+				b.lineage = launch.SeatOwnerLineage
+				b.owners.delivery.ownerEnvelope = func(intentProcess, string) (verbresult.Result, error) {
+					return verbresult.Result{Outcome: intentConfirmed, Summary: "selected goals"}, nil
+				}
+				code, out, errout := b.run(b.owners, "decision", "record", "--class", class, "--text", "recover",
+					"--rejected", "wait", "--undo", "stop", "--", "landing", "run", "--goals", `G,'quoted'`)
+				lines, bad, readErr := humanauthority.ReadDecisions(b.home)
+				if code != 0 || readErr != nil || bad != 0 || len(lines) != 1 {
+					t.Fatalf("delegated decision: %d %s %s log=%+v err=%v", code, out, errout, lines, readErr)
+				}
+				d = lines[0]
+				line, remainder := humanauthority.OverruleLine(d)
+				if !strings.Contains(out, line) || !strings.Contains(out, remainder) {
+					t.Fatalf("printed overrule missing: %s", out)
+				}
+			} else {
+				helmMust(t, humanauthority.AppendDecision(b.home, d))
+			}
+			line, remainder := humanauthority.OverruleLine(d)
+			// Let the shell parse the exact printed line without running its command.
+			raw, err := exec.Command("/bin/sh", "-c", "set -- "+line+`; printf '%s\000' "$@"`).Output()
+			helmMust(t, err)
+			words := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+			command, args, ok := resolveIntentArgv(words[1:])
+			undo, err := exec.Command("/bin/sh", "-c", "set -- "+flagValue(words, "--undo")+`; printf '%s\000' "$@"`).Output()
+			helmMust(t, err)
+			if !ok || words[0] != "metasystem" || !slices.Equal(strings.Split(strings.TrimSuffix(string(undo), "\x00"), "\x00"), d.Argv) {
+				t.Fatalf("overrule lost its act: %q -> %v", line, words)
+			}
+			if class == "budget" {
+				if !slices.Equal(words[len(words)-5:], []string{"goal", "budget", "G", "undo-one-more-day", d.ID}) || remainder != "job time spent under the extra day stays spent" {
+					t.Fatalf("budget compensation: %v; %s", words, remainder)
+				}
+			} else if class == "run-release" {
+				if slices.Contains(words, "--") || !strings.Contains(remainder, "metasystem work build G --work U") {
+					t.Fatalf("released work cannot be restored: %v; %s", words, remainder)
+				}
+			}
+			b.lineage, b.owners.prove = "", b.prove
+			laneBed := newSelectionBed(t)
+			b.owners.landing, b.owners.policies = laneBed.owners.landing, laneBed.owners.policies
+			b.owners.landing.person = func(string) (string, error) { return "Wido", nil }
+			calls := 0
+			b.owners.delivery.ownerEnvelope = func(p intentProcess, verb string) (verbresult.Result, error) {
+				calls++
+				child, rest, ok := resolveIntentArgv(p.argv[1:])
+				if !ok || verb != "landing stop" || flagValue(p.argv, "--reason") != "overruled "+d.ID {
+					t.Fatalf("wrong compensation child: %v", p.argv)
+				}
+				var out, errout bytes.Buffer
+				code := runIntentIn(child, rest, &out, &errout, laneBed.lane, laneBed.owners)
+				return verbresult.Read(out.Bytes(), verb, code, errout.String())
+			}
+			if class == "budget" {
+				// Only the impact is exercised until the budget compensation exists.
+				inv := &intentInvocation{input: intentInput{values: map[string][]string{"overrules": {d.ID}}}, owners: b.owners, stdout: io.Discard}
+				impact, denied := decisionOverrule(inv, b.home)
+				if denied != nil || !strings.Contains(impact, "Overruling runs goal budget G undo-one-more-day "+d.ID) || !strings.Contains(impact, remainder) || calls != 0 {
+					t.Fatalf("budget impact: %q %+v calls=%d", impact, denied, calls)
+				}
+				return
+			}
+			var out, errout bytes.Buffer
+			code := runIntentIn(command, args, &out, &errout, b.root(), b.owners)
+			lines, _, readErr := humanauthority.ReadDecisions(b.home)
+			if code != 0 || readErr != nil || len(lines) != 2 || lines[1].Overrules != d.ID || !strings.Contains(lines[1].Impact, remainder) || !strings.Contains(out.String(), remainder) {
+				t.Fatalf("exact overrule: %d %s %s decisions=%+v err=%v", code, out.String(), errout.String(), lines, readErr)
+			}
+			if class == "run-release" && !strings.Contains(lines[1].Impact, "Overruling runs no compensation") {
+				t.Fatalf("run release gained a compensation: %s", lines[1].Impact)
+			}
+			pause, paused := lane.ReadPause(laneBed.home)
+			if class == "lane-recovery" && (calls != 1 || !paused || pause.Reason != "overruled "+d.ID) || class == "run-release" && (calls != 0 || paused) {
+				t.Fatalf("compensation effect: calls=%d paused=%t pause=%+v", calls, paused, pause)
+			}
+			t.Logf("%s: %s; %s", class, line, remainder)
+		})
+	}
+	if line, remainder := humanauthority.OverruleLine(humanauthority.Decision{Class: "ordering"}); line != "" || remainder != "" {
+		t.Fatalf("ordinary decision gained a compensation: %q %q", line, remainder)
+	}
+	if line, remainder := humanauthority.OverruleLine(humanauthority.Decision{Class: "budget"}); line != "" || remainder != "" {
+		t.Fatalf("a budget command needs its goal: %q %q", line, remainder)
+	}
+}
+
 func TestAnOverruleShowsItsImpactFirst(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"text", "json", "child", "targets", "disposition"} {
