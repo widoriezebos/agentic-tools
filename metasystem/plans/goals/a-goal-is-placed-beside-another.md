@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: One unit (about 50 production lines, --last) from design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-seat-stands-on-its-own.md decision S5 (Astra DESIGN STANDS r3): seam internal/goal/order.go SetPriority and the prioritize intent in cmd/metasystem/intent_planning.go; --sequence N stays. Brief cut just before the build, one Astra round.
 - OpenedAt: 2026-11-15T12:53:32Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=N0P07E2RCHTYZMWTW5ZJ7KXHZY-m1e-919a18ce minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-15T12:53:32Z 88SZKSEH59K8X36PDNWB5NTDZ3-m1e-919a18ce open actor=human:Wido targets=a-goal-is-placed-beside-another
 - 2026-11-15T12:53:46Z N0P07E2RCHTYZMWTW5ZJ7KXHZY-m1e-919a18ce approve actor=human:Wido targets=a-goal-is-placed-beside-another
-Integrity: sha256=06af58ff7a4341296a25cadfd44d71163eac33e86571a6254fcdc168021ddd22
+- 2026-11-15T12:54:00Z GKWHNNX8T5E6Y5VQENBJT40XP3-m1e-919a18ce set-pin actor=human:Wido targets=a-goal-is-placed-beside-another
+Integrity: sha256=e3a6ceda1302fd2cf755c067e05ccf662a21dd9bd653f82c4c1f4bb07e325248
