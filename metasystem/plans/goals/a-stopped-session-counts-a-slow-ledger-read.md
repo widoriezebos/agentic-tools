@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build one unit (estimate 60, --last) without a new design from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-slow-ledger-read-is-a-wait-brief.md, its U4 kept whole; seams internal/goal/turnverdict.go:1281 and internal/hooks/runtime_hook_stop.go:845. The brief starts with an inventory. Done when a timed-out Stop hook ledger read is counted and persisted, a successful read resets the count, the third timeout notifies once, and independent blocks still block.
 - OpenedAt: 2026-11-15T20:26:16Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=BGKRMX1HMWHE33VSHBYHZJZA07-landing-ccee003e minutes=1200 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-15T20:26:16Z WW12WT3SC9Y3V54H45PR98WTHF-landing-ccee003e open actor=human:Wido targets=a-stopped-session-counts-a-slow-ledger-read
 - 2026-11-15T20:26:27Z BGKRMX1HMWHE33VSHBYHZJZA07-landing-ccee003e approve actor=human:Wido targets=a-stopped-session-counts-a-slow-ledger-read
-Integrity: sha256=d6cce9f0d1066568ae3169845f9164c207291202cdc02d074042f78c03bd87c9
+- 2026-11-15T20:26:39Z 2Q3DESWCVZ2D04P0AZM1DKXWGX-landing-ccee003e set-pin actor=human:Wido targets=a-stopped-session-counts-a-slow-ledger-read
+Integrity: sha256=52f7ed3009c098ef566dd2a7d761a04a6273ee2c5c637701eb68f0954c96dc13
