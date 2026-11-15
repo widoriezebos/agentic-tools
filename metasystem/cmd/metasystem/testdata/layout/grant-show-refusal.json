@@ -1,0 +1,19 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "grant show",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "no recorded grant unknown",
+  "next": {
+    "argv": [
+      "metasystem",
+      "grant",
+      "list"
+    ],
+    "reason": "lists the grants with their ids"
+  }
+}
+
+--

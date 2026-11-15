@@ -203,7 +203,7 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	result := intentResult{Outcome: child.Outcome, code: child.Exit, Summary: "decision " + d.ID + " recorded: " + child.Summary,
 		Targets: []intentTarget{{Kind: "decision", ID: d.ID}}, Data: map[string]any{"decision": d}}
 	if agent {
-		if line, remainder := humanauthority.OverruleLine(d); line != "" {
+		if line, remainder, _ := humanauthority.OverruleLine(d); line != "" {
 			result.text = []string{line, remainder}
 		}
 	}
@@ -382,10 +382,9 @@ func decisionOverrule(inv *intentInvocation, home string) (string, *intentResult
 				shown = strings.Join(targets, ", ")
 			}
 			impact += fmt.Sprintf(" ran %s: %s; %s.", shellCommand(d.Argv), d.Outcome, shown)
-			if line, remainder := humanauthority.OverruleLine(d); d.Grant != "" && line != "" {
-				compensation := "no compensation"
-				if separator := strings.LastIndex(line, " -- "); d.Class != "run-release" && separator >= 0 {
-					compensation = line[separator+4:]
+			if line, remainder, compensation := humanauthority.OverruleLine(d); d.Grant != "" && line != "" {
+				if compensation == "" {
+					compensation = "no compensation"
 				}
 				impact += " Overruling runs " + compensation + "; it cannot undo: " + remainder + "."
 			} else {

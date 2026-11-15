@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -430,6 +431,12 @@ func intentPlanningCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem grant list"},
 			run:      runIntentGrantList,
+		},
+		{
+			object: "grant", action: "show", audience: "both", laidOut: true, summary: "a grant and the decisions taken under it",
+			usage: []string{"metasystem grant show GRANT"}, maxArgs: 1,
+			examples: []string{"metasystem grant show 01ARZ3NDEKTSV4RRFFQ69G5FAV-mac-cli-m1"},
+			run:      runIntentGrantShow,
 		},
 		{
 			object: "incident", action: "list", audience: "both", laidOut: true, summary: "the broken-main incidents",
@@ -2613,6 +2620,83 @@ func runIntentGrantList(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Data: map[string]any{"grants": views},
 		Summary: fmt.Sprintf("%d power(s) of attorney", len(views)), view: grantListView(shown, inv.input.switched("all"))})
+}
+
+func runIntentGrantShow(inv *intentInvocation) int {
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	projection, now, problem := inv.projection()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	id := strings.Join(inv.input.args, "")
+	var entry *goal.PowerOfAttorneyEntry
+	if projection.Tree != nil && projection.Tree.Root != nil {
+		for _, candidate := range projection.Tree.Root.PowerOfAttorney {
+			if candidate.ID == id {
+				entry = &candidate
+				break
+			}
+		}
+	}
+	if entry == nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "no recorded grant " + id,
+			next: inv.publicArgv("grant", "list"), nextReason: "lists the grants with their ids"})
+	}
+	home := inv.owners.decisions.home
+	if home == nil {
+		home = board.Home
+	}
+	dir, err := home()
+	var log []humanauthority.Decision
+	var bad int
+	if err == nil {
+		log, bad, err = humanauthority.ReadDecisions(dir)
+	}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the decision log could not be read; no acts were shown",
+			Details: []string{err.Error()}, next: inv.typedArgv(), nextReason: "try again"})
+	}
+	live, _ := entry.LiveAt(now)
+	until := entry.Until
+	if !entry.General() {
+		until = entry.Expires
+	}
+	grant := map[string]any{"id": id, "by": entry.By, "classes": entry.Classes, "reason": entry.Reason, "until": until, "live": live}
+	decisions := []map[string]any{}
+	for _, d := range log {
+		if d.Grant != id {
+			continue
+		}
+		line, remainder, compensation := humanauthority.OverruleLine(d)
+		decisions = append(decisions, map[string]any{"id": d.ID, "at": d.At.In(inv.owners.helm.withDefaults().zone).Format("15:04 MST (2006-01-02)"),
+			"class": d.Class, "act": shellCommand(d.Argv), "outcome": d.Outcome, "overrule": line, "remainder": remainder, "compensation": compensation})
+	}
+	result := intentResult{Outcome: intentConfirmed, Summary: "Grant " + id, Data: map[string]any{"grant": grant, "decisions": decisions}, view: func(page *textui.Page) {
+		page.Headline("Grant " + id)
+		section := page.Section("", "")
+		for _, key := range []string{"by", "classes", "reason", "until", "live"} {
+			value := fmt.Sprint(grant[key])
+			if key == "until" && entry.General() {
+				end, _ := time.Parse(time.RFC3339, until)
+				value = page.Env().Time(end)
+			}
+			section.KV(key, textui.Plain(value))
+		}
+		for _, d := range decisions {
+			section := page.Section("Decision "+d["id"].(string), d["at"].(string))
+			section.Text(fmt.Sprintf("%s: %s; %s", d["class"], d["act"], d["outcome"]))
+			if d["overrule"] != "" {
+				section.Fixed(d["overrule"].(string))
+				section.Text(d["remainder"].(string))
+			}
+		}
+	}}
+	if bad > 0 {
+		result.Details = []string{fmt.Sprintf("the decision log skipped %d unreadable line(s)", bad)}
+	}
+	return inv.render(result)
 }
 
 // grantShown is one grant grant list shows, with whether it is live and,

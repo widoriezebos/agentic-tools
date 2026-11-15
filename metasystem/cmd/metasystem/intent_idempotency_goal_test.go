@@ -125,6 +125,7 @@ func init() {
 	read("decision show", "shows one record")
 	registerIdempotency("decision record", idemCreation, "each call records one decision and the outcome its act had at that call; a repeated act answers unchanged from its own owner, and the second line records that", nil)
 	read("grant list", "lists the powers of attorney")
+	read("grant show", "shows a grant and its recorded decisions")
 
 	stateful("goal scope", "a unit whose excluded scope is already restored succeeds without another record",
 		goalRepeatWitness(func(f *goal.GoalFile) {
