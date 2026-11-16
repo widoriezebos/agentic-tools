@@ -39,11 +39,14 @@ func (s *comparisonAccountingStarter) StartSupervisor(id, state string) (identit
 	return ref, err
 }
 
-func comparisonAccountingBed(t *testing.T, limit uint64) (*workBed, []string) {
+func comparisonAccountingBed(t *testing.T, limit uint64, amend ...func(*goal.GoalFile)) (*workBed, []string) {
 	t.Helper()
 	bed := newWorkBedWith(t, func(file *goal.GoalFile) {
 		workApprovedBox(file)
 		file.Budget.ReservedJobMinutesLimit = limit
+		for _, change := range amend {
+			change(file)
+		}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
