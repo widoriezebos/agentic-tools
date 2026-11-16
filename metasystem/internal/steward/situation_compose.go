@@ -260,6 +260,9 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 	if len(s.Decisions) > 0 {
 		add("decision|%s", s.Decisions[len(s.Decisions)-1].ID)
 	}
+	if s.Undelivered > 0 {
+		add("undelivered|%d", s.Undelivered)
+	}
 	for role, execution := range s.Executions {
 		add("engine|%s|%d", role, execution.Generation)
 	}
@@ -495,7 +498,11 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 		}
 		authority = append(authority, line)
 	}
-	add("authority", []string{"authority"}, []string{fmt.Sprintf("%d live grants; newest ruling %s; %d answered lines; %d decisions", len(s.Grants), newest, len(s.Answered), len(s.Decisions))},
+	authoritySummary := []string{fmt.Sprintf("%d live grants; newest ruling %s; %d answered lines; %d decisions", len(s.Grants), newest, len(s.Answered), len(s.Decisions))}
+	if s.Undelivered > 0 {
+		authoritySummary = append(authoritySummary, fmt.Sprintf("%d decisions under a grant not yet sent to you", s.Undelivered))
+	}
+	add("authority", []string{"authority"}, authoritySummary,
 		append(authority, s.Answered...))
 	var alerts []string
 	for _, store := range slices.Sorted(maps.Keys(s.Alerts)) {

@@ -1,6 +1,7 @@
 package humanauthority
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
@@ -17,16 +18,25 @@ func OverruleLine(d Decision) (line, remainder, compensation string) {
 		remainder = "proofs already started and goals already selected stay as they are"
 	case "budget":
 		goal := ""
-		args := d.Argv[min(2, len(d.Argv)):]
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			if strings.HasPrefix(arg, "--") && arg != "--" && arg != "--json" && arg != "--verbose" && !strings.Contains(arg, "=") {
-				i++
-				continue
+		var effect struct{ Targets []struct{ Kind, ID string } }
+		if json.Unmarshal(d.Effect, &effect) == nil {
+			for _, target := range effect.Targets {
+				if target.Kind == "goal" {
+					goal = target.ID
+					break
+				}
 			}
-			if !strings.HasPrefix(arg, "--") {
-				goal = arg
+		}
+		args := d.Argv[min(2, len(d.Argv)):]
+		for i, arg := range args {
+			if arg == "--" {
 				break
+			}
+			if (arg == "--id" || arg == "--goal") && i+1 < len(args) {
+				goal = args[i+1]
+			}
+			if strings.HasPrefix(arg, "--id=") || strings.HasPrefix(arg, "--goal=") {
+				_, goal, _ = strings.Cut(arg, "=")
 			}
 		}
 		if goal == "" {

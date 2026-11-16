@@ -10,7 +10,7 @@ exit 0
     "decisions": [
       {
         "act": "landing resume",
-        "at": "12:00 CEST (2026-09-01)",
+        "at": "2026-09-01T10:00:00Z",
         "class": "lane-recovery",
         "compensation": "landing stop --reason 'overruled 0'",
         "id": "0",
@@ -20,7 +20,7 @@ exit 0
       },
       {
         "act": "landing resume",
-        "at": "12:00 CEST (2026-09-01)",
+        "at": "2026-09-01T10:00:00Z",
         "class": "lane-recovery",
         "compensation": "",
         "id": "1",

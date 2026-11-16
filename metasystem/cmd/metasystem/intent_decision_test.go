@@ -139,7 +139,8 @@ func TestGrantShowListsItsActs(t *testing.T) {
 	b.grant, b.lineage = granted.Targets[0].ID, launch.SeatOwnerLineage
 	for i, class := range []string{"lane-recovery", "budget", "run-release", "ordering", "lane-recovery", "budget"} {
 		d := humanauthority.Decision{ID: fmt.Sprint(i), At: at, Grant: b.grant, Class: class,
-			Argv: []string{"goal", "budget", "--by", "X", "G", "one-more-day"}, Outcome: intentConfirmed}
+			Argv: []string{"goal", "budget", "--by", "X", "G", "one-more-day"}, Outcome: intentConfirmed,
+			Effect: json.RawMessage(`{"targets":[{"kind":"goal","id":"G"}]}`)}
 		if i == 0 {
 			laneBed := newSelectionBed(t)
 			laneBed.barrenKeeper()
@@ -209,7 +210,7 @@ func TestGrantShowListsItsActs(t *testing.T) {
 		t.Fatalf("grant details: %+v", g)
 	}
 	for i, d := range got.Data.Decisions {
-		if d.ID != want[i].ID || d.At != at.In(b.owners.helm.zone).Format("15:04 MST (2006-01-02)") || d.Act != shellCommand(want[i].Argv) || (d.Overrule != "") != (i < 3) {
+		if d.ID != want[i].ID || d.At != at.UTC().Format(time.RFC3339) || d.Act != shellCommand(want[i].Argv) || (d.Overrule != "") != (i < 3) {
 			t.Fatalf("decision %d: %+v", i, d)
 		}
 		if i == 1 && d.Compensation != "goal budget G undo-one-more-day 1" {
@@ -219,6 +220,17 @@ func TestGrantShowListsItsActs(t *testing.T) {
 	code, out, errout = b.run(b.owners, "grant", "show", b.grant)
 	if code != 0 || !strings.Contains(out, "ordering") || !strings.Contains(out, "no reason given") || !strings.Contains(out, "undo-one-more-day") {
 		t.Fatalf("grant text: %d %s %s", code, out, errout)
+	}
+	if strings.Contains(out, "human:") || !strings.Contains(out, strings.Join(goal.AttorneyClasses, ", ")) ||
+		!strings.Contains(out, at.In(b.owners.helm.zone).Format("15:04 MST (2006-01-02)")) {
+		t.Fatalf("grant display values: %s", out)
+	}
+	for _, ids := range [][]string{nil, {b.grant, "extra"}} {
+		code, refused := b.runJSON(b.owners, append([]string{"grant", "show"}, ids...)...)
+		if code == 0 || refused.Summary != "grant show takes one grant id" || refused.Next == nil ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "grant", "list"}) {
+			t.Fatalf("grant show %v: %d %+v", ids, code, refused)
+		}
 	}
 	code, refused := b.runJSON(b.owners, "grant", "show", "unknown")
 	if code == 0 || refused.Outcome != intentRefused || (refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "grant", "list"})) {
@@ -241,6 +253,44 @@ func TestGrantShowListsItsActs(t *testing.T) {
 	code, shown = b.runJSON(b.owners, "grant", "show", b.grant)
 	if code == 0 || shown.Outcome != intentFailed {
 		t.Fatalf("unreadable log: %d %+v", code, shown)
+	}
+}
+
+func TestBudgetOverruleNamesTheGoal(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"--goal", "G", "one-more-day"}, {"--goal=G", "one-more-day"}, {"--id", "G", "one-more-day"},
+		{"--fixture-human-authority", "G", "one-more-day"}, {"G", "one-more-day"},
+	} {
+		d := humanauthority.Decision{ID: "D", Class: "budget", Outcome: intentConfirmed,
+			Argv: append([]string{"goal", "budget"}, args...), Effect: json.RawMessage(`{"targets":[{"kind":"goal","id":"G"}]}`)}
+		if strings.HasPrefix(args[0], "--goal") || args[0] == "--id" {
+			d.Effect = json.RawMessage(`{"targets":[{"kind":"goal","id":"other"}]}`)
+		}
+		if _, _, compensation := humanauthority.OverruleLine(d); compensation != "goal budget G undo-one-more-day D" {
+			t.Fatalf("budget %v: compensation = %q", args, compensation)
+		}
+	}
+}
+
+func TestGrantShowFormatsTieredExpiry(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	owners, home := b.owners(), t.TempDir()
+	owners.decisions.home = func() (string, error) { return home, nil }
+	code, grant := b.runJSON(owners, "grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-02")
+	if code != 0 {
+		t.Fatalf("tiered grant: %d %+v", code, grant)
+	}
+	code, shown := b.runJSON(owners, "grant", "show", grant.Targets[0].ID)
+	data, _ := shown.Data.(map[string]any)
+	view, _ := data["grant"].(map[string]any)
+	if code != 0 || view["until"] != "2026-09-03T00:00:00Z" {
+		t.Fatalf("tiered expiry must cover its whole date: %d %+v", code, shown)
+	}
+	code, out, errout := b.run(owners, "grant", "show", grant.Targets[0].ID)
+	if code != 0 || !strings.Contains(out, "Thu 02:00") || strings.Contains(out, "human:") {
+		t.Fatalf("tiered expiry display: %d %s %s", code, out, errout)
 	}
 }
 
@@ -279,7 +329,8 @@ func TestTheOverruleUndoesWhatItCan(t *testing.T) {
 			at, err := b.commandNow(b.root())
 			helmMust(t, err)
 			d := humanauthority.Decision{ID: "D1", At: at, Actor: "main-1", Grant: b.grant, By: "Wido", Class: class,
-				Argv: []string{"goal", "budget", "--json", "--by", "X", "G", "one-more-day"}, Outcome: intentConfirmed}
+				Argv: []string{"goal", "budget", "--json", "--by", "X", "G", "one-more-day"}, Outcome: intentConfirmed,
+				Effect: json.RawMessage(`{"targets":[{"kind":"goal","id":"G"}]}`)}
 			if class == "run-release" {
 				d.Argv = []string{"work", "stop", "--", "run:R"}
 			}

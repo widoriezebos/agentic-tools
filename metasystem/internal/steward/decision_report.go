@@ -83,7 +83,11 @@ func DeliverDecisions(home string, loc *time.Location, now time.Time, post func(
 			act[i] = shellquote.Word(word)
 		}
 		overrule, _, _ := humanauthority.OverruleLine(d)
-		lines = append(lines, fmt.Sprintf("%s %s: %s -> %s; overrule: %s", at.Format("15:04"), d.Class, strings.Join(act, " "), d.Outcome, overrule))
+		line := fmt.Sprintf("%s %s: %s -> %s", at.Format("15:04"), d.Class, strings.Join(act, " "), d.Outcome)
+		if overrule != "" {
+			line += "; overrule: " + overrule
+		}
+		lines = append(lines, line)
 	}
 	if err := post(strings.Join(lines, "\n")); err != nil {
 		return 0, err
