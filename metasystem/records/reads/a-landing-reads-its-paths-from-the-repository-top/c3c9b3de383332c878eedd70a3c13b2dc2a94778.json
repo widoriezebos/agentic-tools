@@ -1,0 +1,59 @@
+{
+  "canonicalRead": {
+    "engine": "e91c123a534e91c0b65a9b06e36518a7f590d7b0",
+    "findings": [
+      {
+        "change": "None required. A second, non-modifying unit could optionally be added to mirror the NextStep wording.",
+        "claim": "The new test lands one pending unit that modifies an existing file. The goal's NextStep asked for a goal of two units, one of them modifying an existing file. The defect (a preimage lookup from the metasystem/ subdirectory missing an existing file) is still exercised, and the brief for this round accepts the test as built, so the slice works and is safe without a second unit.",
+        "class": "scope",
+        "evidence": "land_adapter_test.go new test sets f.units = []string{unit} (a single unit u4); goal NextStep: 'a test that composes and lands a goal of two units, one modifying an existing file'.",
+        "id": "code-critic-336fdf1ac8d818827921b955:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/goal/branch/land_adapter_test.go"
+      }
+    ],
+    "id": "code-critic-336fdf1ac8d818827921b955",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-landing-reads-its-paths-from-the-repository-top/metasystem/artifacts/agents/code-critic-336fdf1ac8d818827921b955/rounds/1/return.md",
+    "subject": {
+      "commit": "c3c9b3de383332c878eedd70a3c13b2dc2a94778",
+      "diffDigest": "217576b07e516b2e9b906933bd2d6bd1a1eb32f5562f22a0f5dd195db57754c9",
+      "kind": "commit",
+      "parent": "408b77f019f3deb20c159da005db4e0794a50105",
+      "tree": "287982e0324a87f851ae0bcd93d3e3df31a53871"
+    }
+  },
+  "readDigest": "1a1f4b37ac63cb2003ebab1e8e4ecf8f0bb03760676e0c8f5bc47ac2f244b975",
+  "schemaVersion": 1,
+  "goal": "a-landing-reads-its-paths-from-the-repository-top",
+  "unit": "U1",
+  "subject": {
+    "commit": "c3c9b3de383332c878eedd70a3c13b2dc2a94778",
+    "parent": "408b77f019f3deb20c159da005db4e0794a50105",
+    "tree": "287982e0324a87f851ae0bcd93d3e3df31a53871",
+    "patchDigest": "217576b07e516b2e9b906933bd2d6bd1a1eb32f5562f22a0f5dd195db57754c9",
+    "unitDigest": "0f5e63aae2b0cdc7c5fd800a5be69f9af120866b6782f83baad00cd7dc180d91"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-336fdf1ac8d818827921b955",
+    "round": 1,
+    "closureSha256": "0c3c13a42afaba37180cf730ae58bb08e61349858317a38d7f1d810c8ad41dd5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "287982e0324a87f851ae0bcd93d3e3df31a53871",
+    "runId": "goal-read-gate-20261116t170137z-7a394a840797623e"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/goal/branch/land_adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-336fdf1ac8d818827921b955"
+    }
+  ],
+  "sha256": "4a7617141d56464fd70cb79d50bb9d28a546d98274eae010f2e59016ab37556f"
+}
