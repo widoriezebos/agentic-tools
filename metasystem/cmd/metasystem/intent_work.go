@@ -1939,12 +1939,12 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		if current.State == "cancelled" {
 			return inv.render(inv.cancelledWorkResult(current.Goal))
 		}
-		if err := inv.recordUnitStopOverride(current.Goal, "work-revise", reason, impact, person); err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
-		}
 		bytes, err := os.ReadFile(brief)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the correction brief cannot be read", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "uses the corrected brief path"})
+		}
+		if err := inv.recordRevisionOverride(current, 0, bytes, person, reason, &impact); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
 		}
 		result, err := runner.Revise(launch.UnitRevisionRequest{Run: run, Brief: bytes, Person: person, Reason: reason, Impact: impact})
 		inv.revisedAttempt = result.Revision.Attempt

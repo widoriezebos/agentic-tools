@@ -15,12 +15,84 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
+
+func TestAPersonsReviseEndsARerunAlone(t *testing.T) {
+	t.Parallel()
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprint("pending=", pending), func(t *testing.T) {
+			t.Parallel()
+			f, git := attributionFixture(t, false, "", false)
+			f.runner.Git = resultAttributionGit{git}
+			start := f.starter.onStart
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "build" {
+					prober := f.manager.Prober.(*fakeProber)
+					prober.states[10], prober.states[20] = identity.Alive, identity.Alive
+				}
+				if err := start(r); err != nil {
+					return err
+				}
+				if strings.HasSuffix(r.ID, "-alone") {
+					f.starter.holdKind = "proof"
+				}
+				return nil
+			}
+			if pending {
+				f.runner.BeforeModelLaunch = func(_ UnitRunRecord, spec StartSpec) error {
+					if strings.HasSuffix(spec.ID, "-alone") {
+						return coded("BUDGET_REFUSED", "", errors.New("wait for budget"))
+					}
+					return nil
+				}
+			}
+			held, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if !pending && err != nil || pending && !IsCode(err, "BUDGET_REFUSED") || held.Record.State != "running" {
+				t.Fatalf("rerun not held: %+v %v", held, err)
+			}
+			alone := held.Record.Rounds[0].Steps[1].Alone.LaunchID
+			if pending {
+				if _, err := f.manager.Store.Read(alone); !os.IsNotExist(err) {
+					t.Fatalf("pending rerun has a launch: %v", err)
+				}
+			}
+			var collected []Record
+			f.runner.CollectLaunch = func(_ UnitRunRecord, r Record, _ string) error {
+				if r.ID == alone {
+					collected = append(collected, r)
+				}
+				return nil
+			}
+			prober := f.manager.Prober.(*fakeProber)
+			sleep := f.manager.Sleep
+			cancelled := false
+			f.manager.Sleep = func(d time.Duration) {
+				if !cancelled {
+					prober.states[10], prober.states[20] = identity.Dead, identity.Dead
+					cancelled = true
+				}
+				sleep(d)
+			}
+			f.starter.holdKind = "build"
+			result, err := f.runner.Revise(UnitRevisionRequest{Run: held.Record.ID, Brief: []byte("Correct the unit.\n"), Person: "Wido", Reason: "start over"})
+			if err != nil || len(result.Record.Rounds) != 2 || result.Record.Rounds[0].Outcome != "proof-red" || result.Record.Rounds[0].Cause != "unclassified" || len(collected) != 1 || collected[0].State != Cancelled || collected[0].Executed() == pending {
+				t.Fatalf("rerun not superseded: %+v collected=%+v err=%v", result, collected, err)
+			}
+			if !pending {
+				execution, err := f.manager.Store.Read(alone)
+				if err != nil || execution.State != Cancelled {
+					t.Fatalf("rerun still running: %+v %v", execution, err)
+				}
+			}
+		})
+	}
+}
 
 func TestARerunAloneLeavesCallerErrorsToItsCaller(t *testing.T) {
 	t.Parallel()
@@ -175,8 +247,11 @@ func (git *attributionGit) Run(dir string, env []string, args ...string) ([]byte
 func attributionFixture(t *testing.T, baseRed bool, script string, resume ...bool) (unitFixture, *attributionGit) {
 	t.Helper()
 	events := []string{"branch", "round"}
-	for range resume {
+	for _, continuing := range resume {
 		events = append(events, "branch")
+		if !continuing {
+			events = append(events, "before")
+		}
 	}
 	f := newUnitFixture(t, "", events...)
 	git := &attributionGit{fixture: f, tree: "base-tree", mainTree: "main-tree", baseRed: baseRed}
