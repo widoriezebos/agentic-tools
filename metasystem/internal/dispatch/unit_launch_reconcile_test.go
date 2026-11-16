@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 func TestReconcileRepairsAForeignTerminalRecord(t *testing.T) {
@@ -65,5 +66,74 @@ func TestReconcileRepairsAForeignTerminalRecord(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestANeverExecutedSettlementFreesItsSlot(t *testing.T) {
+	t.Parallel()
+	root, file := budgetProjectionRoot(t), budgetGoal()
+	file.StopCapability = &goal.StopCapability{Generation: 3, Revision: 3, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+	at := time.Date(2026, 8, 28, 8, 10, 0, 0, time.UTC)
+	reserve := func(id string) error { return ReserveUnitLaunch(root, id, id, file, 1, 5, at, false) }
+	settle := func(id, status string, executed bool, end time.Time) error {
+		return ReconcileUnitLaunch(root, id, id, file.Id, 3, status, "", at.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), executed)
+	}
+	if err := reserve("a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := reserve("b"); refusal.CodeOf(err) != "BUDGET_REFUSED" || !strings.Contains(refusal.DetailOf(err), "activeJobLimit") {
+		t.Fatalf("a second job was not refused at the slot limit: %v", err)
+	}
+	if err := settle("a", "cancelled", false, at); err != nil {
+		t.Fatal(err)
+	}
+	projection := ProjectBudget(root, file, at)
+	if projection.Status != BudgetKnown || projection.ActiveJobs != 0 || projection.ReservedJobMinutes != 0 || projection.ObservedJobMinutes != 0 || projection.Attempts != 0 {
+		t.Fatalf("unexecuted cancellation still spends: %+v", projection)
+	}
+	if err := reserve("b"); err != nil {
+		t.Fatalf("the freed slot did not admit the next job: %v", err)
+	}
+	path := filepath.Join(root, "artifacts/agents/jobs/a.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if err := settle("a", "cancelled", false, at); err != nil {
+		t.Fatalf("a later collection was not the same settlement: %v", err)
+	}
+	for _, outcome := range []struct {
+		status   string
+		executed bool
+	}{{"failed", false}, {"cancelled", true}} {
+		if err := settle("a", outcome.status, outcome.executed, at); err == nil {
+			t.Fatal("contradictory status or execution was accepted")
+		}
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("repeat or contradiction changed the reservation: %v", err)
+	}
+	if err := settle("b", "cancelled", false, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := reserve("c"); err != nil {
+		t.Fatal(err)
+	}
+	if err := settle("c", "completed", true, at.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(root, "artifacts/agents/jobs/c.json")
+	before, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := settle("c", "completed", true, at.Add(2*time.Minute)); err == nil || !strings.Contains(err.Error(), "contradicts its terminal reservation") {
+		t.Fatalf("changed executed times were accepted: %v", err)
+	}
+	after, err = os.ReadFile(path)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("contradictory executed times changed the reservation: %v", err)
 	}
 }
