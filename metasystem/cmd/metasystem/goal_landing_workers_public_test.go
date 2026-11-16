@@ -903,7 +903,7 @@ func publicApplicationInstalledCandidateScript(snapshot string) string {
 set -euo pipefail
 [[ "$#" -eq 3 && "$1" == --trimpath && "$2" == --out && -n "$3" ]] || { echo "installed candidate build requires --trimpath --out PATH" >&2; exit 2; }
 snapshot=%s
-cp "$snapshot" "$3"
+cp -c "$snapshot" "$3" 2>/dev/null || cp "$snapshot" "$3"
 chmod 0500 "$3"
 cmp -s "$snapshot" "$3" || { echo "installed candidate output differs from its snapshot" >&2; exit 1; }
 `, strconv.Quote(snapshot))

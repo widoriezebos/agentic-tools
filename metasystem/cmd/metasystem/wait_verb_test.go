@@ -440,7 +440,6 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		testutil.InstalledWaitBinary(t, binary)
 		cmd := exec.Command(commandTestExecutable(t), waitHelperCommand, "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
 		cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1")
 		data, commandErr := cmd.CombinedOutput()
@@ -547,7 +546,6 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		t.Fatalf("turn verdict code=%d output=%q stderr=%q display=%q", code, verdictOutput, problem, verdict.Display)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		testutil.InstalledWaitBinary(t, binary)
 		if output, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("initialize hook fixture repository: %v %s", err, output)
 		}
@@ -564,13 +562,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		engineBytes, err := os.ReadFile(binary)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(canonicalEngine, engineBytes, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		testenv.Link(t, binary, canonicalEngine)
 		wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
 		wrapperSource := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf '%s\\n' 'UP SUCCESS'; exit 0; fi\nexec \"${METASYSTEM_WAIT_REAL_ENGINE:?}\" \"$@\"\n"
 		if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
@@ -1113,16 +1105,10 @@ type installedHookResult struct {
 
 func copyExecutableFixture(t *testing.T, source, target string) {
 	t.Helper()
-	data, err := os.ReadFile(source)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(target, data, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testenv.Link(t, source, target)
 }
 
 func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, canonical string, owners *pendingWaitHookOwners) {

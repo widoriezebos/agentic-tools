@@ -110,12 +110,7 @@ func testEndedHealthRemedy(t *testing.T, producer string, want steward.HealthRol
 		if err := testexec.WriteFile(filepath.Join(path, "claude"), []byte("fixture executable; never run\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		binary := filepath.Join(t.TempDir(), "steward.test")
-		build := exec.Command(goBin, "test", "-c", "-timeout", "30m", "-o", binary, "./internal/steward/")
-		build.Dir = "../.."
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("build steward fixture: %v\n%s", err, out)
-		}
+		binary := stewardTestBinary(t)
 		env := fixtureCommandEnvironment(t, "PATH="+path)
 		produce := exec.Command(binary, "-test.run=^TestAlertClearHealthBed$", "-test.timeout=30m", "-alert-clear-bed-root="+root, "-alert-clear-bed-count=5")
 		produce.Env = env

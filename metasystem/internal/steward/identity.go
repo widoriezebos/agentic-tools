@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"os/exec"
@@ -22,7 +21,9 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fileclone"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"golang.org/x/sys/unix"
 )
 
 // ErrEnrollmentDrift marks a recovery refusal caused by changed, incomplete,
@@ -338,31 +339,13 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 		// description that holds nothing is a no-op.
 		unlockAndClose(existing)
 	}
-	temporary, err := os.CreateTemp(directory, ".engine-pin-*")
+	staging, err := os.MkdirTemp(directory, ".engine-pin-*")
 	if err != nil {
 		return err
 	}
-	temporaryPath := temporary.Name()
-	keep := false
-	defer func() {
-		_ = temporary.Close()
-		if !keep {
-			_ = os.Remove(temporaryPath)
-		}
-	}()
-	if _, err := b.file.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	if _, err := io.Copy(temporary, b.file); err != nil {
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		return err
-	}
-	if err := temporary.Chmod(0o500); err != nil {
-		return err
-	}
-	if err := temporary.Close(); err != nil {
+	defer os.RemoveAll(staging)
+	temporaryPath := filepath.Join(staging, "engine")
+	if err := fileclone.Copy(b.file, temporaryPath, 0o500); err != nil {
 		return err
 	}
 	if digest, err := installDigest(temporaryPath); err != nil || digest != b.Install.InstallDigest {
@@ -371,7 +354,6 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if err := os.Rename(temporaryPath, finalPath); err != nil {
 		return err
 	}
-	keep = true
 	execFile, err := os.Open(finalPath)
 	if err != nil {
 		return err

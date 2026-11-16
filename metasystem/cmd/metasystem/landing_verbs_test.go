@@ -1354,8 +1354,7 @@ case "${1:-}" in
       shift
     done
     if [[ -n "$out" ]]; then
-      cp "$RECEIPT_CANARY_ENGINE" "$out"
-      chmod 755 "$out"
+      ln "$RECEIPT_CANARY_ENGINE" "$out" || cp "$RECEIPT_CANARY_ENGINE" "$out"
     fi
     exit 0
     ;;
