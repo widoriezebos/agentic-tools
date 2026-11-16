@@ -192,3 +192,70 @@ func TestPrepareLandingGitAdapter(t *testing.T) {
 		})
 	})
 }
+
+// Git's path lookup from an installation subdirectory must compare existing
+// repository-relative files against main, including when main really changed.
+func TestPrepareLandingExistingFileGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name        string
+		mainChanged bool
+	}{
+		{"unchanged_main", false},
+		{"changed_main", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			f := newLandFixture(t)
+			// Put the fixture's existing series and the seeded file on main,
+			// so only the following unit is pending after this endpoint.
+			const path = "metasystem/existing.go"
+			f.base = f.commit(t, path, "base content\n", "seed existing file")
+			git(t, f.root, "push", "-q", "origin", "HEAD:main")
+			base := f.base
+			const content = "unit content\n"
+			unit := commitUnit(t, f.branchFixture, "u4", path, content)
+			readUnit(t, f.branchFixture, "u4", unit)
+			f.units = []string{unit}
+			f.tip = git(t, f.root, "rev-parse", "HEAD")
+			var err error
+			f.projected, err = landing.ProjectWorkspaceTree(filepath.Join(f.root, "metasystem"), git(t, f.root, "rev-parse", f.tip+"^{tree}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeLandingReceipt(t, f.receipt, f.projected, "attempt-existing")
+			if test.mainChanged {
+				git(t, f.root, "checkout", "-qB", "main", base)
+				f.base = f.commit(t, path, "main content\n", "main changes existing file")
+				git(t, f.root, "push", "-q", "origin", "HEAD:main")
+				git(t, f.root, "checkout", "-q", "goal/goal-a")
+			}
+			out := filepath.Join(t.TempDir(), "prepared")
+			request := landRequest(t, f, out)
+			request.Repo = filepath.Join(f.root, "metasystem")
+			result, err := branch.PrepareLanding(request)
+			if test.mainChanged {
+				requireLandCode(t, err, branch.UnitRereadCode)
+				want := "build u4 no longer applies to main: " + path + " changed there\n"
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("refusal = %v; want exactly %q", err, want)
+				}
+				requireAbsent(t, out)
+				return
+			}
+			if err != nil {
+				t.Fatalf("PrepareLanding: %#v", err)
+			}
+			if result.Endpoint != base || result.LastUnit != "u4" {
+				t.Fatalf("landing result = %+v", result)
+			}
+			if commits := strings.Fields(git(t, f.root, "rev-list", base+".."+result.Landing)); len(commits) != 1 {
+				t.Fatalf("landing commits = %v; want one unit", commits)
+			}
+			got, err := exec.Command("git", "-C", f.root, "show", result.Landing+":"+path).Output()
+			if err != nil || string(got) != content {
+				t.Fatalf("landed content = %q, error %v; want %q", got, err, content)
+			}
+		})
+	}
+}
