@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
+
+func (inv *intentInvocation) recordRevisionOverride(current launch.UnitRunRecord, after int, brief []byte, person, reason string, impact *string) error {
+	digest := fmt.Sprintf("%x", sha256.Sum256(brief))
+	for _, revision := range current.Revisions {
+		if (after == 0 || revision.After == after) && revision.Person == person && revision.Reason == reason && revision.BriefSHA256 == digest && revision.DecisionsSHA256 == "" && revision.Rebase == nil {
+			return nil
+		}
+	}
+	if launch.ClassificationInFlight(current) >= 0 {
+		*impact = "Impact: the red's comparison or rerun stops now; the failed check stays unclassified.\nWhat it already ran is still charged. A correction starts at once.\nStopping that correction later does not resume the comparison."
+	}
+	return inv.recordUnitStopOverride(current.Goal, "work-revise", reason, *impact, person)
+}
 
 // recordUnitStopOverride publishes the person's impact statement before the
 // command admits its effect. Failed commands retain that admission evidence
