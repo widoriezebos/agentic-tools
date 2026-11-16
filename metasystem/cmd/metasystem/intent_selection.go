@@ -972,7 +972,7 @@ func runIntentRevise(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a reasoned revision needs the person's name and reason", next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "give the reason for this revision"})
 		}
 		impact = "Impact: this admits one correction despite the recorded read.\nIts findings and automatic allowance remain. The result needs another read.\nCancel the admitted run to undo the request."
-		if err := inv.recordUnitStopOverride(id, "work-revise", reason, impact, person); err != nil {
+		if err := inv.recordRevisionOverride(*selected.Record, after, brief, person, reason, &impact); err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision impact could not be recorded", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "records the impact before starting"})
 		}
 	}

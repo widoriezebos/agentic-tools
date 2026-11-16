@@ -179,7 +179,13 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 				fmt.Errorf("%w (you named %d, the newest is %d)", ErrUnitRevisionStale, after, current))
 		}
 		if record.State != "awaiting-judgement" {
-			return UnitRevisionResult{Current: current}, coded("UNIT_RUN_NOT_AWAITING", unitFacts(record.Unit, record.Goal, "state="+string(record.State)), fmt.Errorf("attempt %d is still running", current))
+			if request.Person != "" && record.State == "running" && ClassificationInFlight(record) >= 0 {
+				if err := runner.supersedeClassification(&record, request.Person); err != nil {
+					return UnitRevisionResult{Current: current}, err
+				}
+			} else {
+				return UnitRevisionResult{Current: current}, coded("UNIT_RUN_NOT_AWAITING", unitFacts(record.Unit, record.Goal, "state="+string(record.State)), fmt.Errorf("attempt %d is still running", current))
+			}
 		}
 		if request.Person == "" {
 			if request.Rebase == nil || record.Rounds[after-1].Stop != nil && record.Rounds[after-1].Stop.Loop == "unit-build" {
@@ -290,6 +296,51 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	}
 	unit, err := runner.continueRunning(&record, plan)
 	return UnitRevisionResult{UnitResult: unit, Revision: *retained, Current: len(record.Rounds)}, err
+}
+
+// ClassificationInFlight finds the failed check whose red is still being classified.
+func ClassificationInFlight(record UnitRunRecord) int {
+	if len(record.Rounds) > 0 && record.Rounds[len(record.Rounds)-1].Outcome == "" {
+		for index, step := range record.Rounds[len(record.Rounds)-1].Steps {
+			if step.State == StepFailed && step.Cause == "unclassified" && (step.Comparison != nil || step.Alone != nil) {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func (runner *UnitRunner) supersedeClassification(record *UnitRunRecord, person string) error {
+	round := &record.Rounds[len(record.Rounds)-1]
+	index := ClassificationInFlight(*record)
+	step := &round.Steps[index]
+	var ids []string
+	if step.Alone != nil && step.Alone.Outcome == "" {
+		ids = append(ids, step.Alone.LaunchID)
+	}
+	if step.Comparison != nil && step.Comparison.FinishedAt == "" {
+		ids = append(ids, step.Comparison.LaunchID)
+	}
+	for _, id := range ids {
+		execution, err := runner.Manager.Cancel(id)
+		if errors.Is(err, os.ErrNotExist) {
+			execution, err = runner.neverCreated(id), nil
+		}
+		if err != nil {
+			return err
+		}
+		if runner.CollectLaunch != nil {
+			if err := runner.CollectLaunch(*record, execution, failedStepCause(execution)); err != nil {
+				return err
+			}
+		}
+	}
+	step.Reason = "the red is not classified: " + person + "'s revise stopped its classification"
+	if err := runner.skipAfter(record, round, index+1, "proof-red"); err != nil {
+		return err
+	}
+	_, err := runner.finish(record, round, "proof-red")
+	return err
 }
 
 func (runner *UnitRunner) continueRunning(record *UnitRunRecord, plan UnitPlan) (UnitResult, error) {
