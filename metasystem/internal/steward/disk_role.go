@@ -379,7 +379,14 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	options.Volumes = pass.Volumes
 	if options.Volumes == nil {
-		options.Volumes = existing(append(append([]string{home, top}, tempRoots...), evidenceRoots...))
+		// The host floor judges durable disks, not the keeper's fixed-size
+		// volume of throwaway test files.
+		for _, path := range append(append([]string{home, top}, tempRoots...), evidenceRoots...) {
+			if !diskstore.OnTestMemoryRoot(path) {
+				options.Volumes = append(options.Volumes, path)
+			}
+		}
+		options.Volumes = existing(options.Volumes)
 	}
 	options.FloorBytes = host.Bytes(config.DiskFloorKey)
 	if pass.FloorGiB > 0 {

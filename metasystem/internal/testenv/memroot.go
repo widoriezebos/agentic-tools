@@ -74,7 +74,7 @@ func (probe memoryRootProbe) provenRoot() (string, bool) {
 	if err != nil || !info.IsDir() || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) || !probe.mount(path, info) {
 		return "", false
 	}
-	marker, err := os.Lstat(filepath.Join(path, ".mst-ready"))
+	marker, err := os.Lstat(filepath.Join(path, ".mst-ready-2"))
 	if err != nil || !marker.Mode().IsRegular() {
 		return "", false
 	}

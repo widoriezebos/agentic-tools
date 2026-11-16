@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"golang.org/x/sys/unix"
 )
 
@@ -13,7 +14,7 @@ func fakeMemoryRoot(t *testing.T) memoryRootProbe {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "mount")
 	checkTestenv(t, os.Mkdir(root, 0o700))
-	checkTestenv(t, os.WriteFile(filepath.Join(root, ".mst-ready"), nil, 0o600))
+	checkTestenv(t, os.WriteFile(filepath.Join(root, ".mst-ready-2"), nil, 0o600))
 	probe := memoryRootProbe{
 		path:  func() string { return root },
 		mount: func(string, os.FileInfo) bool { return true },
@@ -33,21 +34,23 @@ func fakeMemoryRoot(t *testing.T) memoryRootProbe {
 
 func TestProvenMemoryRoot(t *testing.T) {
 	t.Parallel()
-	for _, condition := range []string{"ready", "missing", "file", "no marker", "directory marker", "symlink marker", "symlink root", "not mounted", "low space", "statfs error", "exclusive lease", "symlink lease", "directory lease"} {
+	for _, condition := range []string{"ready", "missing", "file", "old marker", "no marker", "directory marker", "symlink marker", "symlink root", "not mounted", "low space", "statfs error", "exclusive lease", "symlink lease", "directory lease"} {
 		t.Run(condition, func(t *testing.T) {
 			t.Parallel()
 			probe := fakeMemoryRoot(t)
 			root := probe.path()
-			marker := filepath.Join(root, ".mst-ready")
+			marker := filepath.Join(root, ".mst-ready-2")
 			switch condition {
 			case "missing", "file":
 				checkTestenv(t, os.RemoveAll(root))
 				if condition == "file" {
 					checkTestenv(t, os.WriteFile(root, nil, 0o600))
 				}
-			case "no marker", "directory marker", "symlink marker":
+			case "old marker", "no marker", "directory marker", "symlink marker":
 				checkTestenv(t, os.Remove(marker))
-				if condition == "directory marker" {
+				if condition == "old marker" {
+					checkTestenv(t, os.WriteFile(filepath.Join(root, ".mst-ready"), nil, 0o600))
+				} else if condition == "directory marker" {
 					checkTestenv(t, os.Mkdir(marker, 0o700))
 				} else if condition == "symlink marker" {
 					target := filepath.Join(t.TempDir(), "ready")
@@ -120,7 +123,7 @@ func TestCreateRegistryHomeMemoryRoot(t *testing.T) {
 			root := probe.path()
 			want := root
 			if condition == "not proven" {
-				checkTestenv(t, os.Remove(filepath.Join(root, ".mst-ready")))
+				checkTestenv(t, os.Remove(filepath.Join(root, ".mst-ready-2")))
 			}
 			if condition != "ready" {
 				want = "/tmp"
@@ -167,5 +170,17 @@ func TestInheritedMemoryRootTakesLeaseBestEffort(t *testing.T) {
 				t.Fatalf("joined = %+v, memory lease = %v", joined, probe.lease.file)
 			}
 		})
+	}
+}
+
+// testenv cannot share the diskstore spelling in production: diskstore's
+// own package tests use testenv, so that import would create a cycle.
+func TestMemoryRootMatchesDiskFloorExclusion(t *testing.T) {
+	t.Parallel()
+	root := defaultMemoryRoot.path()
+	if !diskstore.OnTestMemoryRoot(root) || !diskstore.OnTestMemoryRoot(filepath.Join(root, "home")) ||
+		!diskstore.OnTestMemoryRoot("/private"+root) || diskstore.OnTestMemoryRoot(root+"x") ||
+		diskstore.OnTestMemoryRoot(filepath.Dir(root)) {
+		t.Fatalf("test memory root %q drifted from the disk floor exclusion", root)
 	}
 }

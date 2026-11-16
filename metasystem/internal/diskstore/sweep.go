@@ -347,7 +347,10 @@ func rotate(classes []Class, start string) []Class {
 }
 
 func (p *Pass) observeVolumes(ctx context.Context, report *Report) {
-	if p.options.Headroom == nil || len(p.options.Volumes) == 0 {
+	if len(p.options.Volumes) == 0 {
+		return
+	}
+	if p.options.Headroom == nil {
 		if p.options.FloorForced {
 			p.Floor = true
 		}
