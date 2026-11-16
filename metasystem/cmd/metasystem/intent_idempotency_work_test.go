@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io/fs"
 	"maps"
 	"os"
@@ -125,8 +126,11 @@ func witnessWorkBuildRepeat(t *testing.T) {
 
 func witnessWorkStopRepeat(t *testing.T) {
 	b := newReferenceBed(t)
+	b.lineage = "stopping-session"
 	b.dispatchJob("job-r", "running")
 	owners := b.owners()
+	at := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	owners.commandNow = func(string) (time.Time, error) { return at, nil }
 	var cancelled []string
 	owners.processes.cancelDispatch = func(_, job string) (map[string]any, int, error) {
 		cancelled = append(cancelled, job)
@@ -137,11 +141,21 @@ func witnessWorkStopRepeat(t *testing.T) {
 		}
 		return map[string]any{"outcome": "CANCELLED", "headline": "cancelled", "jobId": job}, 0, nil
 	}
-	if code, first := b.runJSON(owners, "work", "stop", "j2:job-r"); code != 0 || first.Outcome != intentConfirmed || len(cancelled) != 1 {
+	if code, first := b.runJSON(owners, "work", "stop", "j2:job-r", "--reason", "stale job"); code != 0 || first.Outcome != intentConfirmed || len(cancelled) != 1 {
 		t.Fatalf("first stop: code=%d %+v", code, first)
 	}
+	impacts, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
+	if len(impacts) != 1 {
+		t.Fatalf("stop kept %d override records", len(impacts))
+	}
+	data, err := os.ReadFile(impacts[0])
+	var impact struct{ Kind, Reason, Impact, Who string }
+	if err != nil || json.Unmarshal(data, &impact) != nil || impact.Kind != "work-stop" || impact.Reason != "stale job" || impact.Who != "stopping-session" || impact.Impact != "Impact: j2:job-r stops and is not restarted." {
+		t.Fatalf("stop did not keep its reason and target: %s %v", data, err)
+	}
 	publications, files := b.publications(), workIdemSnapshot(t, b.root())
-	code, again := b.runJSON(owners, "work", "stop", "j2:job-r")
+	at = at.Add(time.Minute)
+	code, again := b.runJSON(owners, "work", "stop", "j2:job-r", "--reason", "stale job")
 	if code != 0 || again.Outcome != intentUnchanged || len(cancelled) != 1 || b.publications() != publications ||
 		again.Summary != "j2:job-r is already stopped: cancelled (at 2026-09-25T12:00:00Z)" {
 		t.Fatalf("repeated stop: code=%d %+v cancels=%v", code, again, cancelled)

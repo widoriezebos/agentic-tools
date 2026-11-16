@@ -176,6 +176,10 @@ func (s *session) internalCancel(job string) error {
 	}
 	if fieldOr(record, "unitRun") != "" && fieldOr(record, "operationId") == "unit-launch:"+job {
 		outcome, err := s.l.ports.Host.CancelUnitLaunch(job)
+		if errors.Is(err, fs.ErrNotExist) {
+			now := s.nowISO()
+			outcome, err = UnitLaunchOutcome{State: "cancelled", StartedAt: now, FinishedAt: now}, nil
+		}
 		if err == nil {
 			revision, _ := strconv.ParseUint(fieldOr(record, "goalRevision"), 10, 64)
 			err = dispatch.ReconcileUnitLaunch(s.root, job, fieldOr(record, "unitRun"), fieldOr(record, "goalId"), revision,
@@ -190,8 +194,6 @@ func (s *session) internalCancel(job string) error {
 				s.releaseLifecycleLock(job)
 				return nil
 			}
-		} else if errors.Is(err, fs.ErrNotExist) {
-			err = nil
 		}
 		if err != nil {
 			s.releaseLifecycleLock(job)

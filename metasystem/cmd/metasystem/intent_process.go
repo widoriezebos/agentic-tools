@@ -341,6 +341,7 @@ func processIntentCommands() []intentCommand {
 			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
 			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops. A person can use run:ID to cancel a unit run and release its worktree after its children stop.",
 				"G is a goal: every running job of that goal stops, and no other goal's. A goal its budget stopped completes its recorded stop by itself once none of its jobs runs."},
+			flags:    []intentFlag{reasonFlag("because", "why it stops")},
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead},
 			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
@@ -1158,11 +1159,32 @@ func (inv *intentInvocation) stopJob(ref string) int {
 	return inv.render(inv.stopResolvedJob(job))
 }
 
+func (inv *intentInvocation) recordWorkStop(goal, target string) *intentResult {
+	if reason := inv.input.text("reason"); reason != "" {
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			return problem
+		}
+		who := inv.knownPerson()
+		if lineage := inv.claimLineage(); lineage != "" {
+			who = lineage
+		}
+		if err := inv.recordUnitStopOverride(goal, "work-stop", reason, "Impact: "+target+" stops and is not restarted.", who); err != nil {
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the stop's reason could not be kept; nothing was stopped", Details: []string{err.Error()}, next: inv.sameCommand()}
+		}
+	}
+	return nil
+}
+
 // stopResolvedJob stops one launch or dispatch job; one already ended is
 // already stopped (R-129-ui).
 func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 	id := job.id
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
+	if !jobEnded(job) {
+		if problem := inv.recordWorkStop(jobGoal(job), jobReference(job)); problem != nil {
+			return *problem
+		}
+	}
 	if job.kind == "launch" {
 		if job.launch.State.Terminal() {
 			return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("launch %s already ended: %s", id, job.launch.State),
