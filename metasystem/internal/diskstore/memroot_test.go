@@ -24,3 +24,21 @@ func TestOnTestMemoryRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestInTestRegistryHome(t *testing.T) {
+	t.Parallel()
+	memoryRoot := "/tmp/mst-" + strconv.Itoa(os.Geteuid())
+	for _, parent := range []string{"/tmp", "/private/tmp", memoryRoot, "/private" + memoryRoot, "/tmp/x", "/var/tmp", "/arbitrary/fallback"} {
+		for _, suffix := range []string{"", "/home/.metasystem", "/./nested/../home"} {
+			path := parent + "/metasystem-test-registry-1" + suffix
+			if !InTestRegistryHome(path) {
+				t.Errorf("InTestRegistryHome(%q) = false", path)
+			}
+		}
+	}
+	for _, path := range []string{"", ".", "/tmp/metasystem-test-registry", "/tmp/xmetasystem-test-registry-1", "/tmp/metasystem-test-registry-1/../home", "/home/person/.metasystem"} {
+		if InTestRegistryHome(path) {
+			t.Errorf("InTestRegistryHome(%q) = true", path)
+		}
+	}
+}

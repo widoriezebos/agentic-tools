@@ -360,11 +360,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 		report, err := diskstore.RunPass(ctx, options)
 		return report, forgotten, err
 	}
-	tempRoots := pass.TempRoots
-	if tempRoots == nil {
-		hostTemp, _ := diskstore.HostTempRoot()
-		tempRoots = nonEmpty(hostTemp, "/tmp")
-	}
+	tempRoots, volumes := machinePassRoots(home, top, pass.TempRoots, evidenceRoots)
 	options.Classes = []diskstore.Class{
 		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.machineProofs(home)},
 		&launch.UnitRetention{Root: filepath.Join(home, "unit"), Target: host.Bytes(config.DiskUnitTargetKey), Keep: host.Duration(config.DiskUnitKeepKey),
@@ -379,14 +375,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	options.Volumes = pass.Volumes
 	if options.Volumes == nil {
-		// The host floor judges durable disks, not the keeper's fixed-size
-		// volume of throwaway test files.
-		for _, path := range append(append([]string{home, top}, tempRoots...), evidenceRoots...) {
-			if !diskstore.OnTestMemoryRoot(path) {
-				options.Volumes = append(options.Volumes, path)
-			}
-		}
-		options.Volumes = existing(options.Volumes)
+		options.Volumes = existing(volumes)
 	}
 	options.FloorBytes = host.Bytes(config.DiskFloorKey)
 	if pass.FloorGiB > 0 {
@@ -409,6 +398,29 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	report, err := diskstore.RunPass(ctx, options)
 	return report, forgotten, err
+}
+
+// machinePassRoots keeps test homes independent of the host's temp contents
+// and free disk. Explicit temp roots still participate in stray inventory;
+// only roots outside test storage participate in the default floor check.
+func machinePassRoots(home, top string, tempRoots, evidenceRoots []string) ([]string, []string) {
+	testHome := diskstore.InTestRegistryHome(home)
+	if tempRoots == nil && !testHome {
+		hostTemp, _ := diskstore.HostTempRoot()
+		tempRoots = nonEmpty(hostTemp, "/tmp")
+	}
+	var candidates []string
+	if !testHome {
+		candidates = append(candidates, home, top)
+	}
+	candidates = append(append(candidates, tempRoots...), evidenceRoots...)
+	var volumes []string
+	for _, path := range candidates {
+		if !diskstore.OnTestMemoryRoot(path) && !(testHome && diskstore.InTestRegistryHome(path)) {
+			volumes = append(volumes, path)
+		}
+	}
+	return tempRoots, volumes
 }
 
 // launchRetention is the launch store's class: ~/.metasystem/launch with

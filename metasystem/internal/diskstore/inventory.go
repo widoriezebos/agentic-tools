@@ -146,7 +146,7 @@ var strayPrefixes = []string{"metasystem-", "goal-txn-", "steward-test-home-", "
 // notStrays are engine-prefixed names another owner reconciles: the
 // process-scratch parent and testenv's registry homes and their sidecars.
 // The memory volume's mount point and lease file are not strays.
-var notStrays = []string{"metasystem-test-registry-", "metasystem-test-process-", testMemoryPrefix}
+var notStrays = []string{testRegistryPrefix, "metasystem-test-process-", testMemoryPrefix}
 
 // StrayIdle is how long an engine-prefixed entry must be idle before it is
 // a stray a person may remove (3.8: "idle a day").

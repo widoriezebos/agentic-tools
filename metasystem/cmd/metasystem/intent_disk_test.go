@@ -279,6 +279,25 @@ func TestDiskShowAndPreviewChangeNothing(t *testing.T) {
 	}
 }
 
+func TestDiskPreviewReportsFreeSpaceAgainstFloor(t *testing.T) {
+	t.Parallel()
+	bed := newDiskBed(t)
+	pass := bed.owners.disk.pass
+	var report diskstore.Report
+	bed.owners.disk.pass = func(ctx context.Context, top string, options steward.DiskPass) (steward.DiskPassResult, error) {
+		result, err := pass(ctx, top, options)
+		report = result.Machine
+		return result, err
+	}
+	code, out := bed.run("disk", "clean", "--preview", "--floor", "1048576")
+	if code != 0 || !strings.Contains(out, "free:") || !strings.Contains(flatPage(out), "below the floor of 1048576.0 GiB") || !strings.Contains(out, "Preview: nothing was changed") {
+		t.Fatalf("preview = %d:\n%s", code, out)
+	}
+	if len(report.Volumes) != 1 || report.Volumes[0].Path != bed.root || report.Volumes[0].FloorBytes != 1048576<<30 || !report.Volumes[0].BelowFloor {
+		t.Fatalf("preview did not measure the injected volume against the floor: %+v", report.Volumes)
+	}
+}
+
 // --strays is a person's act from a preview: an agent is told who runs it;
 // a person removes the idle stray, and a held one is declined naming the
 // holder while the rest completes; a repeat writes nothing.
