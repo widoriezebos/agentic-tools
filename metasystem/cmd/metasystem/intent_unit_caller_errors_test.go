@@ -70,9 +70,13 @@ func assertComparisonProgress(t *testing.T, bed *workBed, run string, active uin
 	return record
 }
 
-func assertOwnComparison(t *testing.T, bed *workBed, run string) {
+func assertOwnComparison(t *testing.T, bed *workBed, run string, owners ...intentOwners) {
 	t.Helper()
-	code, result, _ := bed.work("work", "wait", "run:"+run)
+	owner := bed.workOwners()
+	if len(owners) > 0 {
+		owner = owners[0]
+	}
+	code, result := bed.runJSON(owner, "work", "wait", "run:"+run)
 	record := callerErrorRun(t, bed, run)
 	if code != 1 || resultData(t, result)["outcome"] != "proof-red" || record.Rounds[0].Cause != "own" || !record.Rounds[0].Steps[1].Comparison.Verified || len(bed.starter.launched()) != 3 {
 		t.Fatalf("comparison did not resume once: code=%d summary=%q cause=%s launches=%v", code, result.Summary, record.Rounds[0].Cause, bed.starter.launched())
@@ -121,13 +125,18 @@ func TestARefusedWaitRecordsNoAttribution(t *testing.T) {
 			}
 			if claimErr != nil {
 				owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error { return func() error { return claimErr } }
+				withoutRunHolder(t, bed, run)
 			}
+			before := workIdemSnapshot(t, bed.unitRoot)
 			code, result := bed.runJSON(owners, "work", "wait", "run:"+run)
 			assertCallerErrorSummary(t, result, "The next step could not start; no failure was recorded")
 			if code != 1 || result.Outcome != intentRefused || resultData(t, result)["state"] != "running" || result.Next == nil || !slices.Equal(result.Next.Argv, next) || result.Next.Reason != reason || !strings.Contains(strings.Join(result.Details, "\n"), cause) {
 				t.Fatalf("refusal lost its cause or remedy: code=%d outcome=%s state=%v next=%+v details=%v", code, result.Outcome, resultData(t, result)["state"], result.Next, result.Details)
 			}
 			record := assertComparisonProgress(t, bed, run, 0)
+			if claimErr != nil {
+				workIdemSameFiles(t, "refused attribution", before, workIdemSnapshot(t, bed.unitRoot))
+			}
 			if len(bed.starter.launched()) != 2 {
 				t.Fatal("a refused observer launched the comparison")
 			}

@@ -98,6 +98,7 @@ var Rows = []Row{
 	{Code: "READ_BRIEF_MISSING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_RUN_BUSY", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.lock", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_LAUNCH_UNAUTHORIZED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.beforeLaunch", Shape: Question, H1: StandingInput},
+	{Code: "UNIT_RUN_HOLDER_CHANGED", Owner: "cmd/metasystem", Site: "intent_work.go#intentInvocation.runAuthority", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_WAIT_RETRY", Owner: "internal/launch", Site: "tree_reservation.go#UnitRunner.CommandWait", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_LOCK_FAILED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.lock", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_RUN_NOT_AWAITING", Owner: "internal/launch", Site: "unit_run.go#admitFollowUp", Shape: Question, H1: StandingInput},
