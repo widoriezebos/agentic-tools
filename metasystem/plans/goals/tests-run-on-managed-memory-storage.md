@@ -7,10 +7,12 @@
 - Origin: main
 - Next step: Build from the agreed design page /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/tests-run-on-managed-memory-storage.md; it is the design, no new design is written. The default roster cuts one brief per unit from it (each starts with an inventory and re-counts its estimate; split at the seam the units table names when over 250 production lines), one Astra round per brief. Units in order: U1 coordination, the record, its proof, the report; U2 users take a lease and use a proven storage; U3 the engine recognises the root, the releaser releases, the stop completes cleanup; U4 recovery; U5 the engine is built once per source state; U6 Linux backend and the providers; U7 macOS backend (--last). No backend can be selected before U6; U1 to U5 are built against a directory-backed test backend. Acceptance is section 5 of the page, including the measured full proofs on both Macs with the sampled maximum of the storage's use (target 1 GiB) and the row absent within two intervals after the proof.
 - OpenedAt: 2026-11-16T10:07:35Z
-- Revision: 1
+- Revision: 2
+- Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 
 History:
 - 2026-11-16T10:07:35Z GEBAA7YNQ0614Z9YERRNXZEPJ1-landing-1468aef3 open actor=human:Wido targets=tests-run-on-managed-memory-storage
-Integrity: sha256=0c7bd45d792844e44f4419550e07dcb63e227f0ae7a92d442616b1f6991b5686
+- 2026-11-16T10:07:52Z 8S2N3GMN95QM48QYT79SG28AP5-landing-1468aef3 set-pin actor=human:Wido targets=tests-run-on-managed-memory-storage
+Integrity: sha256=f8d038113fa93a91c14a54637500e74f811d85a3d4621c4e803394a6bc737787
