@@ -73,6 +73,7 @@ func TestALateReadWaitsForAnAuthorizedLook(t *testing.T) {
 	t.Parallel()
 	b, _, run, _, step := lateFreshRead(t, nil)
 	endLateFreshRead(t, b, step)
+	withoutRunHolder(t, b, run)
 	before := workIdemSnapshot(t, b.unitRoot)
 	launched := len(b.starter.launched())
 	code, result := collectWithOwners(t, b, run, nonHolderOwners(b))
