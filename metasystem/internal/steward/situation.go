@@ -77,6 +77,7 @@ type Situation struct {
 	coordinator       bool
 	admissionCommands map[int64]string
 
+	Undelivered  int
 	Dispositions []humanauthority.Decision `json:",omitempty"`
 }
 
@@ -478,7 +479,7 @@ func (s *Situation) readQuestions(root string) {
 // readAuthority keeps the grants live at the read from the read's one
 // ledger, the attorney log's last 20 lines, the host's last 20 decisions
 // and the last 10 rulings. Dispositions retain the newest decision for each
-// occurrence from the whole host log.
+// occurrence, and Undelivered counts unsent grant decisions, from the whole log.
 func (s *Situation) readAuthority(root string, src SituationSources, now time.Time) {
 	var problems []string
 	if reason := s.Unavailable["ledger"]; reason != "" {
@@ -508,6 +509,18 @@ func (s *Situation) readAuthority(root string, src SituationSources, now time.Ti
 	}
 	if bad > 0 {
 		problems = append(problems, fmt.Sprintf("the decision log: %d undecodable lines", bad))
+	}
+	if err == nil {
+		delivered, err := readDeliveredDecisions(home)
+		if err != nil {
+			problems = append(problems, "the delivered decisions: "+err.Error())
+		} else {
+			for _, d := range decisions {
+				if d.Grant != "" && !delivered[d.ID] {
+					s.Undelivered++
+				}
+			}
+		}
 	}
 	latest := map[[3]string]humanauthority.Decision{}
 	for _, d := range decisions {

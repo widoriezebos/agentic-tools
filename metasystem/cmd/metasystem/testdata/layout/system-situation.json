@@ -269,7 +269,8 @@ exit 0
       "Decisions": null,
       "Rulings": null,
       "Alerts": {},
-      "RedLine": ""
+      "RedLine": "",
+      "Undelivered": 0
     }
   }
 }

@@ -1,7 +1,7 @@
 Grant GRANT
 
-by        human:Wido
-classes   [lane-recovery]
+by        Wido
+classes   lane-recovery
 reason    no reason given
 until     Wed 12:00
 live      true
