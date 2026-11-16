@@ -1,0 +1,114 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "Optionally take the current lineage and machine from file.Claimed even when StopCapability is missing, so the message names them.",
+        "claim": "When the claim is changed and the goal has no stop capability, the mismatch message shows an empty current holder ('now  on ').",
+        "class": "other",
+        "evidence": "intent_work.go runAuthority: `current` is filled only when both file.Claimed and file.StopCapability are set. The ownership check that runs just before guarantees file.Claimed is set, but not StopCapability. If StopCapability is missing, `current` stays empty, and the reason is formatted as 'was L on M, now  on '. The refusal itself is still correct: it is refused, and the remedy names the session that holds the checkout. Only the wording of the details suffers, and a claimed goal with no stop capability is not reached by the brief's tests. The slice works and is safe without a fix.",
+        "id": "code-critic-194cd7ee236cf55dc4d8ff31:1",
+        "material": false,
+        "relation": "materiality criterion: wording only, no change in behaviour",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_work.go"
+      },
+      {
+        "change": "Optionally skip recording a holder when the build was admitted by lane-fix custody, so the run takes only the path where the caller holds the claim.",
+        "claim": "When work build is admitted through lane-fix custody rather than the caller's own goal claim, it still records the goal's current claim as the run's holder, even though that claim did not admit the run.",
+        "class": "other",
+        "evidence": "intent_work.go at about :1032: laneClaimCheck returns nil when the caller is under a lane fix (intent_lane_fix.go:113-115). The holder is then set at about :1110 from file.Claimed and StopCapability without condition. I see no new opening from this: a session that passes the ownership check with that claim also passes the plain caller check, and lane-fix runs work in their own worktree. Inferred, with no reproduction, so per the skill it is noted only.",
+        "id": "code-critic-194cd7ee236cf55dc4d8ff31:2",
+        "material": false,
+        "relation": "materiality criterion: no reproduction or traced path",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_work.go"
+      }
+    ],
+    "id": "code-critic-194cd7ee236cf55dc4d8ff31",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-194cd7ee236cf55dc4d8ff31/rounds/1/return.md",
+    "subject": {
+      "commit": "8020a4d28472776090ba415689479b7211df36a5",
+      "diffDigest": "73168d66409b779ccd52477cf31054316fd4558f061d284309fa180b96fd39b9",
+      "kind": "commit",
+      "parent": "d5f51aa8d0181e56bd7d72c003774e2871dea8f6",
+      "tree": "2829cc4715de954f2ae7e12b087793ad318a7b42"
+    }
+  },
+  "readDigest": "7eeb4ac503f1b5bba3cba2695aebdda6321dc51664b4c28ea4b9bd9327fdcfc2",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U4b2",
+  "subject": {
+    "commit": "8020a4d28472776090ba415689479b7211df36a5",
+    "parent": "d5f51aa8d0181e56bd7d72c003774e2871dea8f6",
+    "tree": "2829cc4715de954f2ae7e12b087793ad318a7b42",
+    "patchDigest": "73168d66409b779ccd52477cf31054316fd4558f061d284309fa180b96fd39b9",
+    "unitDigest": "d19df80f254cdc9c23b2f294cd499dc97282016e71b391d39b5879d050c03699"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-194cd7ee236cf55dc4d8ff31",
+    "round": 1,
+    "closureSha256": "f33ae404a768238ef719d0f96c546588090b6c8b618df1b9a4d0f3823c672353"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "2829cc4715de954f2ae7e12b087793ad318a7b42",
+    "runId": "goal-read-gate-20261116t012912z-f17f6afb6d01e28d"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    },
+    {
+      "kind": "read",
+      "commit": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "digest": "a0def01a53bfb8ad3fd7f9511fae6c0badec706bee597682ab9f41c030dc7918"
+    },
+    {
+      "kind": "read",
+      "commit": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+      "digest": "b3808658d850bb8d57f08615d09c66fdd94851d9786d72817fdffc25320ff692"
+    },
+    {
+      "kind": "read",
+      "commit": "d5f51aa8d0181e56bd7d72c003774e2871dea8f6",
+      "digest": "4e6deaf09e77be9ea34ad23120624fbf37533f0e751ce7f2b803ee080fcadf44"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_collect_round_test.go",
+      "readerWord": "reviewed by critic root code-critic-194cd7ee236cf55dc4d8ff31"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_caller_errors_test.go",
+      "readerWord": "reviewed by critic root code-critic-194cd7ee236cf55dc4d8ff31"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_late_read_test.go",
+      "readerWord": "reviewed by critic root code-critic-194cd7ee236cf55dc4d8ff31"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_run_holder_test.go",
+      "readerWord": "reviewed by critic root code-critic-194cd7ee236cf55dc4d8ff31"
+    }
+  ],
+  "sha256": "8f8c7a3debee56736e91faab54e9e57e21898b162683f0c5ff81a6f61ddbecfd"
+}
