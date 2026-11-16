@@ -24938,6 +24938,141 @@
       "opened": "2026-11-16T23:07:53Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestFleetBoundaryPublicLoopRevivesWithoutSession",
+      "identity": "red:metasystem/cmd/metasystem:TestFleetBoundaryPublicLoopRevivesWithoutSession",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T185957.375997000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestFleetBoundaryPublicLoopRevivesWithoutSession",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261116T185957.375997000Z-replay-1",
+          "batch": "20261116T185957.375997000Z-replay-1",
+          "baseCommit": "c024eb5c2d65569abfd40156b640674b68feaa52",
+          "baseTree": "d3c8f17e399fc8f6e42c45b955ce60effb613b3b",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T185957.375997000Z-replay-1.log",
+          "logDigest": "186822b3fc02eda4202091ace8e70243a32df26e4b278b450557fa0a7684405f",
+          "seenAt": "2026-11-16T23:11:10Z",
+          "opid": "XACBG2NFNHFPK13KH1ZCE4B1E8-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261116T185957.375997000Z-replay-1"
+      ],
+      "opened": "2026-11-16T23:11:10Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestHousekeepingFixtureOwnership-2",
+      "identity": "red:metasystem/cmd/metasystem:TestHousekeepingFixtureOwnership",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T185957.375997000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestHousekeepingFixtureOwnership",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261116T185957.375997000Z-replay-1",
+          "batch": "20261116T185957.375997000Z-replay-1",
+          "baseCommit": "c024eb5c2d65569abfd40156b640674b68feaa52",
+          "baseTree": "d3c8f17e399fc8f6e42c45b955ce60effb613b3b",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T185957.375997000Z-replay-1.log",
+          "logDigest": "186822b3fc02eda4202091ace8e70243a32df26e4b278b450557fa0a7684405f",
+          "seenAt": "2026-11-16T23:11:10Z",
+          "opid": "XACBG2NFNHFPK13KH1ZCE4B1E8-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261116T185957.375997000Z-replay-1"
+      ],
+      "opened": "2026-11-16T23:11:10Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers-2",
+      "identity": "red:metasystem/cmd/metasystem:TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T185957.375997000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261116T185957.375997000Z-replay-1",
+          "batch": "20261116T185957.375997000Z-replay-1",
+          "baseCommit": "c024eb5c2d65569abfd40156b640674b68feaa52",
+          "baseTree": "d3c8f17e399fc8f6e42c45b955ce60effb613b3b",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T185957.375997000Z-replay-1.log",
+          "logDigest": "186822b3fc02eda4202091ace8e70243a32df26e4b278b450557fa0a7684405f",
+          "seenAt": "2026-11-16T23:11:10Z",
+          "opid": "XACBG2NFNHFPK13KH1ZCE4B1E8-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261116T185957.375997000Z-replay-1"
+      ],
+      "opened": "2026-11-16T23:11:10Z",
+      "closed": null
     }
   ],
   "cadence": {
