@@ -28,6 +28,10 @@ type execAllowance struct {
 }
 
 var lawfulExecPrograms = map[string]execAllowance{
+	"/usr/bin/xcrun": {
+		files:  []string{"internal/testenv/git.go"},
+		reason: "Apple's developer-tool selection adapter resolves git for the test process namespace",
+	},
 	"git": {reason: "the repository is git's: no in-module Go library reads or writes it, so git is the version-control adapter every owner drives"},
 	"go": {
 		files: []string{"cmd/devgate/main.go", "cmd/metasystem/proof_run.go", "cmd/metasystem/intent_adopt.go", "cmd/metasystem/landing_path.go",
@@ -286,5 +290,28 @@ func f(ctx context.Context, engine string) {
 		if strings.Contains(violation, `"bash"`) {
 			t.Fatalf("bash is lawful in the landing receipt's declared-command runner: %q", violation)
 		}
+	}
+}
+
+func TestGoDecidesNativelyXcrunOnlyInTestGitResolver(t *testing.T) {
+	t.Parallel()
+	source := []byte(`package p
+import "os/exec"
+func f() { _ = exec.Command("/usr/bin/xcrun", "-f", "git") }
+`)
+	for _, file := range []string{"internal/testenv/git.go", "internal/testenv/toolchain.go", "cmd/metasystem/main.go"} {
+		t.Run(file, func(t *testing.T) {
+			violations, err := judgeNativeExec(file, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if file == "internal/testenv/git.go" {
+				want = 0
+			}
+			if len(violations) != want {
+				t.Fatalf("violations = %v, want %d", violations, want)
+			}
+		})
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -660,6 +661,9 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 	values := map[string]string{
 		"GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_CONFIG_GLOBAL":   gitConfig,
+	}
+	if git := resolveTestGit(runtime.GOOS, exec.LookPath, developerGit); git != "" {
+		values["PATH"] = namespaceGitPath(root, git, os.Getenv("PATH"))
 	}
 	for name, value := range directories {
 		values[name] = value
