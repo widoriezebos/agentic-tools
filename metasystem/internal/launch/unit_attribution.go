@@ -92,11 +92,14 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 				}
 				if i == 0 && complete && len(failed) > 0 {
 					evidence.Failed = append(evidence.Failed, failed...)
+				} else if units := latest.sectionUnits(section.ID, plan.Check.Directory); i > 0 && section.Outcome == "failed" && len(units) > 0 {
+					evidence.Failed = append(evidence.Failed, units...)
 				} else {
 					name := section.ID[strings.LastIndex(section.ID, ":")+1:]
 					evidence.Failed = append(evidence.Failed, loopstop.RedUnit{Unit: "section/" + name})
 				}
 			}
+			evidence.Failed = mergeRedUnits(evidence.Failed)
 		}
 	}
 	if len(evidence.Failed) == 0 {

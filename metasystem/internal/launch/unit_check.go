@@ -53,6 +53,7 @@ type CheckExit struct {
 
 type CheckExecution struct {
 	ExecutionID, Goal, Run, Round, Role, BriefSHA256, SourceSHA256 string
+	Directory                                                      string `json:"-"`
 	Steps                                                          []processmeasure.Step
 }
 type CheckContext struct {
