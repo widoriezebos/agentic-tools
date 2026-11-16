@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func TestEveryDecisionIsReportedOnce(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"delivered", "retry", "no channel", "unreadable set"} {
+	for _, mode := range []string{"delivered", "retry", "no channel", "unreadable set", "helm"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			fixture := newUnservedChannelFixture(t)
@@ -21,10 +22,17 @@ func TestEveryDecisionIsReportedOnce(t *testing.T) {
 			loc := time.FixedZone("local", 2*3600)
 			start := time.Date(2026, 11, 14, 23, 50, 0, 0, loc)
 			cfg := TickConfig{AskHome: home, Now: time.Date(2026, 11, 16, 0, 5, 0, 0, loc), narrationLocation: loc}
+			cfg.Prober = pinProber{int64(os.Getpid()): identity.Alive}
+			if mode == "helm" {
+				takeHelmFixture(t, fixture.root)
+			}
 			var decisions []humanauthority.Decision
 			for i := 24; i >= 0; i-- {
 				d := humanauthority.Decision{ID: fmt.Sprintf("D%02d", i), At: start.Add(time.Duration(i) * time.Minute),
 					Grant: "G1", Class: "lane-recovery", Argv: []string{"landing", "run", "--goals", fmt.Sprintf("goal-%02d", i)}, Outcome: "confirmed"}
+				if i == 12 {
+					d.Class, d.Argv = "ordering", []string{"goal", "prioritize", "G", "3"}
+				}
 				decisions = append(decisions, d)
 				if err := humanauthority.AppendDecision(home, d); err != nil {
 					t.Fatal(err)
@@ -38,7 +46,16 @@ func TestEveryDecisionIsReportedOnce(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			pass := func() error { return runTickReports(fixture.root, cfg, func() error { return nil }) }
+			pass := func() error {
+				if mode == "helm" {
+					result, err := RunTick(fixture.root, cfg, deadCensus())
+					if result.Decision.Verdict != VerdictHelm {
+						t.Fatalf("tick left the helm: %+v", result.Decision)
+					}
+					return err
+				}
+				return runTickReports(fixture.root, cfg, func() error { return nil })
+			}
 			if mode == "no channel" {
 				fixture.root = t.TempDir()
 				if err := pass(); err != nil {
@@ -84,7 +101,12 @@ func TestEveryDecisionIsReportedOnce(t *testing.T) {
 			}
 			for _, d := range decisions {
 				overrule, _, _ := humanauthority.OverruleLine(d)
-				line := fmt.Sprintf("%s lane-recovery: %s -> confirmed; overrule: %s", d.At.In(loc).Format("15:04"), strings.Join(d.Argv, " "), overrule)
+				line := fmt.Sprintf("%s %s: %s -> confirmed", d.At.In(loc).Format("15:04"), d.Class, strings.Join(d.Argv, " "))
+				if overrule != "" {
+					line += "; overrule: " + overrule
+				} else if strings.Contains(posts[0], line+"; overrule:") {
+					t.Fatalf("decision without compensation has an empty overrule: %q", posts[0])
+				}
 				if strings.Count(posts[0], line) != 1 {
 					t.Fatalf("decision %s was not delivered once with its overrule: %q", d.ID, posts[0])
 				}

@@ -434,7 +434,7 @@ func intentPlanningCommands() []intentCommand {
 		},
 		{
 			object: "grant", action: "show", audience: "both", laidOut: true, summary: "a grant and the decisions taken under it",
-			usage: []string{"metasystem grant show GRANT"}, maxArgs: 1,
+			usage: []string{"metasystem grant show GRANT"}, maxArgs: -1,
 			examples: []string{"metasystem grant show 01ARZ3NDEKTSV4RRFFQ69G5FAV-mac-cli-m1"},
 			run:      runIntentGrantShow,
 		},
@@ -2623,6 +2623,10 @@ func runIntentGrantList(inv *intentInvocation) int {
 }
 
 func runIntentGrantShow(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "grant show takes one grant id",
+			next: inv.publicArgv("grant", "list"), nextReason: "lists the grants with their ids"})
+	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -2630,7 +2634,7 @@ func runIntentGrantShow(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	id := strings.Join(inv.input.args, "")
+	id := inv.input.args[0]
 	var entry *goal.PowerOfAttorneyEntry
 	if projection.Tree != nil && projection.Tree.Root != nil {
 		for _, candidate := range projection.Tree.Root.PowerOfAttorney {
@@ -2661,7 +2665,8 @@ func runIntentGrantShow(inv *intentInvocation) int {
 	live, _ := entry.LiveAt(now)
 	until := entry.Until
 	if !entry.General() {
-		until = entry.Expires
+		expires, _ := time.Parse("2006-01-02", entry.Expires)
+		until = expires.AddDate(0, 0, 1).Format(time.RFC3339)
 	}
 	grant := map[string]any{"id": id, "by": entry.By, "classes": entry.Classes, "reason": entry.Reason, "until": until, "live": live}
 	decisions := []map[string]any{}
@@ -2670,7 +2675,7 @@ func runIntentGrantShow(inv *intentInvocation) int {
 			continue
 		}
 		line, remainder, compensation := humanauthority.OverruleLine(d)
-		decisions = append(decisions, map[string]any{"id": d.ID, "at": d.At.In(inv.owners.helm.withDefaults().zone).Format("15:04 MST (2006-01-02)"),
+		decisions = append(decisions, map[string]any{"id": d.ID, "at": d.At.UTC().Format(time.RFC3339),
 			"class": d.Class, "act": shellCommand(d.Argv), "outcome": d.Outcome, "overrule": line, "remainder": remainder, "compensation": compensation})
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: "Grant " + id, Data: map[string]any{"grant": grant, "decisions": decisions}, view: func(page *textui.Page) {
@@ -2678,14 +2683,20 @@ func runIntentGrantShow(inv *intentInvocation) int {
 		section := page.Section("", "")
 		for _, key := range []string{"by", "classes", "reason", "until", "live"} {
 			value := fmt.Sprint(grant[key])
-			if key == "until" && entry.General() {
+			switch key {
+			case "by":
+				value = strings.TrimPrefix(entry.By, "human:")
+			case "classes":
+				value = strings.Join(entry.Classes, ", ")
+			case "until":
 				end, _ := time.Parse(time.RFC3339, until)
 				value = page.Env().Time(end)
 			}
 			section.KV(key, textui.Plain(value))
 		}
 		for _, d := range decisions {
-			section := page.Section("Decision "+d["id"].(string), d["at"].(string))
+			at, _ := time.Parse(time.RFC3339, d["at"].(string))
+			section := page.Section("Decision "+d["id"].(string), at.In(inv.owners.helm.withDefaults().zone).Format("15:04 MST (2006-01-02)"))
 			section.Text(fmt.Sprintf("%s: %s; %s", d["class"], d["act"], d["outcome"]))
 			if d["overrule"] != "" {
 				section.Fixed(d["overrule"].(string))

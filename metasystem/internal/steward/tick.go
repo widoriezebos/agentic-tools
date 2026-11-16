@@ -400,6 +400,9 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
 		presenceErr = patternErr
 	}
+	if err := noticeDecisions(repoRoot, cfg); err != nil {
+		presenceErr = errors.Join(presenceErr, fmt.Errorf("decision delivery: %w", err))
+	}
 	recordDuty(repoRoot, "spent-box-question", askSpentBoxes(repoRoot, cfg, dispatch.FindAdmissionClosed), cfg.now())
 	if quotaErr := helmHealthPass(repoRoot, cfg); quotaErr != nil && presenceErr == nil {
 		presenceErr = quotaErr

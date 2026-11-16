@@ -3,6 +3,7 @@ package steward
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,11 +14,63 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 var situationNow = claimQuotaClock
+
+func TestTheSituationCountsUnsentDecisions(t *testing.T) {
+	t.Parallel()
+	root, home, now := situationQuotaBed(t), t.TempDir(), situationNow
+	delivered := map[string]bool{}
+	if err := humanauthority.AppendDecision(home, humanauthority.Decision{ID: "person", At: now}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 25; i++ {
+		id := fmt.Sprint(i)
+		if err := humanauthority.AppendDecision(home, humanauthority.Decision{ID: id, At: now, Grant: "G"}); err != nil {
+			t.Fatal(err)
+		}
+		if i >= 22 {
+			delivered[id] = true
+		}
+	}
+	for _, all := range []bool{false, true} {
+		if all {
+			for i := 0; i < 25; i++ {
+				delivered[fmt.Sprint(i)] = true
+			}
+		}
+		data, err := json.Marshal(delivered)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(decisionsDeliveredPath(home), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s := readSituation(t, root, composeSources(t, root, home, &now))
+		if len(s.Decisions) != 20 {
+			t.Fatalf("shown decisions = %d, want the last 20", len(s.Decisions))
+		}
+		for _, part := range Compose(s).Parts {
+			if part.Name == "authority" {
+				words := strings.Join(part.Summary, "\n")
+				if strings.Contains(words, "22 decisions under a grant not yet sent to you") == all ||
+					(all && strings.Contains(words, "not yet sent")) {
+					t.Fatalf("delivered all=%t: authority = %s", all, words)
+				}
+			}
+		}
+	}
+	if err := os.WriteFile(decisionsDeliveredPath(home), []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := readSituation(t, root, composeSources(t, root, home, &now)); !strings.Contains(s.Unavailable["authority"], "delivered decisions") {
+		t.Fatalf("unreadable delivered set was hidden: %v", s.Unavailable)
+	}
+}
 
 // situationQuotaBed is the claim-quota ledger with this machine's claim on
 // held-h, three ready priority-1 goals ranked c, a, b and one unranked goal,
