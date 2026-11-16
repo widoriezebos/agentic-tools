@@ -12175,11 +12175,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261115T080242.783509000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-15T11:49:28Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestARefusedLandingIsShownAtEveryStopAndTheHumansVerb(did",
@@ -12220,11 +12226,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestAWithdrawnQuestionTellsItsAsker(did",
@@ -12265,11 +12277,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestAuditDiskEngineNeverRunsGoClean(did",
@@ -12310,11 +12328,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestAuditLanePredicates(did",
@@ -12355,11 +12379,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestAuditTestsWriteNoHostTemp(did",
@@ -12400,11 +12430,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission(did",
@@ -12445,11 +12481,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission/audits-equals-full(did",
@@ -12490,11 +12532,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission/build-revise(did",
@@ -12535,11 +12583,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission/carry-subject(did",
@@ -12580,11 +12634,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission/carry-subject-no-selection(did",
@@ -12625,11 +12685,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission/carry-subject-unaudited(did",
@@ -12670,11 +12736,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryCheckFillsTheTreeSeam(did",
@@ -12715,11 +12787,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCentralFollowClearsStaleBuildGitAdapter",
@@ -12760,11 +12838,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCentralFollowRejectsArtifactMismatch(did",
@@ -12805,11 +12889,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCommitReadPublicationLifecycleGitAdapter(did",
@@ -12850,11 +12940,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCompleteDirectivePrefixOnlyForParserJoinedValues(did",
@@ -12895,11 +12991,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDeclaredResumeAndRepairPublicBuild(did",
@@ -12940,11 +13042,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDesignGateRecordWorkNameCannotEscape(did",
@@ -12985,11 +13093,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDesignSizeFreshDispatch(did",
@@ -13030,11 +13144,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDesignSizeRepeatedEstimatesBuild(did",
@@ -13075,11 +13195,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDesignSizeRepeatedEstimatesBuild/**Total**(did",
@@ -13120,11 +13246,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDesignSizeRepeatedEstimatesBuild/sum(did",
@@ -13165,11 +13297,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDesignSizeSettings(did",
@@ -13210,11 +13348,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDoneAcceptsFixtureHumanAuthorityOnlyOnItsFakeRoot(did",
@@ -13255,11 +13399,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestEveryStatefulActionRepeatsAsSuccess(did",
@@ -13300,11 +13450,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestExceptionLandingPostsTheDeliveredSentence",
@@ -13345,11 +13501,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestFleetPartialOutageSamplesUsePausedAge(did",
@@ -13390,11 +13552,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestFleetProviderWaitWithPastIdleIsKnown(did",
@@ -13435,11 +13603,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestFleetProviderWaitWithPastIdleIsKnown/false(did",
@@ -13480,11 +13654,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestFleetProviderWaitWithPastIdleIsKnown/true(did",
@@ -13525,11 +13705,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestFleetRecoveryDuePublicMachineList(did",
@@ -13570,11 +13756,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGitAdapterGoManifestInventoryMatchesNativeGoList(did",
@@ -13615,11 +13807,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalBudgetFindsItsBoxOnEitherSideOfFlags(did",
@@ -13660,11 +13858,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalClaimAreasAdmission(did",
@@ -13705,11 +13909,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalDoneClosesReviewsWithReasonAfterPublication(did",
@@ -13750,11 +13960,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalDoneClosesReviewsWithReasonAfterPublication/complete(did",
@@ -13795,11 +14011,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalDoneClosesReviewsWithReasonAfterPublication/interrupted(did",
@@ -13840,11 +14062,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalDoneKeepsAgentCompletionObligations(did",
@@ -13885,11 +14113,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalResumeRecordedFencesRefreshAcceptedLedger(did",
@@ -13930,11 +14164,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalResumeWithoutAStopFencePrintsTheTypedBudget(did",
@@ -13975,11 +14215,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestHandInUnreadUnitHasNoRead(did",
@@ -14020,11 +14266,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestHelmRepeatTakeRepairsStaleCheckout(did",
@@ -14065,11 +14317,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestHelmStatusReadsTheHelm(did",
@@ -14110,11 +14368,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestHelmTakeByAnAgentEnrollsNothing(did",
@@ -14155,11 +14419,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestHousekeepingFixtureOwnership",
@@ -14200,11 +14470,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestHumanVerbRefusalKeepsTheOwnersCode(did",
@@ -14245,11 +14521,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIncidentRecordCandidateGitAdapter(did",
@@ -14290,11 +14572,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIncidentRecordCandidateGitAdapter/held(did",
@@ -14335,11 +14623,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIncidentRecordCandidateGitAdapter/missing(did",
@@ -14380,11 +14674,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentBuildConcurrentRepeat(did",
@@ -14425,11 +14725,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentBuildRetainedRequestSelection(did",
@@ -14470,11 +14776,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentBuildSizeCorrectionRecordsRevisionWithoutAcceptance(did",
@@ -14515,11 +14827,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentBuildSizeCorrectionRecordsRevisionWithoutAcceptance/false(did",
@@ -14560,11 +14878,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentBuildSizeCorrectionRecordsRevisionWithoutAcceptance/true(did",
@@ -14605,11 +14929,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentBuildSizeExcludesRecordsAndPreexistingChanges(did",
@@ -14650,11 +14980,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentDeclaredCheckBuilderUsesModuleDirectory(did",
@@ -14695,11 +15031,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentDoneJobCompletesOnlyTheJob(did",
@@ -14740,11 +15082,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentLandRouteEvidence(did",
@@ -14785,11 +15133,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentPersonReviewStartsTheCheckOnALoadedHost(did",
@@ -14830,11 +15184,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentPersonReviewStartsTheCheckOnALoadedHost/retry(did",
@@ -14875,11 +15235,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentPersonReviewStartsTheCheckOnALoadedHost/size(did",
@@ -14920,11 +15286,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentPersonStopTransferRequiresProvenPerson(did",
@@ -14965,11 +15337,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentPlanningDescriptorCoverage(did",
@@ -15010,11 +15388,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentReferenceCollisionAcrossStores(did",
@@ -15055,11 +15439,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentReservedGoalNames(did",
@@ -15100,11 +15490,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentReviewCommitClosesThenPublishes(did",
@@ -15145,11 +15541,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentTreeBranchMutationsReserveWholeOperation(did",
@@ -15190,11 +15592,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentTreeWaitDoesNotOverwritePersonCancellation(did",
@@ -15235,11 +15643,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentUnitCheckDirectoriesAcrossRounds(did",
@@ -15280,11 +15694,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentUnitCheckDirectoriesAcrossRounds/.(did",
@@ -15325,11 +15745,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentUnitCheckDirectoriesAcrossRounds/./declared(did",
@@ -15370,11 +15796,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentUnitCheckDirectoriesAcrossRounds/./manual(did",
@@ -15415,11 +15847,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentUnitCheckFillsTheTreeSeam(did",
@@ -15460,11 +15898,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestIntentWorkNoAdapterProofRetainedOnResume(did",
@@ -15505,11 +15949,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingAgentProbeSelectsMatchingLaterKeeperStart(did",
@@ -15550,11 +16000,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingBatchStatusLaneSaysProving(did",
@@ -15595,11 +16051,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingClassifyTrunkRefreshCannotAdmitReplacement(did",
@@ -15640,11 +16102,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingDeployRepeatAsSuccess(did",
@@ -15685,11 +16153,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingExecutionDirectBackgroundProofUnderPause(did",
@@ -15730,11 +16204,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingExecutionDirectBackgroundProofUnderPause/batch(did",
@@ -15775,11 +16255,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingExecutionDirectBackgroundProofUnderPause/trunk(did",
@@ -15820,11 +16306,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeRefusalAndInheritedReason(did",
@@ -15865,11 +16357,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeRefusalAndInheritedReason/prove(did",
@@ -15910,11 +16408,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeRefusalAndInheritedReason/prove_wait(did",
@@ -15955,11 +16459,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeRefusalAndInheritedReason/refusal(did",
@@ -16000,11 +16510,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeRefusalAndInheritedReason/status(did",
@@ -16045,11 +16561,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeRefusalAndInheritedReason/status_json(did",
@@ -16090,11 +16612,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingFlakeSkillAndProtocol(did",
@@ -16135,11 +16663,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingGateBaselineGreenNeverAnswersForMerge(did",
@@ -16180,11 +16714,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingKeeperEmptyQueueNeedsNoSelectionPolicy(did",
@@ -16225,11 +16765,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingKeeperStatusJSONNamesOneTick(did",
@@ -16270,11 +16816,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingLandAnywayAliasAndDecision(did",
@@ -16315,11 +16867,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionAuthorityMatrix(did",
@@ -16360,11 +16918,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionAuthorityMatrix/trunk=false(did",
@@ -16405,11 +16969,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionAuthorityMatrix/trunk=true(did",
@@ -16450,11 +17020,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionCorruptAdviceAndWriteFailure(did",
@@ -16495,11 +17071,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionScopedEscalationNeedsFreshAct(did",
@@ -16540,11 +17122,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionScopedEscalationNeedsFreshAct/directScoped=false(did",
@@ -16585,11 +17173,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofPermissionScopedEscalationNeedsFreshAct/directScoped=true(did",
@@ -16630,11 +17224,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingProofStatusControlledStartup(did",
@@ -16675,11 +17275,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingPushStartsDeployNowWhenMainChanged(did",
@@ -16720,11 +17326,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingReplayMainFlakeDoesNotHideOwnFailure(did",
@@ -16765,11 +17377,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate(did",
@@ -16810,11 +17428,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/go_in_testdata(did",
@@ -16855,11 +17479,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/kept_goal_tests(did",
@@ -16900,11 +17530,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/kept_main_tests(did",
@@ -16945,11 +17581,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/other_production(did",
@@ -16990,11 +17632,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/person_policy(did",
@@ -17035,11 +17683,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/person_production(did",
@@ -17080,11 +17734,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/plans(did",
@@ -17125,11 +17785,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/production(did",
@@ -17170,11 +17836,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/records(did",
@@ -17215,11 +17887,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/skills(did",
@@ -17260,11 +17938,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolutionReadProductionGate/testdata(did",
@@ -17305,11 +17989,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingResolveAsSeatRecordsConflictWithoutAborting(did",
@@ -17350,11 +18040,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingSelectAdapterSupersededAncestryKeepsFullBatch(did",
@@ -17395,11 +18091,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingSetReplacesACorruptRecord(did",
@@ -17440,11 +18142,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingShadowVerbAndKeeperDriftReport(did",
@@ -17485,11 +18193,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingTestReceiptPublicSemanticDeadlineBoundaries(did",
@@ -17530,11 +18244,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLandingTrunkExceptionAuthorityMatrix(did",
@@ -17575,11 +18295,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixBuildRefusesPrimaryCheckoutWithSelectedLane(did",
@@ -17620,11 +18346,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits(did",
@@ -17665,11 +18397,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/amended(did",
@@ -17710,11 +18448,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/different_message(did",
@@ -17755,11 +18499,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/edited(did",
@@ -17800,11 +18550,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/extra_trailer(did",
@@ -17845,11 +18601,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/file(did",
@@ -17890,11 +18652,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/literal(did",
@@ -17935,11 +18703,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/long_file(did",
@@ -17980,11 +18754,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/long_literal(did",
@@ -18025,11 +18805,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/no_message(did",
@@ -18070,11 +18856,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/paragraphs(did",
@@ -18115,11 +18907,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/stdin(did",
@@ -18160,11 +18958,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixMessageReadsGitFileAndRefusesEdits/unreadable(did",
@@ -18205,11 +19009,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixParkedGoalRefusesBuild(did",
@@ -18250,11 +19060,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree(did",
@@ -18295,11 +19111,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestMachineStartReadsTheSeatLaunchEnvelope(did",
@@ -18340,11 +19162,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestMessageAdmissionNoticeWaitsForTheOutcome(did",
@@ -18385,11 +19213,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestMessageGrantAddAtTheHelmIsOneRefusal(did",
@@ -18430,11 +19264,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestOneMoreDayForAGoalAlreadyGoingOnSettlesIt(did",
@@ -18475,11 +19315,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestOnlyTheLeaseHolderMarksItsInbox(did",
@@ -18520,11 +19366,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestPlainLaneProveIgnoresTheLaneCheckoutsChanges(did",
@@ -18565,11 +19417,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestPlainLaneProveStartsDetachedOnce(did",
@@ -18610,11 +19468,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProcessCostPublicReport(did",
@@ -18655,11 +19519,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProcessManualPublicStatus(did",
@@ -18700,11 +19570,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProcessScratchIsReleasedOnlyAtTheProcessEnd(did",
@@ -18745,11 +19621,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProviderRecoveryAskSaysAutomaticRecoveryMayRestart(did",
@@ -18790,11 +19672,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestPublicVerbIsTheWordsBeforeTheFirstFlag(did",
@@ -18835,11 +19723,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRecordsConflictingWithTheGoalBranchRefuse(did",
@@ -18880,11 +19774,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRecoverMovedMainProvesOnlyWhatIsUnproved(did",
@@ -18925,11 +19825,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRecoverMovedMainProvesOnlyWhatIsUnproved/batch_push_proven_main(did",
@@ -18970,11 +19876,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRecoverMovedMainProvesOnlyWhatIsUnproved/known_red(did",
@@ -19015,11 +19927,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRecoverMovedMainProvesOnlyWhatIsUnproved/unproved_executable_main(did",
@@ -19060,11 +19978,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRecoveredReservationSurvivesItsOwnTick(did",
@@ -19105,11 +20029,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRefutedCloseSaysTheReviewIsClosed(did",
@@ -19150,11 +20080,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRevivalUsesTheInjectedProber",
@@ -19195,11 +20131,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRoundResultGateRedGitAdapter(did",
@@ -19240,11 +20182,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRoundResultWaitResumeGitAdapter(did",
@@ -19285,11 +20233,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestSettingsProofDeclarationsRefuseSeatWritesAndCheckMissingKeys(did",
@@ -19330,11 +20284,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestSettingsSetWritesTheLocalConfiguration(did",
@@ -19375,11 +20335,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers",
@@ -19420,11 +20386,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestStreamBufferTakesConcurrentWrites(did",
@@ -19465,11 +20437,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestSystemStopEndsARunningSeatAndItsBuild(did",
@@ -19510,11 +20488,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestTestImpactDeletedPackageSelectsImporterGitAdapter(did",
@@ -19555,11 +20539,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestTestImpactDeletedPackageSelectsImporterGitAdapter/.(did",
@@ -19600,11 +20590,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestTestImpactDeletedPackageSelectsImporterGitAdapter/internal/gone(did",
@@ -19645,11 +20641,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestUnitCarryPublicCostReport(did",
@@ -19690,11 +20692,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestUnitCarryPublicCostReport/commit(did",
@@ -19735,11 +20743,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestUnitCarryPublicCostReport/unit(did",
@@ -19780,11 +20794,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestUnitCheckRetryIsChargedAsAnAttempt(did",
@@ -19825,11 +20845,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestUnitOutcomeSaysTheCheckWaitsForTheHost(did",
@@ -19870,11 +20896,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkCommitClaimRemedy(did",
@@ -19915,11 +20947,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandRepeatPreservesCard(did",
@@ -19960,11 +20998,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandRepeatPreservesCard/joined(did",
@@ -20005,11 +21049,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandRepeatPreservesCard/joined-before-append(did",
@@ -20050,11 +21100,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandRepeatPreservesCard/returned(did",
@@ -20095,11 +21151,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandRepeatPreservesCard/returned-before-append(did",
@@ -20140,11 +21202,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandRequiresDeclaredEnd(did",
@@ -20185,11 +21253,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkLandTierOneRequiresAllDeclaredBuilds(did",
@@ -20230,11 +21304,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkReviewRetainsMaterialFromGoalWorktree(did",
@@ -20275,11 +21355,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestZshGlueUnquotesAndKeepsEmptyWords(did",
@@ -20320,11 +21406,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:not",
@@ -20365,11 +21457,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:report)",
@@ -20410,11 +21508,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261116T123617.554302000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-16T15:00:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-16T18:07:23Z",
+        "attempt": "20261116T162244.432016000Z",
+        "baseCommit": "110b88814dc8298068e67200dd57111f40daa6e3",
+        "how": "green",
+        "opid": "20Q5X2Y48H3CQ38MB0VBK7V9K1-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "testUnit": "metasystem/cmd/metasystem",
