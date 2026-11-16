@@ -1,6 +1,9 @@
 package launch
 
-import "os"
+import (
+	"os"
+	"slices"
+)
 
 // Collection joins every terminal execution by its physical launch id. The
 // step's tree observation may classify an otherwise successful exit as environment.
@@ -10,6 +13,9 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 	}
 	for _, step := range round.Steps {
 		ids := append([]string(nil), step.LaunchIDs...)
+		if record.State == "cancelled" && step.State == StepStarting && step.LaunchID != "" && !slices.Contains(ids, step.LaunchID) {
+			ids = append(ids, step.LaunchID)
+		}
 		if step.Unadmitted != "" && step.State == StepFailed {
 			ids = append(ids, step.Unadmitted)
 		}
@@ -18,6 +24,9 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 		}
 		for _, id := range ids {
 			execution, err := runner.Manager.Store.Read(id)
+			if os.IsNotExist(err) && record.State == "cancelled" && (id == step.LaunchID && step.State == StepStarting || step.Comparison != nil && id == step.Comparison.LaunchID && step.Comparison.FinishedAt == "") {
+				execution, err = runner.neverCreated(id), nil
+			}
 			if os.IsNotExist(err) && step.Comparison != nil && id == step.Comparison.LaunchID {
 				if step.Comparison.FinishedAt == "" {
 					continue
