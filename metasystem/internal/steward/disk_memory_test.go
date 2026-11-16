@@ -69,16 +69,12 @@ func TestMachinePassExcludesTestMemoryVolumes(t *testing.T) {
 			case "forced memory":
 				pass.FloorGiB = 1048576
 			case "outside":
-				// An explicit disk parent remains outside the memory root even when TMPDIR is on it.
-				outside, err := os.MkdirTemp("/tmp", "floor-outside-")
+				// The package directory is on disk regardless of TMPDIR. Report mode
+				// only reads temp roots; its lock, cursors and report stay under bed.home.
+				outside, err := os.Getwd()
 				if err != nil {
 					t.Fatal(err)
 				}
-				t.Cleanup(func() {
-					if err := os.RemoveAll(outside); err != nil {
-						t.Error(err)
-					}
-				})
 				pass.TempRoots = append(pass.TempRoots, outside)
 			case "injected memory":
 				pass.Volumes = []string{bed.home}
