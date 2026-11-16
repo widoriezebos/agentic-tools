@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -207,12 +208,57 @@ func buildShared(pkg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return buildSharedIn(module, pkg, sharedMemoryRoot(), namespaceHome(), MkdirTemp)
+}
+
+func namespaceHome() string {
 	namespaceTemp.Lock()
-	// The namespace's tmp directory is <registry>/<process>/tmp.
-	home := filepath.Dir(filepath.Dir(namespaceTemp.dir))
-	namespaceTemp.Unlock()
+	defer namespaceTemp.Unlock()
+	return filepath.Dir(filepath.Dir(namespaceTemp.dir))
+}
+
+func sharedMemoryRoot() string {
 	root, _ := defaultMemoryRoot.provenRoot()
-	return buildSharedIn(module, pkg, root, home, MkdirTemp)
+	return root
+}
+
+// BuildShared runs a build with its original flags, directory and environment.
+// On a proven memory root it links the shared output into destination; otherwise
+// it builds privately there. The factory must retain any fixture custody tag:
+// a file lock excludes builders but does not end an orphaned compiler.
+func BuildShared(destination string, command func(string) *GoCmd) error {
+	return buildSharedCommandIn(sharedMemoryRoot(), namespaceHome(), destination, command)
+}
+
+func buildSharedCommandIn(root, home, destination string, command func(string) *GoCmd) error {
+	if root != "" && strings.HasPrefix(home, root+"/") {
+		build := command("<output>")
+		directory, err := os.Getwd()
+		if build.Dir != "" {
+			directory, err = filepath.Abs(build.Dir)
+		}
+		if err != nil {
+			return err
+		}
+		inputs := append([]string{directory, build.Path, runtime.Version()}, build.Args[1:]...)
+		// Custody and namespace variables do not affect Go's build output.
+		// Build flags (including tags) and the toolchain environment do.
+		var environment []string
+		for _, entry := range build.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			if strings.HasPrefix(name, "GO") && name != "GOTMPDIR" && !strings.HasPrefix(name, "GO_WANT_") || strings.HasPrefix(name, "CGO_") || name == "CC" || name == "CXX" || name == "PKG_CONFIG" {
+				environment = append(environment, entry)
+			}
+		}
+		sort.Strings(environment)
+		inputs = append(inputs, environment...)
+		if handled, err := shareBuildOutput(root, filepath.Base(destination), inputs, func(output string) error {
+			return command(output).Run()
+		}, func(output string) error { return os.Link(output, destination) }); handled {
+			return err
+		}
+	}
+	return command(destination).Run()
 }
 
 func buildSharedIn(module, pkg, root, home string, mkdirTemp func(string) (string, error)) (string, error) {
@@ -234,15 +280,34 @@ func buildSharedIn(module, pkg, root, home string, mkdirTemp func(string) (strin
 
 func buildOnMemoryRoot(module, pkg, root string, mkdirTemp func(string) (string, error)) (string, bool, error) {
 	inputs := []string{module, pkg, "-buildvcs=false", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Getenv("GOFLAGS"), os.Getenv("CGO_ENABLED"), os.Getenv("GOEXPERIMENT")}
+	var linked string
+	handled, err := shareBuildOutput(root, filepath.Base(filepath.FromSlash(pkg)), inputs, func(output string) error {
+		return buildPackage(module, pkg, output)
+	}, func(output string) error {
+		private, err := mkdirTemp("shared-build-")
+		if err != nil {
+			return err
+		}
+		linked = filepath.Join(private, filepath.Base(output))
+		if err := os.Link(output, linked); err != nil {
+			_ = os.Remove(private)
+			return err
+		}
+		return nil
+	})
+	return linked, handled, err
+}
+
+func shareBuildOutput(root, name string, inputs []string, build func(string) error, link func(string) error) (bool, error) {
 	encoded, _ := json.Marshal(inputs)
 	key := fmt.Sprintf("%x", sha256.Sum256(encoded))[:16]
 	directory := filepath.Join(root, "mst-builds", key)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return "", false, nil
+		return false, nil
 	}
 	lock, err := os.OpenFile(directory+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return "", false, nil
+		return false, nil
 	}
 	defer unlockAndClose(lock)
 	for {
@@ -252,22 +317,16 @@ func buildOnMemoryRoot(module, pkg, root string, mkdirTemp func(string) (string,
 		}
 	}
 	if err != nil {
-		return "", false, nil
+		return false, nil
 	}
-	output := filepath.Join(directory, filepath.Base(filepath.FromSlash(pkg)))
-	if err := buildPackage(module, pkg, output); err != nil {
-		return "", true, err
+	output := filepath.Join(directory, name)
+	if err := build(output); err != nil {
+		return true, err
 	}
-	private, err := mkdirTemp("shared-build-")
-	if err != nil {
-		return "", false, nil
+	if err := link(output); err != nil {
+		return false, nil
 	}
-	linked := filepath.Join(private, filepath.Base(output))
-	if err := os.Link(output, linked); err != nil {
-		_ = os.Remove(private)
-		return "", false, nil
-	}
-	return linked, true, nil
+	return true, nil
 }
 
 func buildPackage(module, pkg, output string) error {

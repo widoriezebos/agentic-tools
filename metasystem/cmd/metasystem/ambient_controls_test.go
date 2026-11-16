@@ -106,7 +106,9 @@ var waitCandidateGo = testenv.Go
 // after the fixture custodian exists, its directory lands in the owned
 // TMPDIR and goes with the namespace, and the go command and every compile
 // and link it starts carry this binary's fixture tag, so a kill of the test
-// binary during the build leaves no writer the custodian does not end.
+// binary during the build leaves no writer the custodian does not end. On a
+// proven memory root the candidate links a shared output of this exact build;
+// -trimpath without -buildvcs=false differs from testenv.Engine's build.
 func setUpWaitCandidate() error {
 	_, tag, err := testenv.SetupFixtureTag("wait-candidate")
 	if err != nil {
@@ -117,10 +119,12 @@ func setUpWaitCandidate() error {
 		return fmt.Errorf("create wait candidate directory: %w", err)
 	}
 	candidate := filepath.Join(directory, "metasystem")
-	build := waitCandidateGo("build", "-trimpath", "-o", candidate, ".")
-	build.Env = append(os.Environ(), tag)
-	build.Stdout, build.Stderr = os.Stderr, os.Stderr
-	if err := build.Run(); err != nil {
+	if err := testenv.BuildShared(candidate, func(output string) *testenv.GoCmd {
+		build := waitCandidateGo("build", "-trimpath", "-o", output, ".")
+		build.Env = append(os.Environ(), tag)
+		build.Stdout, build.Stderr = os.Stderr, os.Stderr
+		return build
+	}); err != nil {
 		return fmt.Errorf("build wait candidate: %w", err)
 	}
 	if err := os.Setenv("METASYSTEM_WAIT_BINARY", candidate); err != nil {

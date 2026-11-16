@@ -391,3 +391,44 @@ func TestBuildSharedMemoryRoot(t *testing.T) {
 		})
 	}
 }
+
+// The setup build keeps its own flags and custody environment while sharing
+// identical outputs across namespaces. A different build is a different inode.
+func TestBuildSharedCommandVariantsAndFallback(t *testing.T) {
+	t.Parallel()
+	probe := fakeMemoryRoot(t)
+	root, ok := probe.provenRoot()
+	if !ok {
+		t.Fatal("fixture memory root was not proven")
+	}
+	module, err := moduleRoot()
+	checkTestenv(t, err)
+	build := func(memory, home, tags string) os.FileInfo {
+		t.Helper()
+		directory := t.TempDir()
+		output := filepath.Join(directory, "memorybuild")
+		checkTestenv(t, buildSharedCommandIn(memory, home, output, func(destination string) *GoCmd {
+			command := Go("build", "-trimpath", "-tags="+tags, "-o", destination, "./internal/testenv/testdata/memorybuild")
+			command.Dir = module
+			command.Env = append(os.Environ(), "GOTMPDIR="+directory)
+			return command
+		}))
+		info, err := os.Stat(output)
+		checkTestenv(t, err)
+		if result, err := exec.Command(output).CombinedOutput(); err != nil || string(result) != "memory build fixture\n" {
+			t.Fatalf("run setup build: %v, %q", err, result)
+		}
+		return info
+	}
+	home := filepath.Join(root, registryHomePrefix+"fixture")
+	one := build(root, home, "first")
+	two := build(root, home, "first")
+	if !os.SameFile(one, two) {
+		t.Fatal("namespace temporary paths split the shared build")
+	}
+	for _, other := range []os.FileInfo{build(root, home, "second"), build("", home, "first"), build(root, root+"-outside", "first")} {
+		if os.SameFile(one, other) {
+			t.Fatal("different flags or private fallback reused the shared inode")
+		}
+	}
+}

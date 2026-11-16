@@ -37,6 +37,13 @@ func Command() {
 	if _, err := os.Stat(filepath.Join(root, "fail")); err == nil {
 		os.Exit(73)
 	}
+	for i, arg := range os.Args[:len(os.Args)-1] {
+		if arg == "-o" {
+			if err := os.WriteFile(os.Args[i+1], nil, 0o700); err != nil {
+				panic(err)
+			}
+		}
+	}
 	os.Exit(0)
 }
 
