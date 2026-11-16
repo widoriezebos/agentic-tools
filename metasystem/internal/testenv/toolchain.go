@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -206,17 +207,76 @@ func buildShared(pkg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	directory, err := MkdirTemp("shared-build-")
+	namespaceTemp.Lock()
+	// The namespace's tmp directory is <registry>/<process>/tmp.
+	home := filepath.Dir(filepath.Dir(namespaceTemp.dir))
+	namespaceTemp.Unlock()
+	root, _ := defaultMemoryRoot.provenRoot()
+	return buildSharedIn(module, pkg, root, home, MkdirTemp)
+}
+
+func buildSharedIn(module, pkg, root, home string, mkdirTemp func(string) (string, error)) (string, error) {
+	if root != "" && strings.HasPrefix(home, root+"/") {
+		if output, handled, err := buildOnMemoryRoot(module, pkg, root, mkdirTemp); handled {
+			return output, err
+		}
+	}
+	directory, err := mkdirTemp("shared-build-")
 	if err != nil {
 		return "", err
 	}
 	output := filepath.Join(directory, filepath.Base(filepath.FromSlash(pkg)))
+	if err := buildPackage(module, pkg, output); err != nil {
+		return "", err
+	}
+	return output, nil
+}
+
+func buildOnMemoryRoot(module, pkg, root string, mkdirTemp func(string) (string, error)) (string, bool, error) {
+	inputs := []string{module, pkg, "-buildvcs=false", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Getenv("GOFLAGS"), os.Getenv("CGO_ENABLED"), os.Getenv("GOEXPERIMENT")}
+	encoded, _ := json.Marshal(inputs)
+	key := fmt.Sprintf("%x", sha256.Sum256(encoded))[:16]
+	directory := filepath.Join(root, "mst-builds", key)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", false, nil
+	}
+	lock, err := os.OpenFile(directory+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", false, nil
+	}
+	defer unlockAndClose(lock)
+	for {
+		err = unix.Flock(int(lock.Fd()), unix.LOCK_EX)
+		if err != unix.EINTR {
+			break
+		}
+	}
+	if err != nil {
+		return "", false, nil
+	}
+	output := filepath.Join(directory, filepath.Base(filepath.FromSlash(pkg)))
+	if err := buildPackage(module, pkg, output); err != nil {
+		return "", true, err
+	}
+	private, err := mkdirTemp("shared-build-")
+	if err != nil {
+		return "", false, nil
+	}
+	linked := filepath.Join(private, filepath.Base(output))
+	if err := os.Link(output, linked); err != nil {
+		_ = os.Remove(private)
+		return "", false, nil
+	}
+	return linked, true, nil
+}
+
+func buildPackage(module, pkg, output string) error {
 	build := Go("build", "-buildvcs=false", "-o", output, pkg)
 	build.Dir = module
 	if combined, err := build.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("%w\n%s", err, combined)
+		return fmt.Errorf("%w\n%s", err, combined)
 	}
-	return output, nil
+	return nil
 }
 
 // moduleRoot is the nearest directory at or above the test's working

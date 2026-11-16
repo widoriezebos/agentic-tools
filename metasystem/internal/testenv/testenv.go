@@ -777,13 +777,26 @@ type registryHomeLease struct {
 }
 
 func registryHomeForProcess(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
-	if inherited := inheritedRegistryHome(); inherited != nil {
-		return inherited, nil
-	}
-	return createRegistryHome(mkdirTemp)
+	return defaultMemoryRoot.registryHomeForProcess(mkdirTemp, inheritedRegistryHome())
 }
 
-func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
+func (probe memoryRootProbe) registryHomeForProcess(mkdirTemp func(string, string) (string, error), inherited *registryHomeLease) (*registryHomeLease, error) {
+	if inherited != nil {
+		if strings.HasPrefix(inherited.path, probe.path()+"/") {
+			probe.acquireLease()
+		}
+		return inherited, nil
+	}
+	return probe.createRegistryHome(mkdirTemp)
+}
+
+func (probe memoryRootProbe) createRegistryHome(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
+	if root, ok := probe.provenRoot(); ok {
+		removeDeadRegistryHomes(root, os.Stderr)
+		if registry, err := createRegistryHomeUnder(mkdirTemp, root); err == nil {
+			return registry, nil
+		}
+	}
 	return createRegistryHomeIn(mkdirTemp, "/tmp", os.TempDir())
 }
 
@@ -859,7 +872,14 @@ func createRegistryHomeUnder(mkdirTemp func(string, string) (string, error), roo
 func inheritedRegistryHome() *registryHomeLease {
 	home, homePresent := os.LookupEnv(supervisionRegistryHome)
 	nonce, noncePresent := os.LookupEnv(registryOwnerNonce)
-	if !homePresent || !noncePresent || len(nonce) != hex.EncodedLen(registryNonceSize) || !filepath.IsAbs(home) || filepath.Clean(home) != home ||
+	if !homePresent || !noncePresent {
+		return nil
+	}
+	return inheritedRegistryHomeAt(home, nonce)
+}
+
+func inheritedRegistryHomeAt(home, nonce string) *registryHomeLease {
+	if len(nonce) != hex.EncodedLen(registryNonceSize) || !filepath.IsAbs(home) || filepath.Clean(home) != home ||
 		!strings.HasPrefix(filepath.Base(home), registryHomePrefix) {
 		return nil
 	}

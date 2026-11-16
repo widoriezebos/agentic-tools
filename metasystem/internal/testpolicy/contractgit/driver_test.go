@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestRepositoryAttributesNameTestingMergeDriver(t *testing.T) {
@@ -30,7 +32,17 @@ func TestDriverArgsRunQuotedExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Link(testBinary, driver); err != nil {
-		t.Fatal(err)
+		data, err := os.ReadFile(testBinary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(testBinary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := testexec.WriteFile(driver, data, info.Mode().Perm()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	args, err := DriverArgs(func() (string, error) { return driver, nil })
 	if err != nil {

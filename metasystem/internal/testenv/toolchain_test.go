@@ -332,3 +332,62 @@ func TestBuildLockIdentityKeepsFlagsAndSourceButOmitsTemporaryPaths(t *testing.T
 		t.Fatalf("flag order, package or module identity collapsed variants: %v", paths)
 	}
 }
+
+func TestBuildSharedMemoryRoot(t *testing.T) {
+	t.Parallel()
+	for _, condition := range []string{"shared", "outside root", "mkdir fails", "lock fails"} {
+		t.Run(condition, func(t *testing.T) {
+			t.Parallel()
+			probe := fakeMemoryRoot(t)
+			root := probe.path()
+			home := filepath.Join(root, registryHomePrefix+"fixture")
+			if condition == "outside root" {
+				home = root + "-outside"
+			}
+			dir := filepath.Join(home, processNamespacePrefix+"fixture", "tmp")
+			checkTestenv(t, os.MkdirAll(dir, 0o700))
+			mkdirTemp := func(pattern string) (string, error) {
+				return os.MkdirTemp(dir, pattern)
+			}
+			module, err := moduleRoot()
+			checkTestenv(t, err)
+			proven, ok := probe.provenRoot()
+			if !ok {
+				t.Fatal("fixture memory root was not proven")
+			}
+			builds := filepath.Join(root, "mst-builds")
+			if condition == "mkdir fails" {
+				checkTestenv(t, os.WriteFile(builds, nil, 0o600))
+			}
+			const pkg = "./internal/testenv/testdata/memorybuild"
+			first, err := buildSharedIn(module, pkg, proven, home, mkdirTemp)
+			checkTestenv(t, err)
+			if condition == "lock fails" {
+				locks, err := filepath.Glob(filepath.Join(builds, "*.lock"))
+				checkTestenv(t, err)
+				if len(locks) != 1 {
+					t.Fatalf("locks = %v", locks)
+				}
+				checkTestenv(t, os.Remove(locks[0]))
+				checkTestenv(t, os.Mkdir(locks[0], 0o700))
+			}
+			second, err := buildSharedIn(module, pkg, proven, home, mkdirTemp)
+			checkTestenv(t, err)
+			one, err := os.Stat(first)
+			checkTestenv(t, err)
+			two, err := os.Stat(second)
+			checkTestenv(t, err)
+			if first == second || os.SameFile(one, two) != (condition == "shared") {
+				t.Fatalf("outputs %q and %q: same inode = %v", first, second, os.SameFile(one, two))
+			}
+			if condition == "outside root" {
+				if _, err := os.Stat(builds); !os.IsNotExist(err) {
+					t.Fatalf("private build touched shared directory: %v", err)
+				}
+			}
+			if output, err := exec.Command(second).CombinedOutput(); err != nil || string(output) != "memory build fixture\n" {
+				t.Fatalf("run linked fixture: %v, %q", err, output)
+			}
+		})
+	}
+}

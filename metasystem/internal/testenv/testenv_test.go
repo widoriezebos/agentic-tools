@@ -78,7 +78,7 @@ func TestPrepareClearsAmbientControlsPinsRegistryAndRestoresDeclarations(t *test
 		t.Fatalf("registry home = %q, want a new absolute directory", registryHome)
 	}
 	parent := filepath.Dir(registryHome)
-	if parent != "/tmp" && parent != observedTemporaryRoot {
+	if parent != "/tmp" && parent != observedTemporaryRoot && parent != defaultMemoryRoot.path() {
 		t.Fatalf("registry home = %q, want a child of /tmp or fallback TMPDIR %q", registryHome, observedTemporaryRoot)
 	}
 	if info, err := os.Stat(registryHome); err != nil || !info.IsDir() {
@@ -235,6 +235,8 @@ func TestInheritedRegistryHomeRejectsMatchingNonceWithoutLiveOwner(t *testing.T)
 }
 
 func TestCreateRegistryHomeFallsBackToTMPDIR(t *testing.T) {
+	probe := fakeMemoryRoot(t)
+	probe.mount = func(string, os.FileInfo) bool { return false }
 	fallbackRoot := t.TempDir()
 	t.Setenv("TMPDIR", fallbackRoot)
 	var directories []string
@@ -246,7 +248,7 @@ func TestCreateRegistryHomeFallsBackToTMPDIR(t *testing.T) {
 		return os.MkdirTemp(directory, pattern)
 	}
 
-	registry, err := createRegistryHome(mkdirTemp)
+	registry, err := probe.createRegistryHome(mkdirTemp)
 	if err != nil {
 		t.Fatal(err)
 	}
