@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build from the agreed design page /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-runner-is-judged-by-its-progress.md; it is the design, no new design is written. The default roster cuts one brief per unit from it (each starts with an inventory and re-counts its estimate; split at the seam the units table names when over 250 production lines), one Astra round per brief. Units in order: U1 the runner publishes progress and counts its tick results; U2 a replacement is a resumable transition; U3 liveness by reading; U4 bounded by outcome, and a person is asked; U5 the successor: a revive that starts it, and a question when it waits (--last). Acceptance is section 5 of the page, including the live observation on m1e. Roll-out (D9) is part of the goal: after deploy a person restarts supervision in each checkout (a1 does it in Wido's name), the hand-in records the running digests, and only then the workaround git config metasystem.steward.tick-seconds 3600 in the m1e checkout is removed.
 - OpenedAt: 2026-11-16T10:00:01Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=7d attemptLimit=30 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=30
 - BudgetExceptions: 0
 - NormApproval: approvedRef=PT94PT7BG9B1XQFH3D7HJHFD1V-landing-373c4177 minutes=3600 reviewRounds=30 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-16T10:00:01Z J7CXHA8B969HVWHXY531MNHDQJ-landing-373c4177 open actor=human:Wido targets=a-runner-is-judged-by-its-progress
 - 2026-11-16T10:00:19Z PT94PT7BG9B1XQFH3D7HJHFD1V-landing-373c4177 approve actor=human:Wido targets=a-runner-is-judged-by-its-progress
-Integrity: sha256=f8cc7685aa1ce76ea0fe8b972bcc8626afa98409c8f7d04203d9c0aa7aa0e284
+- 2026-11-16T10:00:33Z MX2X2X03G7W5M0HE7G835R089X-landing-373c4177 set-pin actor=human:Wido targets=a-runner-is-judged-by-its-progress
+Integrity: sha256=b398769db54c8dab75fd423a23a223ff10a8ba36d86b8b86eeb8c00a2f193146
