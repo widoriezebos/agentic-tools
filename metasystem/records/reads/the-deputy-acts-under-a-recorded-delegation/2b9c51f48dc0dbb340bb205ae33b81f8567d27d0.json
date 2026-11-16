@@ -1,0 +1,171 @@
+{
+  "coveredUnits": [
+    "U1a1",
+    "U1a2",
+    "U1a3",
+    "U1a4",
+    "U1b1a",
+    "U1b1b",
+    "U1b1c",
+    "U1b2a",
+    "U1b2b",
+    "U3a1",
+    "U3a2",
+    "U3b1",
+    "U3b2"
+  ],
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "In the second delivery, when the budget class is mapped, check that a one-more-day child's result keeps its goal target, or fall back to the positional goal word.",
+        "claim": "When the goal is given only as a positional word (goal budget G one-more-day), the budget overrule now finds the goal only through the decision's recorded effect targets. When the child's result carries an 'owner' data block, decision record stores that block instead of the targets, so the overrule line would come out empty for that form. Today this is inert: no budget act is mapped to a class until the second delivery (a-deputy-budget-and-run-release).",
+        "class": "other",
+        "evidence": "internal/humanauthority/overrule.go: the budget arm reads Effect.Targets and then only the --id/--goal flags. cmd/metasystem/intent_decision.go:186-192 replaces the targets with {owner: ...} when the child's data has an owner. attorney_class.go has no mapping for 'goal budget' on this branch.",
+        "id": "code-critic-2c1e54161fc99fb08b972103:1",
+        "material": false,
+        "relation": "not material under R-124 (Wido, 2026-09-25): the first delivery works and is safe without it, because no budget act can be delegated yet",
+        "severity": "low",
+        "where": "metasystem/internal/humanauthority/overrule.go"
+      },
+      {
+        "change": "None needed. Either keep it as a reasonable wake trigger or drop it if extra wakes are unwanted.",
+        "claim": "U3b2 also adds an 'undelivered|N' line to the situation's wake fingerprint, which brief section H3 does not ask for. The steward wakes when the count changes, including when a delivery lowers it.",
+        "class": "scope",
+        "evidence": "internal/steward/situation_compose.go wake(): add(\"undelivered|%d\", s.Undelivered). The file is an owner file of U3b2.",
+        "id": "code-critic-2c1e54161fc99fb08b972103:2",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/steward/situation_compose.go"
+      },
+      {
+        "change": "Optionally assert that the authority part was found.",
+        "claim": "TestTheSituationCountsUnsentDecisions does not fail if the page has no part named 'authority'. Its check runs only inside the loop over parts with that name.",
+        "class": "weakened-test",
+        "evidence": "internal/steward/situation_test.go: the check is inside `for _, part := range Compose(s).Parts { if part.Name == \"authority\" {...} }`, and nothing asserts that the part was found.",
+        "id": "code-critic-2c1e54161fc99fb08b972103:3",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/steward/situation_test.go"
+      }
+    ],
+    "id": "code-critic-2c1e54161fc99fb08b972103",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-deputy-acts-under-a-recorded-delegation/metasystem/artifacts/agents/code-critic-2c1e54161fc99fb08b972103/rounds/1/return.md",
+    "subject": {
+      "commit": "2b9c51f48dc0dbb340bb205ae33b81f8567d27d0",
+      "diffDigest": "a26d5fc8a5d5b75a6e13a071490cdc53b03f63438b250a598928baab7ba0aea4",
+      "kind": "commit",
+      "parent": "5c5fe8abbd43a85c905f00390abd1be30aa7f7b5",
+      "tree": "56d8c79f8d1d8e1505183230043586a25b9121a9"
+    }
+  },
+  "readDigest": "3339720b9c2cf416e02e00778ca8512e38e88cca3176f68179174cb0ecd83acc",
+  "schemaVersion": 1,
+  "goal": "the-deputy-acts-under-a-recorded-delegation",
+  "unit": "U3b2",
+  "subject": {
+    "commit": "2b9c51f48dc0dbb340bb205ae33b81f8567d27d0",
+    "parent": "5c5fe8abbd43a85c905f00390abd1be30aa7f7b5",
+    "tree": "56d8c79f8d1d8e1505183230043586a25b9121a9",
+    "patchDigest": "a26d5fc8a5d5b75a6e13a071490cdc53b03f63438b250a598928baab7ba0aea4",
+    "unitDigest": "c7a81a6b5fe0df8df13d96507f78fb6e804366fe6091123060fc2d6204b4ebe5"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-2c1e54161fc99fb08b972103",
+    "round": 1,
+    "closureSha256": "21cab18a29dece836b9b79cc4dbe7c1fc8639583879d0f9cb99f827751492e3f"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "56d8c79f8d1d8e1505183230043586a25b9121a9",
+    "runId": "goal-read-gate-20261116t094558z-9c2b47e4b4f519c0"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "599cfe2420c9c4bd5aa29d5ca7dc7eba3ce018b3",
+      "digest": "2a490d59619984f1f07082271deae588940b8f1ac928c14d25d888a2665b251b"
+    },
+    {
+      "kind": "read",
+      "commit": "436ca02e71d75acd7020f05c45d4914b01d62588",
+      "digest": "12bb5947dbcbe90779ee0248ad9dbe39f0bf9a862db08fd62aca0cec0f84363b"
+    },
+    {
+      "kind": "read",
+      "commit": "de1c388c8760ac24719f1165c484f93c017e4bf9",
+      "digest": "0c27e197afdc85d0c53b31e45a13ad48ecdd0bb4db90d67db14d07ca49336164"
+    },
+    {
+      "kind": "read",
+      "commit": "8b9a3704d3194ee2ede3f40e479cee2681022a61",
+      "digest": "346a113098cb0ecda3ff9bb76ac2f379d2900beac3cd54da827f6c5153e911dd"
+    },
+    {
+      "kind": "read",
+      "commit": "eeaa27c8c5ad5afc73cb7bc0c9c0d49c6d8cc2f4",
+      "digest": "4e2cac66b5ad22bdb4a3dffb7fba96317e148544fea136ae11ce83ebefe6f3a2"
+    },
+    {
+      "kind": "read",
+      "commit": "db398fa095b7e7c5d0adafd5c21807c421ec4d81",
+      "digest": "68dfb924825f7e94c02a11e971d87a9e2dd68d50b993939cacb9ef7f07de5158"
+    },
+    {
+      "kind": "read",
+      "commit": "c79e5612351cadb2f47b47fc49e17210e9349c52",
+      "digest": "91bb36e248e9bd45aaf9a971a2afa4e0db413e610a21f87644ccb2053162021b"
+    },
+    {
+      "kind": "read",
+      "commit": "db0cf35565406e8635e68fd148c058dc6ff2f965",
+      "digest": "e4fde84ac563771b4cda2c35647ef577144b44f76ace15356b15a112c366465e"
+    },
+    {
+      "kind": "read",
+      "commit": "9ff651291f99ef5579a120d55fd76ae2f9888e73",
+      "digest": "82e295b2b8f0e7352813dccccb08da86e8ff8277113c953cc90f59f338beefb6"
+    },
+    {
+      "kind": "read",
+      "commit": "7e1821f61307ae759703d713763cd5f33b780060",
+      "digest": "d512124da89bf4d3969b0033706a8d1583f0eefaba8edc82e873c83bd94bcd15"
+    },
+    {
+      "kind": "read",
+      "commit": "a78c820a4e9b34d0d0d17e07a3f054b56bb42907",
+      "digest": "65dbe44dcaaf3ad715f06d9b737f6b549ce4b815e5907f03d7abcdb58902b8fa"
+    },
+    {
+      "kind": "read",
+      "commit": "6e53f12a11c9a8513a793f27908e903d95e18f1f",
+      "digest": "f678a727b42735cad495be786c102ffa02f7700243f040647702417a3f48e7b9"
+    },
+    {
+      "kind": "read",
+      "commit": "6e16b925c3f310383b024d481a2b298922da4215",
+      "digest": "879985539983dbd23f09551d9adbfe5dece9b5b489fcb28bb1cd4455b9e7d075"
+    },
+    {
+      "kind": "read",
+      "commit": "26aa3ce7545514934cf49f22a4645a20e58f8caa",
+      "digest": "8ebe501898326dc7c05a42dce76c8c3535dd9aca4324eef0f5cd78b096659e02"
+    },
+    {
+      "kind": "read",
+      "commit": "f290177a4c5d24edbc594a60873798fb985ff130",
+      "digest": "c73f0b54c85f3fdb6fb0e4436f1ec1a7a73eb640a8f020ca0ec876e5f547b395"
+    },
+    {
+      "kind": "read",
+      "commit": "6ab1dc1f6113ae13cdb4a155904325436fc20271",
+      "digest": "82d1292ba5b98115d5fa415e5e2a4ef81b2ccd22b8bf23999c5c45131ed3c89f"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "8869feb706e6a9f5e446cf0273a5cdf92080bf2c47bea946d0f4f4bbc4a3704f"
+}
