@@ -1,0 +1,134 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "None needed now. If it ever matters, the impact line could say the stop was requested rather than that it happened.",
+        "claim": "The stop's reason is written before the stop is tried. When the stop is then refused (for example CancelRun returns 'tree waiting' because a mutation is still live, or the delegate refuses the dispatch cancel), a record saying 'TARGET stops and is not restarted' remains even though nothing stopped. Each retry writes another record, because the run or job has still not ended.",
+        "class": "other",
+        "evidence": "cmd/metasystem/intent_tree.go:127-132 writes the record before runner.CancelRun, which can return TreeWaitingError (internal/launch/tree_reservation.go, the CancelRun prelude). cmd/metasystem/intent_process.go stopResolvedJob writes it before cancelDispatch, which can refuse. This matches the brief (Contract 5: written before the stop takes effect) and the documented behaviour of recordUnitStopOverride ('Failed commands retain that admission evidence'). The slice works and is safe without a change.",
+        "id": "code-critic-b1d3ba367aecc2205026a946:1",
+        "material": false,
+        "relation": "R-143-m1e (the impact is stated before the effect)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_process.go"
+      },
+      {
+        "change": "None needed. The slice works and is safe without it.",
+        "claim": "ReconcileUnitLaunch no longer compares times for an outcome that did not run. As a result, a second never-run collection with cause 'environment' on a reservation not yet marked as environment now rewrites startedAt and endedAt with the new clock, where before the matching-times check meant the rewrite left the times as they were.",
+        "class": "other",
+        "evidence": "internal/dispatch/unit_launch.go:147-153: once the contradiction check passes for an outcome with executed false, the code returns early only when cause is not 'environment' or unitEnvironment is already true; otherwise it falls through to rewrite the status and times. The charge stays zero, so there is no effect on the budget.",
+        "id": "code-critic-b1d3ba367aecc2205026a946:2",
+        "material": false,
+        "relation": "R-129-ui (acts are idempotent)",
+        "severity": "low",
+        "where": "metasystem/internal/dispatch/unit_launch.go"
+      },
+      {
+        "change": "None needed now. Possibly word it as 'could not be settled' later.",
+        "claim": "When the new never-created path in internalCancel reaches ReconcileUnitLaunch and that call fails (for example because it contradicts an earlier settlement), the delegate reports 'unit launch ... could not be proven ended', which is misleading: no launch existed. The same misleading wording already applied to the launched case before this change.",
+        "class": "other",
+        "evidence": "internal/delegation/phases.go:177-199: the err != nil branch after the reconcile always dies with 'cancel refused: unit launch %s could not be proven ended (%v)'. The cause is still printed inside the parentheses, so the wording is only imprecise.",
+        "id": "code-critic-b1d3ba367aecc2205026a946:3",
+        "material": false,
+        "relation": "R-124-m1u (later list, not a fix round)",
+        "severity": "low",
+        "where": "metasystem/internal/delegation/phases.go"
+      }
+    ],
+    "id": "code-critic-b1d3ba367aecc2205026a946",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-b1d3ba367aecc2205026a946/rounds/1/return.md",
+    "subject": {
+      "commit": "e278496f0bd2ccc7b5c3098b9ebb931bc25296df",
+      "diffDigest": "a01336a3f872b0728a995280abce2a86a4cf6dc1ee287fd23e5f25717d5b589b",
+      "kind": "commit",
+      "parent": "7db01934fb9c08dd48b6b602910daee8b39cf2e4",
+      "tree": "ff243fa6866c3dc54e71f53b5a6f853e5a7d7966"
+    }
+  },
+  "readDigest": "cc21ae3b64c5afc8049d338c9fc291c18a7c60e7288ab4e30319fcd793095934",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U5a",
+  "subject": {
+    "commit": "e278496f0bd2ccc7b5c3098b9ebb931bc25296df",
+    "parent": "7db01934fb9c08dd48b6b602910daee8b39cf2e4",
+    "tree": "ff243fa6866c3dc54e71f53b5a6f853e5a7d7966",
+    "patchDigest": "a01336a3f872b0728a995280abce2a86a4cf6dc1ee287fd23e5f25717d5b589b",
+    "unitDigest": "7e7c2cbbcf147afcec2bfbf9332fbf7ea2dc3f3de29c14ca75c9f8fa2b95e351"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-b1d3ba367aecc2205026a946",
+    "round": 1,
+    "closureSha256": "7b311830ae197df3691b14237c935d0e68cdd901dfe67d95bae6728fa999ff7e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ff243fa6866c3dc54e71f53b5a6f853e5a7d7966",
+    "runId": "goal-read-gate-20261116t035922z-459014ee386b896e"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    },
+    {
+      "kind": "read",
+      "commit": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "digest": "a0def01a53bfb8ad3fd7f9511fae6c0badec706bee597682ab9f41c030dc7918"
+    },
+    {
+      "kind": "read",
+      "commit": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+      "digest": "b3808658d850bb8d57f08615d09c66fdd94851d9786d72817fdffc25320ff692"
+    },
+    {
+      "kind": "read",
+      "commit": "d5f51aa8d0181e56bd7d72c003774e2871dea8f6",
+      "digest": "4e6deaf09e77be9ea34ad23120624fbf37533f0e751ce7f2b803ee080fcadf44"
+    },
+    {
+      "kind": "read",
+      "commit": "7db01934fb9c08dd48b6b602910daee8b39cf2e4",
+      "digest": "307ab8c05ec92789eacae35e2469bbe93c8b9cab73c2a000dc333268f203e13f"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1d3ba367aecc2205026a946"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_tree_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1d3ba367aecc2205026a946"
+    },
+    {
+      "path": "metasystem/internal/delegation/closereap_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1d3ba367aecc2205026a946"
+    },
+    {
+      "path": "metasystem/internal/dispatch/unit_launch_reconcile_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1d3ba367aecc2205026a946"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_booking_test.go",
+      "readerWord": "reviewed by critic root code-critic-b1d3ba367aecc2205026a946"
+    }
+  ],
+  "sha256": "2b1f3f07080dd5d400bc00b4a70d6499d404f81b49515fa53c359f4ceeba8021"
+}
