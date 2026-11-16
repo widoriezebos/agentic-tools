@@ -1,0 +1,54 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "Put this on the later list. When it hurts, treat any column-0 line that is not `--- FAIL:`, `FAIL`, `ok`, `PASS` or `=== ` as unaccounted, and return nil. That subtracts trust instead of adding one prefix per case.",
+        "claim": "A Go runtime crash that prints `fatal error:` instead of `panic:` (for example, concurrent map writes or a deadlock) after another test in the same package already failed is still credited to the earlier test alone. The crashing test is then never rerun or compared. This is the same kind of problem as the round-1 finding, but outside this correction's literal scope (`panic: ` only). It is not material: it needs a failed test and a separate runtime crash in the same package of a later section in the same run. That is improbable, so the slice works and is safe for its first use without the fix.",
+        "class": "incomplete-item",
+        "evidence": "I reproduced it in a scratch module. The output is `--- FAIL: TestAudit (0.00s)`, then `fatal error: concurrent map writes`, then the stack, then `FAIL\\texample.test/m\\t0.248s`. `sectionRedUnits` (metasystem/internal/launch/check_evidence.go, the loop after `failure := regexp...`) checks only the `panic: ` prefix, so it would return the package with Tests=[TestAudit]. A call to os.Exit(1) inside a test, after an earlier failure, would be credited the same way.",
+        "id": "code-critic-75bc0b86bc0dbaea9e52dbc9:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/launch/check_evidence.go"
+      }
+    ],
+    "id": "code-critic-75bc0b86bc0dbaea9e52dbc9",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-red-names-what-failed/metasystem/artifacts/agents/code-critic-75bc0b86bc0dbaea9e52dbc9/rounds/1/return.md",
+    "subject": {
+      "commit": "cb195d3ca8511777271347dc14a622b7d5a224ec",
+      "diffDigest": "862454fc9e5f26293e8ab1ca657bf319b852724302c25c35bb4da731b57b6a30",
+      "kind": "commit",
+      "parent": "30d6e4c061c180a9e53c153584eb1011ced38524",
+      "tree": "e8974b05507c825cd2a2fe26e11fc0e409ea9055"
+    }
+  },
+  "readDigest": "a86fe6ac8545640a94bcf000524e2403675d1b7ce7db943f03b5252a5cabb2f8",
+  "schemaVersion": 1,
+  "goal": "red-names-what-failed",
+  "unit": "Ua",
+  "subject": {
+    "commit": "cb195d3ca8511777271347dc14a622b7d5a224ec",
+    "parent": "30d6e4c061c180a9e53c153584eb1011ced38524",
+    "tree": "e8974b05507c825cd2a2fe26e11fc0e409ea9055",
+    "patchDigest": "862454fc9e5f26293e8ab1ca657bf319b852724302c25c35bb4da731b57b6a30",
+    "unitDigest": "bbb7faead19859fe8e8bc54a8bfa98aaab758afae170ea12a15861a19693d891"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-75bc0b86bc0dbaea9e52dbc9",
+    "round": 1,
+    "closureSha256": "b9c9519f8f1b0497376045516b67ea8872b2d405f691f1f29cac3bb812c41219"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e8974b05507c825cd2a2fe26e11fc0e409ea9055",
+    "runId": "goal-read-gate-20261116t110943z-a1e5f5a788db75d6"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "51c7ae1dba62384201ba02b3c6a5181e7460f9f03ef923e66084b55e408eca5c"
+}
