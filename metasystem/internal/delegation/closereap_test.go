@@ -171,16 +171,17 @@ func TestCancelRefusesAUnitLaunchItCannotProveEnded(t *testing.T) {
 	}
 }
 
-func TestCancelOfAnUnstartedUnitReservationIsUnchanged(t *testing.T) {
+func TestCancelOfAnUnstartedUnitReservationSettlesUncharged(t *testing.T) {
 	t.Parallel()
 	b := unitCancelBed(t)
 	b.doubles.Host.CancelUnitLaunchFunc = func(string) (delegation.UnitLaunchOutcome, error) {
 		return delegation.UnitLaunchOutcome{}, os.ErrNotExist
 	}
-	requireExit(t, b.run("cancel", "--job", "unit-reader"), 0, b.stderr.String())
+	now := b.doubles.Clock.Now().UTC().Format("2006-01-02T15:04:05Z")
+	assertUnitCancelOutcome(t, b, delegation.UnitLaunchOutcome{State: "cancelled", StartedAt: now, FinishedAt: now})
 	record := b.record("unit-reader")
-	if record["status"] != "cancelled" || record["phase"] != "cancelled" || record["startedAt"] != nil || record["unitExecuted"] != nil {
-		t.Fatalf("an unstarted reservation lost its ordinary cancel: %v", record)
+	if record["phase"] != nil || len(b.doubles.Process.Signals) != 0 {
+		t.Fatalf("an unstarted reservation used the ordinary cancel: %v", record)
 	}
 }
 

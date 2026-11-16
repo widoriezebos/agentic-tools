@@ -124,7 +124,13 @@ func (inv *intentInvocation) stopUnitRun(id string) int {
 	if problem := inv.directPersonProof("cancellation of a unit run"); problem != nil {
 		return inv.render(*problem)
 	}
-	record, err := inv.unitRunner().CancelRun(id)
+	runner := inv.unitRunner()
+	if current, err := runner.Status(id); err == nil && current.State != "cancelled" {
+		if problem := inv.recordWorkStop(current.Goal, "run:"+id); problem != nil {
+			return inv.render(*problem)
+		}
+	}
+	record, err := runner.CancelRun(id)
 	targets := []intentTarget{{Kind: "unit", ID: id}}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run could not be fully stopped; its worktree remains reserved: " + err.Error(), Details: []string{err.Error()}, next: inv.sameCommand(), Data: record})
