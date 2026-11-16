@@ -144,6 +144,7 @@ func (runner *UnitRunner) Continue(request UnitRequest) (UnitResult, error) {
 type UnitOptions struct {
 	BuildModel, BuildEffort string
 	MaxRounds               int
+	Holder                  *RunHolder
 }
 
 // AdvancePrepared is AdvanceNamed for a request whose plan and briefs are

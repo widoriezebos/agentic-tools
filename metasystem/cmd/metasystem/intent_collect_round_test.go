@@ -230,6 +230,7 @@ func TestCollectItFromTheChannelCollectsTheRound(t *testing.T) {
 				id = r.ID
 			}
 			if !other {
+				withoutRunHolder(t, b, id)
 				if code, result := collectWithOwners(t, b, id, o); code == 0 {
 					t.Fatalf("a process without the lease collected: %+v", result)
 				}

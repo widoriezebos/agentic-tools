@@ -40,8 +40,16 @@ const (
 	StepSkipped  UnitStepState = "skipped"
 )
 
+// RunHolder is the goal claim that admitted a run under one checkout hold.
+type RunHolder struct {
+	Machine    string `json:"machine"`
+	Lineage    string `json:"lineage"`
+	ClaimEpoch int64  `json:"claimEpoch"`
+}
+
 type UnitRunRecord struct {
-	ReviewCloseReason string `json:"reviewCloseReason,omitempty"`
+	ReviewCloseReason string     `json:"reviewCloseReason,omitempty"`
+	Holder            *RunHolder `json:"holder,omitempty"`
 
 	CorrectionBudget *int        `json:"correctionBudget,omitempty"`
 	PolicyError      string      `json:"policyError,omitempty"`
@@ -490,6 +498,7 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 		return UnitRunRecord{}, err
 	}
 	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
+		Holder:     runner.options.Holder,
 		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds, CountedCap: int(settings.UnitCountedRounds)}
 	policy := "auto"
 	if runner.ReviewPolicy != nil {
