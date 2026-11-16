@@ -5,10 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
 // CheckParent joins live process ancestry to the round's retained child custody.
@@ -67,6 +71,7 @@ func ReadCheckExecutions(root string) ([]CheckExecution, []string) {
 		if err != nil || json.Unmarshal(data, &record) != nil || record.ExecutionID != strings.TrimPrefix(filepath.Base(filepath.Dir(path)), "builder-") || len(record.Steps) == 0 {
 			unknown = append(unknown, "check observation unavailable: "+path)
 		} else {
+			record.Directory = filepath.Dir(path)
 			records = append(records, record)
 		}
 		return nil
@@ -116,4 +121,81 @@ func checkCause(step *UnitStep, round string) bool {
 		step.Cause, step.Deadline = "environment", true
 	}
 	return deadline
+}
+
+func (execution CheckExecution) sectionUnits(id, directory string) []loopstop.RedUnit {
+	var result struct{ Exits []CheckExit }
+	data, err := os.ReadFile(filepath.Join(execution.Directory, "result.json"))
+	if err != nil || json.Unmarshal(data, &result) != nil {
+		return nil
+	}
+	mod, _ := os.ReadFile(filepath.Join(directory, "go.mod"))
+	module := regexp.MustCompile(`(?m)^[ \t]*module[ \t]+(\S+)`).FindSubmatch(mod)
+	if len(module) != 2 {
+		return nil
+	}
+	prefix := ""
+	if config.TemplateMode(directory) {
+		prefix = "metasystem/"
+	}
+	for _, exit := range result.Exits {
+		if exit.Name == id[strings.LastIndex(id, ":")+1:] {
+			return sectionRedUnits(exit.Output, strings.Trim(string(module[1]), "\"`"), prefix)
+		}
+	}
+	return nil
+}
+
+// sectionRedUnits names tests only when every package failure is accounted for.
+func sectionRedUnits(output, module, prefix string) []loopstop.RedUnit {
+	var units []loopstop.RedUnit
+	var pending []string
+	failure := regexp.MustCompile(`^--- FAIL: ([^\s/]+) \([^)]+\)$`)
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, "panic: ") {
+			return nil
+		}
+		if match := failure.FindStringSubmatch(line); len(match) > 0 {
+			pending = append(pending, match[1])
+		}
+		if strings.HasPrefix(line, "FAIL\t") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || len(pending) == 0 || strings.Contains(line, "[build failed]") || fields[1] != module && !strings.HasPrefix(fields[1], module+"/") {
+				return nil
+			}
+			pkg := strings.TrimPrefix(strings.TrimPrefix(fields[1], module), "/")
+			units = append(units, loopstop.RedUnit{Unit: prefix + filepath.Join(".", pkg), Tests: pending})
+			pending = nil
+		}
+	}
+	if len(pending) > 0 {
+		return nil
+	}
+	return units
+}
+
+func mergeRedUnits(units []loopstop.RedUnit) []loopstop.RedUnit {
+	var merged []loopstop.RedUnit
+	for _, unit := range units {
+		i := slices.IndexFunc(merged, func(u loopstop.RedUnit) bool { return u.Unit == unit.Unit })
+		if i >= 0 && (len(merged[i].Tests) == 0 || len(unit.Tests) == 0) {
+			merged[i].Tests, merged[i].Registered = nil, nil
+			continue
+		}
+		if i < 0 {
+			merged = append(merged, loopstop.RedUnit{Unit: unit.Unit})
+			i = len(merged) - 1
+		}
+		for j, test := range unit.Tests {
+			if !slices.Contains(merged[i].Tests, test) {
+				registration := ""
+				if j < len(unit.Registered) {
+					registration = unit.Registered[j]
+				}
+				merged[i].Tests = append(merged[i].Tests, test)
+				merged[i].Registered = append(merged[i].Registered, registration)
+			}
+		}
+	}
+	return merged
 }
