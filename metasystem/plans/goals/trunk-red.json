@@ -22615,6 +22615,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T08:29:59Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestExceptionLandingReleasesItsLandedWorkspaces",
       "id": "flake:517667dd1f5e9a4d76897245a447e8e99d969b658fa12577abc270343913d7de",
@@ -22697,7 +22698,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testexceptionlandingreleasesitslandedworkspaces",
       "fixBranch": {
         "name": "",
         "commit": "",
