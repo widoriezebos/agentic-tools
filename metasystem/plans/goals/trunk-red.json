@@ -23288,6 +23288,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T08:29:59Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestFleetRevisePublicAdmission",
       "id": "flake:750577a2a494e0c81323e173deb25a7ce9203ebe7cc7a9dc632798ec98b9bb95",
@@ -23370,7 +23371,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testfleetrevisepublicadmission",
       "fixBranch": {
         "name": "",
         "commit": "",
