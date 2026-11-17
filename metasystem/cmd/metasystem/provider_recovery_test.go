@@ -190,10 +190,21 @@ func proveRootReadInjectedDeadline(t *testing.T, root string, at time.Time) {
 		})
 		done <- err
 	}()
-	var signal [1]byte
-	if _, err := fifos[0].Read(signal[:]); err != nil {
-		t.Fatal(err)
+	ready := make(chan error, 1)
+	go func() {
+		var signal [1]byte
+		_, err := fifos[0].Read(signal[:])
+		ready <- err
+	}()
+	select {
+	case err := <-ready:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case err := <-done:
+		t.Fatalf("root read returned before projection readiness: %v", err)
 	}
+	var signal [1]byte
 	defer func() {
 		_, _ = fifos[1].Write([]byte("release\n"))
 		_, _ = fifos[2].Read(signal[:])
@@ -283,14 +294,14 @@ case "$*" in
  'ls-tree --name-only'*)
   if [ -f "$root/controlled-ledger" ]; then echo 'ledger read bypassed the configured reader' >&2; exit 97; fi
   printf 'plans/goals/backlog.md\n' ;;
- 'ls-tree -r --name-only'*)
+ '--no-replace-objects ls-tree -r --name-only'*)
   if [ -f "$root/hold-projection" ]; then
    /bin/rm "$root/hold-projection"
    printf r > "$root/projection-ready"
    IFS= read -r released < "$root/projection-release"
   fi
   printf 'plans/goals/backlog.md\nplans/goals/standing-validation.md\n' ;;
- 'cat-file --batch') while IFS= read -r input; do path=${input#*:}; path=${path#./}; size=$(/usr/bin/wc -c < "$root/$path"); printf '0000000000000000000000000000000000000001 blob %s\n' "$size"; /bin/cat "$root/$path"; printf '\n'; done ;;
+ '--no-replace-objects cat-file --batch') while IFS= read -r input; do path=${input#*:}; path=${path#./}; size=$(/usr/bin/wc -c < "$root/$path"); printf '0000000000000000000000000000000000000001 blob %s\n' "$size"; /bin/cat "$root/$path"; printf '\n'; done ;;
  'cat-file -p '*) path=${3#*:}; /bin/cat "$root/${path#./}" ;;
  'cat-file -e '*) exit 0 ;;
  'show -s --format=%cI '*) echo 2026-09-01T09:55:00Z ;;

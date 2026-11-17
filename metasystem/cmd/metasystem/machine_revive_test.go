@@ -53,8 +53,8 @@ case "$*" in
  'rev-parse --show-toplevel') echo "$root" ;;
  'rev-parse --verify'*|'rev-parse HEAD') echo 0000000000000000000000000000000000000001 ;;
  'ls-tree --name-only'*) printf 'plans/goals/backlog.md\n' ;;
- 'ls-tree -r --name-only'*) printf 'plans/goals/backlog.md\nplans/goals/standing-validation.md\n' ;;
- 'cat-file --batch') while IFS= read -r input; do path=${input#*:}; path=${path#./}; size=$(/usr/bin/wc -c < "$root/$path"); printf '0000000000000000000000000000000000000001 blob %s\n' "$size"; /bin/cat "$root/$path"; printf '\n'; done ;;
+ '--no-replace-objects ls-tree -r --name-only'*) printf 'plans/goals/backlog.md\nplans/goals/standing-validation.md\n' ;;
+ '--no-replace-objects cat-file --batch') while IFS= read -r input; do path=${input#*:}; path=${path#./}; size=$(/usr/bin/wc -c < "$root/$path"); printf '0000000000000000000000000000000000000001 blob %s\n' "$size"; /bin/cat "$root/$path"; printf '\n'; done ;;
  'cat-file -p '*) path=${3#*:}; /bin/cat "$root/${path#./}" ;;
  'cat-file -e '*) exit 0 ;;
  'show -s --format=%cI '*) echo 2026-09-01T09:55:00Z ;;

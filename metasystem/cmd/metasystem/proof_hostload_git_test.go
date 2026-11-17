@@ -225,11 +225,11 @@ func (f hostLoadGitFixture) answer(argv []string, input []byte) (string, []byte,
 		if slices.Equal(argv, []string{"rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted^{commit}"}) {
 			return "tip", []byte(tip + "\n"), 0, nil
 		}
-		if slices.Equal(argv, []string{"ls-tree", "-r", "--name-only", tip, "--", "plans/goals/", "records/goals/"}) {
+		if slices.Equal(argv, []string{"--no-replace-objects", "ls-tree", "-r", "--name-only", tip, "--", "plans/goals/", "records/goals/"}) {
 			return "tree", []byte("plans/goals/backlog.md\nplans/goals/standing-validation.md\n"), 0, nil
 		}
 	}
-	if cwd == root && slices.Equal(argv, []string{"cat-file", "--batch"}) {
+	if cwd == root && slices.Equal(argv, []string{"--no-replace-objects", "cat-file", "--batch"}) {
 		want := tip + ":./plans/goals/backlog.md\n" + tip + ":./plans/goals/standing-validation.md\n"
 		if string(input) == want {
 			var output []byte

@@ -166,6 +166,9 @@ func TestCommittedFilesGitAdapterSharesAllLedgerReaders(t *testing.T) {
 
 	e := Endpoint{Root: root}
 	for i := 0; i < 2; i++ {
+		if ExistingLedgerIdentity(root) != vRoot().Identity {
+			t.Fatal("wrong identity")
+		}
 		if _, err := readCommitGoals(e, tip); err != nil {
 			t.Fatal(err)
 		}
@@ -182,13 +185,14 @@ func TestCommittedFilesGitAdapterSharesAllLedgerReaders(t *testing.T) {
 		if _, err := waitTreeIdentity(context.Background(), root, tip); err != nil {
 			t.Fatal(err)
 		}
-		if ExistingLedgerIdentity(root) != vRoot().Identity {
-			t.Fatal("wrong identity")
-		}
 	}
 	listing, batch := committedTraceCounts(t, trace)
 	if listing != 3 || batch != 3 {
 		t.Fatalf("shared reader listings=%d batches=%d, want full ledger, channel, backlog once each", listing, batch)
+	}
+	mustGit(t, root, "update-ref", "-d", AcceptedRef)
+	if identity := ExistingLedgerIdentity(root); identity != "" {
+		t.Fatalf("identity without an accepted ref = %q", identity)
 	}
 }
 

@@ -70,11 +70,11 @@ case "$*" in
   'config --get goal.sync-remote') printf 'local\n' ;;
   'rev-parse --verify --quiet refs/metasystem/goals/accepted'|'rev-parse --verify --quiet refs/metasystem/goals/accepted^{commit}'|'rev-parse --verify refs/heads/metasystem/goals') printf '%s\n' "$tip" ;;
   "cat-file -e $tip:./plans/goals/backlog.md") exit 0 ;;
-  "ls-tree -r --name-only $tip -- plans/goals/ records/goals/") printf 'plans/goals/backlog.md\nplans/goals/brief-goal.md\n' ;;
-  "ls-tree -r --name-only $tip -- plans/goals/backlog.md") printf 'plans/goals/backlog.md\n' ;;
+  "--no-replace-objects ls-tree -r --name-only $tip -- plans/goals/ records/goals/") printf 'plans/goals/backlog.md\nplans/goals/brief-goal.md\n' ;;
+  "--no-replace-objects ls-tree -r --name-only $tip -- plans/goals/backlog.md") printf 'plans/goals/backlog.md\n' ;;
   "ls-tree --name-only $tip -- plans/goals/backlog.md") printf 'plans/goals/backlog.md\n' ;;
   'rev-parse --verify --quiet refs/heads/goal/brief-goal') cat "$root/tip" ;;
-  'cat-file --batch')
+  '--no-replace-objects cat-file --batch')
     while IFS= read -r object; do
       case "$object" in
         "$tip:./plans/goals/backlog.md") file="$root/plans/goals/backlog.md" ;;

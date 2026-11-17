@@ -108,8 +108,15 @@ func gitIn(root string, args ...string) (string, error) {
 }
 
 func gitInWithEnvironment(root string, environment []string, args ...string) (string, error) {
+	return gitInWithInput(root, environment, nil, args...)
+}
+
+func gitInWithInput(root string, environment []string, input []byte, args ...string) (string, error) {
 	cmd := commandWithEnvironment(environment, "git", args...)
 	cmd.Dir = root
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -8,6 +8,7 @@ package goal
 // claims and quotas key on it.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -67,7 +68,9 @@ func ExistingLedgerIdentity(root string) string {
 	if err != nil {
 		return ""
 	}
-	files, err := readCommitFiles(Endpoint{Root: root}, strings.TrimSpace(out), goalsPrefix+"backlog.md")
+	files, err := readCommittedFiles(context.Background(), root, strings.TrimSpace(out), []string{goalsPrefix + "backlog.md"}, func(input []byte, args ...string) (string, error) {
+		return gitInWithInput(root, nil, input, args...)
+	})
 	if err != nil {
 		return ""
 	}

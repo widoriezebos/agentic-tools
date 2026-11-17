@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func memoRoot(t *testing.T) string {
@@ -121,17 +120,6 @@ func (c *joinedReadContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
-func receiveMemoRead(t *testing.T, ch <-chan error) error {
-	t.Helper()
-	select {
-	case err := <-ch:
-		return err
-	case <-time.After(5 * time.Second):
-		t.Fatal("memo read did not return")
-		return nil
-	}
-}
-
 func TestCommittedFilesMemoConcurrentCancellation(t *testing.T) {
 	t.Parallel()
 	for _, cancelProducer := range []bool{false, true} {
@@ -170,10 +158,10 @@ func TestCommittedFilesMemoConcurrentCancellation(t *testing.T) {
 			<-waiter.joined
 			if cancelProducer {
 				cancelRead()
-				if err := receiveMemoRead(t, producerResult); !errors.Is(err, context.Canceled) {
+				if err := <-producerResult; !errors.Is(err, context.Canceled) {
 					t.Fatal(err)
 				}
-				if err := receiveMemoRead(t, waiterResult); err != nil {
+				if err := <-waiterResult; err != nil {
 					t.Fatal(err)
 				}
 				if calls.Load() != 2 || memo.misses != 2 || len(memo.entries) != 1 {
@@ -181,7 +169,7 @@ func TestCommittedFilesMemoConcurrentCancellation(t *testing.T) {
 				}
 			} else {
 				cancelWait()
-				if err := receiveMemoRead(t, waiterResult); !errors.Is(err, context.Canceled) {
+				if err := <-waiterResult; !errors.Is(err, context.Canceled) {
 					t.Fatal(err)
 				}
 				select {
@@ -190,7 +178,7 @@ func TestCommittedFilesMemoConcurrentCancellation(t *testing.T) {
 				default:
 				}
 				close(release)
-				if err := receiveMemoRead(t, producerResult); err != nil {
+				if err := <-producerResult; err != nil {
 					t.Fatal(err)
 				}
 				if calls.Load() != 1 {
@@ -229,7 +217,7 @@ func TestCommittedFilesMemoConcurrentSuccess(t *testing.T) {
 	}
 	close(release)
 	for i := 0; i < 12; i++ {
-		if err := receiveMemoRead(t, result); err != nil {
+		if err := <-result; err != nil {
 			t.Fatal(err)
 		}
 	}
