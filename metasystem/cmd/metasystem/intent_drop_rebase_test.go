@@ -17,7 +17,7 @@ import (
 // contract; the public verb uses the real outcome publisher and read gate.
 func TestWorkRebaseCarriesPublishedDropGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"published", "check-retry", "record-retry"} {
+	for _, mode := range []string{"published", "check-retry", "record-retry", "newly-empty"} {
 		t.Run(mode, func(t *testing.T) {
 			redGate := mode == "check-retry"
 			t.Parallel()
@@ -38,6 +38,16 @@ func TestWorkRebaseCarriesPublishedDropGitAdapter(t *testing.T) {
 			connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
 			git("remote", "add", "origin", remote)
 			git("push", "-q", "origin", "HEAD:main")
+			var plan string
+			if mode == "newly-empty" {
+				write("metasystem/plans/empty-on-main.md", "already on main\n")
+				git("add", ".")
+				var err error
+				plan, err = branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Kind: branch.Plan, OpID: "plan", CheckClaim: func() error { return nil }})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			write("metasystem/unit.txt", "optional\n")
 			git("add", ".")
 			unit, err := branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Unit: "U", Kind: branch.Unit, OpID: "build-U", CheckClaim: func() error { return nil }})
@@ -61,6 +71,9 @@ func TestWorkRebaseCarriesPublishedDropGitAdapter(t *testing.T) {
 				t.Fatal(err)
 			}
 			git("checkout", "-q", "main")
+			if plan != "" {
+				git("cherry-pick", "--no-commit", plan)
+			}
 			pagePath := "metasystem/plans/goals/" + b.id + ".md"
 			write(pagePath, string(goal.RenderFile(b.goalFile(b.id))))
 			write("metasystem/main.txt", "main moved\n")
@@ -151,6 +164,16 @@ func TestWorkRebaseCarriesPublishedDropGitAdapter(t *testing.T) {
 			read, err := branch.InspectBranchRead(repo, b.id, after.Commit)
 			if err != nil || read.State != "dropped" || !read.Published || read.GateRunID != after.Proof {
 				t.Fatalf("current branch drop read: %+v %v", read, err)
+			}
+			if mode == "newly-empty" {
+				// Positional drop coverage includes the retained empty plan.
+				// Landing preparation has a separate empty-plan patch boundary.
+				ids := strings.Fields(git("rev-list", "--reverse", main+".."+tip))
+				if len(ids) != 3 {
+					t.Fatalf("raw drop range lost the empty plan: %q", ids)
+				}
+				git("diff-tree", "--quiet", ids[0]+"^", ids[0])
+				return
 			}
 			landing, err := branch.PrepareLanding(branch.LandRequest{Repo: repo, Remote: "origin", EndpointTip: main, BranchTip: tip, GoalID: b.id, Last: true, LandingReady: true, CandidateOnly: true, GoalPage: string(goal.RenderFile(b.goalFile(b.id))), ApprovedBy: "human:Wido", Seat: "seat", CheckClaim: func() error { return nil }})
 			if err != nil {

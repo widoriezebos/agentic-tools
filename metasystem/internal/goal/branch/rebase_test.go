@@ -118,6 +118,9 @@ func newRebaseFixture(t *testing.T) *rebaseFixture {
 			},
 		},
 		git: func(_ string, args ...string) ([]byte, error) {
+			if args[0] == "config" {
+				return nil, errors.New("replay configuration unavailable")
+			}
 			if len(args) == 4 && args[0] == "rev-list" && args[1] == "--merges" && args[2] == "--count" {
 				return []byte("0\n"), nil
 			}

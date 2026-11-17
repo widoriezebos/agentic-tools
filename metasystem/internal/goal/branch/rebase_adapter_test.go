@@ -13,7 +13,7 @@ import (
 // TestRebaseGitAdapter observes replay, checkout installation, atomic publication and abort cleanup.
 func TestRebaseGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"replay", "conflict", "generated", "generated-rename", "resolve"} {
+	for _, mode := range []string{"replay", "conflict", "generated", "generated-rename", "resolve", "late-union", "lost-claim-before-keep", "lost-claim-before-move"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -72,10 +72,13 @@ func TestRebaseGitAdapter(t *testing.T) {
 			}
 			unit := commit(work, unitPath, unitBody, "unit\n\nGoal-Unit: goal-a/u1")
 			record := "metasystem/records/reads/goal-a/" + unit + ".json"
+			if mode == "late-union" {
+				write(work, "metasystem/.gitattributes", "code.txt merge=union\n")
+			}
 			old := commit(work, record, `{"testsChanged":[]}`+"\n", "read\n\nGoal-Read: goal-a/u1 "+unit)
 			git(work, "push", "-q", "origin", "goal/goal-a")
 			path, body := "metasystem/other.txt", "main\n"
-			if mode == "conflict" {
+			if mode == "conflict" || mode == "late-union" {
 				path, body = "metasystem/code.txt", "main\n"
 			}
 			if mode == "resolve" {
@@ -90,6 +93,28 @@ func TestRebaseGitAdapter(t *testing.T) {
 			write(work, "scratch.txt", "untracked\n")
 			before := []string{git(work, "rev-parse", "HEAD"), git(work, "status", "--porcelain"), git(work, "diff"), git(work, "worktree", "list", "--porcelain"), git(work, "for-each-ref", "--format=%(refname) %(objectname)", "refs/metasystem/goals/before/"), git(remote, "show-ref")}
 			d := gitRebaseDependencies()
+			computed, replayAccepted, opens, claimsAfterReplay := false, false, 0, 0
+			originalGit := d.git
+			d.git = func(repo string, args ...string) ([]byte, error) {
+				out, err := originalGit(repo, args...)
+				if len(args) > 2 && args[0] == "-c" && args[1] == "replay.refAction=print" && err == nil {
+					computed = true
+				}
+				return out, err
+			}
+			originalRange := d.repository.facts.Range
+			d.repository.facts.Range = func(repo, base, tip, goal string) ([]Commit, error) {
+				commits, err := originalRange(repo, base, tip, goal)
+				if computed && opens == 0 && err == nil {
+					replayAccepted = true
+				}
+				return commits, err
+			}
+			originalOpen := d.repository.effects.Open
+			d.repository.effects.Open = func(repo, base string, amend bool) (string, func(), error) {
+				opens++
+				return originalOpen(repo, base, amend)
+			}
 			d.gate = func(ReadGateRequest) (GateObservation, error) {
 				return GateObservation{RunID: "adapter-gate", Tree: main}, nil
 			}
@@ -113,8 +138,35 @@ func TestRebaseGitAdapter(t *testing.T) {
 					return "resolve/run.json", nil
 				}
 			}
+			if strings.HasPrefix(mode, "lost-claim") {
+				req.CheckClaim = func() error {
+					if replayAccepted {
+						claimsAfterReplay++
+						if claimsAfterReplay == 1 && mode == "lost-claim-before-keep" || claimsAfterReplay == 2 && mode == "lost-claim-before-move" {
+							return errors.New("claim lost after replay")
+						}
+					}
+					return nil
+				}
+			}
+			indexBefore := git(work, "write-tree")
 			got, err := rebaseWith(req, d)
-			if mode == "conflict" {
+			if strings.HasPrefix(mode, "lost-claim") {
+				if err == nil || !strings.Contains(err.Error(), "claim lost after replay") || opens != 0 || !replayAccepted {
+					t.Fatalf("claim loss: %+v %v, scratch %d, accepted %t", got, err, opens, replayAccepted)
+				}
+				if git(work, "rev-parse", "HEAD") != before[0] || git(work, "rev-parse", policyGoalRef) != old || git(work, "write-tree") != indexBefore || git(work, "status", "--porcelain") != before[1] || git(work, "diff") != before[2] || git(remote, "show-ref") != before[5] {
+					t.Fatal("claim loss changed branch, HEAD, index, checkout or remote")
+				}
+				return
+			}
+			if mode == "replay" && (!replayAccepted || opens != 0) {
+				t.Fatalf("ordinary replay used scratch: accepted %t opens %d", replayAccepted, opens)
+			}
+			if mode != "replay" && opens == 0 {
+				t.Fatalf("%s bypassed scratch conflict handling", mode)
+			}
+			if mode == "conflict" || mode == "late-union" {
 				var refusal *RebaseConflict
 				if !errors.As(err, &refusal) || refusal.Code != RebaseJudgementCode || !strings.Contains(err.Error(), "metasystem/code.txt") {
 					t.Fatalf("conflict %v", err)

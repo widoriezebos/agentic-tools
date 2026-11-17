@@ -434,6 +434,9 @@ func rebaseLedgerOnly(req RebaseRequest, local string, git func(string, ...strin
 }
 
 func replayRebase(req RebaseRequest, local string, d rebaseDependencies) (string, []string, error) {
+	if tip, ok := replayWithoutCheckout(req, local, d); ok {
+		return tip, nil, nil
+	}
 	r := d.repository
 	dir, close, err := r.effects.Open(req.Repo, local, false)
 	if err != nil {
