@@ -1,0 +1,94 @@
+{
+  "canonicalRead": {
+    "engine": "4e5971550ac45b3af9ecc1631abce3ba35200653",
+    "findings": [],
+    "id": "code-critic-581b08c4fd5753fa0150ea92",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-581b08c4fd5753fa0150ea92/rounds/1/return.md",
+    "subject": {
+      "commit": "ba48fa0ed9956ed2f92b6e5922db04e5d7a23102",
+      "diffDigest": "cc67bca9dd81e58e8cb8405a424fa21144abd59f3443a1c5f00f18deb7172ed3",
+      "kind": "commit",
+      "parent": "d3db0a8e6eb370a8b3fcb8b759015c35aa764e98",
+      "tree": "b90c88b30e6952d45e504c6b1d42fdd845d4dd94"
+    }
+  },
+  "readDigest": "77311402dacfa0f98dae62c2c085e8154f1f049092c3c51d957c8871ae40b927",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "contract",
+  "subject": {
+    "commit": "ba48fa0ed9956ed2f92b6e5922db04e5d7a23102",
+    "parent": "d3db0a8e6eb370a8b3fcb8b759015c35aa764e98",
+    "tree": "b90c88b30e6952d45e504c6b1d42fdd845d4dd94",
+    "patchDigest": "cc67bca9dd81e58e8cb8405a424fa21144abd59f3443a1c5f00f18deb7172ed3",
+    "unitDigest": "3c02c1aefec11d780144672dc9ce7b53c5905e1ccb8a3ac0b4712d6277e86bcf"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-581b08c4fd5753fa0150ea92",
+    "round": 1,
+    "closureSha256": "7bb960314aca6a13e79ef70486300fd39a18a09a052003ded871b875999b0d09"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b90c88b30e6952d45e504c6b1d42fdd845d4dd94",
+    "runId": "goal-read-gate-20261117t161329z-068795b3d32ea1dc"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    },
+    {
+      "kind": "read",
+      "commit": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "digest": "a0def01a53bfb8ad3fd7f9511fae6c0badec706bee597682ab9f41c030dc7918"
+    },
+    {
+      "kind": "read",
+      "commit": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+      "digest": "b3808658d850bb8d57f08615d09c66fdd94851d9786d72817fdffc25320ff692"
+    },
+    {
+      "kind": "read",
+      "commit": "d5f51aa8d0181e56bd7d72c003774e2871dea8f6",
+      "digest": "4e6deaf09e77be9ea34ad23120624fbf37533f0e751ce7f2b803ee080fcadf44"
+    },
+    {
+      "kind": "read",
+      "commit": "7db01934fb9c08dd48b6b602910daee8b39cf2e4",
+      "digest": "307ab8c05ec92789eacae35e2469bbe93c8b9cab73c2a000dc333268f203e13f"
+    },
+    {
+      "kind": "read",
+      "commit": "42e75e70bc8754bbba6304dbeb9d1ac2d3f13584",
+      "digest": "98d306b81bdf8d8c0576d094a0c17923ab0955c7d4167ef6dcddf606ee459daf"
+    },
+    {
+      "kind": "read",
+      "commit": "abf7463d9e2ee7045d32871aa8c6dfcade2e8b59",
+      "digest": "89fe2b3a5d67f84b6526e755a69c268dba53878c174af8cf100ffc469b7f8eec"
+    },
+    {
+      "kind": "plan",
+      "commit": "d3db0a8e6eb370a8b3fcb8b759015c35aa764e98",
+      "digest": "ee49f86a9add04bcc221c993b99da11e5f3a7466e9763fd236760bc958d66fa1"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "270831bcc1cc777232d3046be76d9235fedb491dc82addb97da810413accebad"
+}
