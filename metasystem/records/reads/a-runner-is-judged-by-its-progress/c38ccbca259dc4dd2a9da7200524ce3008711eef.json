@@ -1,0 +1,185 @@
+{
+  "canonicalRead": {
+    "engine": "4e5971550ac45b3af9ecc1631abce3ba35200653",
+    "findings": [
+      {
+        "change": "Optional: put the backstop back with a bound above the new number of clock reads (for example 10000), so a runaway loop still stops quickly.",
+        "claim": "TestStewardRunPublicVerbSleepsAndLogsATick (the public 'steward run' verb test) lost its runaway backstop: the clock used to write the stop file after 100 calls to Now(). If a future change made the loop skip its sleep, the test would hang until the package timeout instead of stopping quickly. It still goes red in that case, and every assertion is unchanged. The removal looks forced by U1c: each published item now reads the clock, so 100 calls are reached before the one-second sleep.",
+        "class": "weakened-test",
+        "evidence": "cmd/metasystem/steward_runner_idle_test.go:29-38 at c38ccbca25. The diff removes 'calls++; if calls \u003e 100 { stop() }'. Sleep still stops the loop once one second of artificial time has passed.",
+        "id": "code-critic-b261015b19609b5b288e6f07:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/steward_runner_idle_test.go"
+      },
+      {
+        "change": "Optional: add scenarios that reach the replied-question disposition and the inbox publication disposition.",
+        "claim": "The channel test Tc2 runs four of the six new disposition item sites. The replied-question site in poll.go and the second publication site in inbox.go are never run, so removing either item call would go unnoticed. The brief names only the inbox.go:722 mutation (Mc4), and that site is covered, so the brief is met.",
+        "class": "other",
+        "evidence": "Coverage profile of TestPollCountsEachDispositionAfterItsWork: the block poll.go:147.4-148.12 ran 0 times and the block inbox.go:736.5-738.13 ran 0 times. The blocks around poll.go:133, inbox.go:72, inbox.go:724 and inbox.go:765 each ran.",
+        "id": "code-critic-b261015b19609b5b288e6f07:2",
+        "material": false,
+        "relation": "skills/code-critique Layer 2: do the named tests prove the claim",
+        "severity": "low",
+        "where": "metasystem/internal/channel/progress_items_test.go"
+      }
+    ],
+    "id": "code-critic-b261015b19609b5b288e6f07",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-b261015b19609b5b288e6f07/rounds/1/return.md",
+    "subject": {
+      "commit": "c38ccbca259dc4dd2a9da7200524ce3008711eef",
+      "diffDigest": "db0385a555f8a3cd46641043ad134fe4f0b1baee53ff249387f84e5a1f843cd5",
+      "kind": "commit",
+      "parent": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "tree": "88574e497a494fc84b210c1da488030c66840852"
+    }
+  },
+  "readDigest": "f2a45ee5d81388ee74d621824f4008f08a1199080fc8a3edf2d0b7c1cee87c8b",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U1c",
+  "subject": {
+    "commit": "c38ccbca259dc4dd2a9da7200524ce3008711eef",
+    "parent": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+    "tree": "88574e497a494fc84b210c1da488030c66840852",
+    "patchDigest": "db0385a555f8a3cd46641043ad134fe4f0b1baee53ff249387f84e5a1f843cd5",
+    "unitDigest": "ae85613c85c80b09a67c7c432905118d1ee8927fc619230fc82ac0751dfa1e5a"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-b261015b19609b5b288e6f07",
+    "round": 1,
+    "closureSha256": "14034c846cdcded85c0699c32f469d2b7cc786863b43d8aab283111b4888a9c4"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "88574e497a494fc84b210c1da488030c66840852",
+    "runId": "goal-read-gate-20261117t194724z-bb08f810c6e0cf36"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_agent_question_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/situation_wiring_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_runner_idle_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/channel/phase/quiet_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/channel/phase/split_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/channel/phase/unit_stop_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/channel/settled_reply_machine_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/diskstore/sweep_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/gocache/machine_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/cache_trim_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/disk_role_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/duties_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/engine_follow_ask_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/fleet_boundary_runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/ledgerattention_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/person_claims_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_helm_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_idle_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_lane_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_progress_duties_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_replies_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_repository_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_stop_signal_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/seat_ladder_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/seat_start_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_page_test.go",
+      "readerWord": "reviewed by critic root code-critic-b261015b19609b5b288e6f07"
+    }
+  ],
+  "sha256": "8bb0ded572c27791729e7e1c84ba578c60eb708f5e766d721920af0af7cd48c6"
+}
