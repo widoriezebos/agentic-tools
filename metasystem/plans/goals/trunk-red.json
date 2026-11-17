@@ -21768,6 +21768,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T08:29:59Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestRevivalUsesTheInjectedProber",
       "id": "flake:c2de197ac7c2eaac6a9470d776c0cb9d9aae53702dfc758c54788d7e3b3d45e7",
@@ -21850,7 +21851,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testrevivalusestheinjectedprober",
       "fixBranch": {
         "name": "",
         "commit": "",
