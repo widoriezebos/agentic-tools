@@ -942,7 +942,7 @@ func TestAttentionRemedyCoversAMovePromotedBeforeInstall(t *testing.T) {
 				t.Fatalf("fixture did not have a standing unexamined move: %+v", role)
 			}
 			bed.calls = nil
-			examine := func(root string, now time.Time) error {
+			examine := func(root string, now time.Time, _ *Progress) error {
 				return examineLedgerMoveWithRepositoryAndWriter(root, now, bed.repository(), atomicfile.WriteText)
 			}
 			switch trigger {
@@ -969,7 +969,7 @@ func TestAttentionRemedyCoversAMovePromotedBeforeInstall(t *testing.T) {
 				}
 			case "dead tick":
 				var result TickResult
-				deps := tickHealthDependencies{now: func() time.Time { return bed.now }, examineLedger: examine,
+				deps := tickHealthDependencies{now: func() time.Time { return bed.now }, examineLedger: func(root string, now time.Time) error { return examine(root, now, nil) },
 					evaluate: func(root, _ string, now time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
 						return []RoleVerdict{checkLedgerAttention(root, now)}, SpendObservation{}
 					}, deliver: func(string, string) error { return nil },

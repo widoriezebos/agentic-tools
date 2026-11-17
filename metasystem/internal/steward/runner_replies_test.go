@@ -58,7 +58,7 @@ func TestHelmSettlesReplies(t *testing.T) {
 					loop.stop(t)
 				}
 			}
-			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { t.Fatal("helm revived an agent"); return nil }, time.Second, TickConfig{Now: now}, deps); err != nil {
+			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { t.Fatal("helm revived an agent"); return nil }, time.Second, TickConfig{Now: now}, deps); err != nil {
 				t.Fatal(err)
 			}
 			if settlements != 3 {
@@ -110,7 +110,7 @@ func TestHelmDefaultSettlesReplies(t *testing.T) {
 			if deps.SettleReplies != nil {
 				t.Fatal("test replaced the production default")
 			}
-			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { t.Fatal("helm revived an agent"); return nil }, time.Second, TickConfig{Now: now}, deps); err != nil {
+			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { t.Fatal("helm revived an agent"); return nil }, time.Second, TickConfig{Now: now}, deps); err != nil {
 				t.Fatal(err)
 			}
 			if ticks != 2 {

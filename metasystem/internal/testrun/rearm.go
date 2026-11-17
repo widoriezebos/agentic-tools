@@ -410,8 +410,14 @@ var (
 	landedRearmFastForward = func(ctx context.Context, installation, tip string) error {
 		return landing.FastForwardPreservingRegisters(ctx, installation, tip)
 	}
-	landedRearmRebuild = func(ctx context.Context, installation string) error {
+	landedRearmRebuild = func(ctx context.Context, installation string, admission func(bool)) error {
+		if admission != nil {
+			admission(true)
+		}
 		lease, err := proofrun.AcquireHostResources(ctx, installation, filepath.Join(installation, "metasystem.conf"), "heavy", nil)
+		if admission != nil {
+			admission(false)
+		}
 		if err != nil {
 			return fmt.Errorf("admit landed engine rebuild: %w", err)
 		}
@@ -501,7 +507,7 @@ func performLandedRearm(ctx context.Context, installation, projectRoot string, f
 		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("tip", facts.Tip))
 		return nil, engineRefusal("fast-forward-blocked", facts, "this checkout could not be moved to the landing branch", err.Error())
 	}
-	if err := landedRearmRebuild(ctx, installation); err != nil {
+	if err := landedRearmRebuild(ctx, installation, nil); err != nil {
 		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("tip", facts.Tip))
 		return nil, engineRefusal("rebuild-failed", facts, "rebuilding the engine on the landing branch failed", err.Error())
 	}

@@ -35,7 +35,7 @@ func TestRunnerRefreshOutcomePreservesPass(t *testing.T) {
 			deps.TrimCaches = func(context.Context, string, TickConfig) error { trims++; return nil }
 			cfg := TickConfig{Now: now,
 				KeepLandingLane: func() lane.AgentRun { keeps++; return lane.AgentRun{} },
-				RearmAtBoundary: func() (bool, error) {
+				RearmAtBoundary: func(*Progress) (bool, error) {
 					loop.stop(t)
 					if outcome == "refused" {
 						return false, errors.New("engine source has local edits")
@@ -43,7 +43,7 @@ func TestRunnerRefreshOutcomePreservesPass(t *testing.T) {
 					return outcome == "replaced", nil
 				},
 			}
-			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { revives++; return nil }, time.Second, cfg, deps); err != nil {
+			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { revives++; return nil }, time.Second, cfg, deps); err != nil {
 				t.Fatal(err)
 			}
 			want := [6]int{1, 1, 1, 1, 1, 1}
@@ -101,7 +101,7 @@ func (l *helmLoop) run(t *testing.T, tick func(int) (TickResult, error), afterSl
 			afterSleep(l.ticks)
 		},
 	}
-	revive := func() error { l.revives++; return nil }
+	revive := func(*Progress) error { l.revives++; return nil }
 	if err := runLoopWithDependencies(l.root, fakeCensus{}, revive, 200*time.Millisecond, TickConfig{Now: now}, deps); err != nil {
 		t.Fatal(err)
 	}
@@ -195,11 +195,11 @@ func TestRunnerLoopUnderHelmKeepsLaneWithoutOtherPostTickActs(t *testing.T) {
 	deps.DeliverPending = func(string) (int, error) { delivers++; return 0, nil }
 	deps.Channel = func(context.Context, string) (int, error) { channels++; return 0, nil }
 	deps.TrimCaches = func(context.Context, string, TickConfig) error { trims++; return nil }
-	cfg := TickConfig{Now: now, KeepLandingLane: func() lane.AgentRun { keeps++; loop.stop(t); return lane.AgentRun{Outcome: lane.AgentIdle} }, RearmAtBoundary: func() (bool, error) { rearms++; return false, nil }}
+	cfg := TickConfig{Now: now, KeepLandingLane: func() lane.AgentRun { keeps++; loop.stop(t); return lane.AgentRun{Outcome: lane.AgentIdle} }, RearmAtBoundary: func(*Progress) (bool, error) { rearms++; return false, nil }}
 	// A skipped keeper still terminates deterministically on the injected clock.
 	sleep := deps.Sleep
 	deps.Sleep = func(d time.Duration) { sleep(d); loop.stop(t) }
-	if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { revives++; return nil }, time.Second, cfg, deps); err != nil {
+	if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { revives++; return nil }, time.Second, cfg, deps); err != nil {
 		t.Fatal(err)
 	}
 	if keeps != 1 || [7]int{rearms, starts, revives, delivers, channels, trims, resumes} != [7]int{} {

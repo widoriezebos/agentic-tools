@@ -50,7 +50,7 @@ func TestRunnerRearmsAtNextUnitBoundary(t *testing.T) {
 	deps := idleRunnerDependencies(&now)
 	ticks, refreshes := 0, 0
 	deps.Tick = func(string, TickConfig, WorkerCensus) (TickResult, error) { ticks++; return TickResult{}, nil }
-	cfg := TickConfig{RearmAtBoundary: func() (bool, error) { refreshes++; return ticks == 2, nil }}
+	cfg := TickConfig{RearmAtBoundary: func(*Progress) (bool, error) { refreshes++; return ticks == 2, nil }}
 	deps.Sleep = func(d time.Duration) {
 		now = now.Add(d)
 		if ticks > 2 {

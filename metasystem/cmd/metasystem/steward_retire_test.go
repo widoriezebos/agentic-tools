@@ -15,7 +15,7 @@ func TestStewardRunIsArmedWithCardRetirement(t *testing.T) {
 	var problem bytes.Buffer
 	called := false
 	code := runStewardRunWithDependencies([]string{"--repo", bed.root()}, io.Discard, &problem,
-		func(_ string, _ steward.WorkerCensus, _ func() error, _ time.Duration, cfg steward.TickConfig) error {
+		func(_ string, _ steward.WorkerCensus, _ func(*steward.Progress) error, _ time.Duration, cfg steward.TickConfig) error {
 			called = true
 			if cfg.RetireCards == nil {
 				t.Error("steward has no card retirement pass")

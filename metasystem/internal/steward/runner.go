@@ -146,7 +146,7 @@ func runnerContext(repoRoot, lineage string, interval time.Duration) *seat.Runne
 // retries pending notifications.
 // launcher. The loop never crashes out of a tick: a failed pass is
 // reported and the next tick tries again.
-func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
+func RunLoop(repoRoot string, census WorkerCensus, revive func(*Progress) error, interval time.Duration, cfg TickConfig) error {
 	now, sleep := runnerNow, runnerSleep
 	if cfg.RunnerClock != nil {
 		now, sleep = cfg.RunnerClock.Now, cfg.RunnerClock.Sleep
@@ -165,7 +165,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 type runnerLoopDependencies struct {
 	ProviderHome   string
 	Self           identity.Prober
-	ExamineLedger  func(string, time.Time) error
+	ExamineLedger  func(string, time.Time, *Progress) error
 	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
 	DeliverPending func(string) (int, error)
 	Resumable      func(string) (string, bool, error)
@@ -211,7 +211,7 @@ func runnerSweepDisk(top string, now time.Time, helmActive bool) error {
 	return err
 }
 
-func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
+func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*Progress) error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
 	if interval <= 0 {
 		return fmt.Errorf("the steward tick interval must be positive")
 	}
@@ -313,9 +313,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	cfg.Progress = newProgress(top, self, cfg.Runner.Generation, deps.Now, progressWrite)
 	if deps.ExamineLedger != nil {
-		if err := deps.ExamineLedger(top, cfg.now()); err != nil {
+		cfg.Progress.Begin("examine-ledger")
+		if err := deps.ExamineLedger(top, cfg.now(), cfg.Progress); err != nil {
 			fmt.Fprintf(os.Stderr, "examine ledger at steward start: %v\n", err)
 		}
+		cfg.Progress.Item()
 	}
 	var bridge bridgeStepper
 	if deps.Bridge != nil {
@@ -325,8 +327,12 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	bridgeLine := ""
 	keeping := &laneKeeping{step: cfg.KeepLandingLane}
 	channelDuty := func() {
+		cfg.Progress.Begin("channel-pending")
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
+		cfg.Progress.Wait("external", 15*time.Second)
 		undelivered, channelErr := deps.Channel(channelContext, top)
+		cfg.Progress.Working()
+		cfg.Progress.Item()
 		if channelErr != nil {
 			channelErr = fmt.Errorf("%d undelivered: %w", undelivered, channelErr)
 		}
@@ -381,33 +387,48 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the helm check: disk space belongs to the whole machine, so at the
 		// helm it still reports (the 2026-09-29 amendment) and acts on nothing.
 		if deps.SweepDisk != nil {
+			cfg.Progress.Begin("disk-sweep")
 			recordDuty(top, "disk-sweep", deps.SweepDisk(top, deps.Now(), helm.Active(top).Active), deps.Now())
+			cfg.Progress.Item()
 		}
 		// The bridge role runs every cycle, at the helm too: it reports and
 		// decides nothing (R25). Its line is printed when it changes.
 		if bridge != nil {
+			cfg.Progress.Begin("bridge")
 			if line := bridge.Step(); line != bridgeLine {
 				fmt.Fprintln(os.Stderr, line)
 				bridgeLine = line
 			}
+			cfg.Progress.Item()
 		}
+		cfg.Progress.Begin("question-replies")
 		settleContext, cancelSettle := context.WithTimeout(context.Background(), 15*time.Second)
+		cfg.Progress.Wait("external", 15*time.Second)
 		_, settleErr := deps.SettleReplies(settleContext, top)
+		cfg.Progress.Working()
+		cfg.Progress.Item()
 		recordDuty(top, "question-replies", settleErr, deps.Now())
 		cancelSettle()
 		// The shared situation page, read fresh each pass, at the helm too.
 		if cfg.Situation != nil {
+			cfg.Progress.Begin("situation")
 			at := deps.Now()
 			_, pageErr := SituationPage(top, func(t time.Time) Situation { return cfg.Situation(top, t) }, at, 0)
 			recordDuty(top, "situation", pageErr, deps.Now())
 			paged = deps.Now().Sub(at)
+			cfg.Progress.Item()
 		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if cfg.FollowDeployedEngine != nil {
-			if replaced, refused, followErr := cfg.FollowDeployedEngine(); followErr != nil {
+			cfg.Progress.Begin("engine-follow")
+			replaced, refused, followErr := cfg.FollowDeployedEngine()
+			if !replaced || followErr != nil {
+				cfg.Progress.Item()
+			}
+			if followErr != nil {
 				_ = NoteRearmFailure(top, followErr, deps.Now())
 			} else if replaced {
 				return nil
@@ -416,27 +437,35 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 		}
 		if helm.Active(top).Active {
+			cfg.Progress.Begin("landing-keeper")
 			keeping.run()
+			cfg.Progress.Item()
 			if stopped := wait(keeping); stopped {
 				return nil
 			}
 			continue
 		}
 		if cfg.CompletedBoundary != nil {
+			cfg.Progress.Begin("unit-boundary")
 			recordDuty(top, "unit-boundary", cfg.CompletedBoundary(top, cfg.now()), deps.Now())
+			cfg.Progress.Item()
 		}
 		if cfg.RearmAtBoundary != nil {
-			if replaced, refreshErr := cfg.RearmAtBoundary(); refreshErr != nil {
+			cfg.Progress.Begin("rearm")
+			if replaced, refreshErr := cfg.RearmAtBoundary(cfg.Progress); refreshErr != nil {
 				if logErr := NoteRearmFailure(top, refreshErr, deps.Now()); logErr != nil {
 					fmt.Fprintf(os.Stderr, "engine refresh log: %v\n", logErr)
 				}
 			} else if replaced {
 				return nil
 			}
+			cfg.Progress.Item()
 		}
 		// The landing lane's keeper wakes the lane's landing agent when the
 		// lane has work; at the helm it observes and continues only recorded scope.
+		cfg.Progress.Begin("landing-keeper")
 		keeping.run()
+		cfg.Progress.Item()
 		// A revive decision that selected a seat starts the seat main in this
 		// same pass (g1-s77), instead of a delegate revival.
 		if err == nil && result.Decision.Action == ActRevive && result.Seat != nil {
@@ -444,6 +473,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			if startSeat == nil {
 				startSeat = StartSeat
 			}
+			cfg.Progress.Begin("seat-start")
 			if _, startErr := startSeat(top, cfg, timed, *result.Seat); startErr != nil {
 				fmt.Fprintf(os.Stderr, "seat start failed: %v\n", startErr)
 				if qErr := QueueNotification(top, PendingNotification{
@@ -453,6 +483,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 					fmt.Fprintf(os.Stderr, "seat-start-failure incident could not queue: %v\n", qErr)
 				}
 			}
+			cfg.Progress.Item()
 		}
 		resume := err == nil && result.Decision.Action == ActRevive && result.Seat == nil
 		if !resume {
@@ -465,7 +496,8 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 		}
 		if resume && revive != nil {
-			if reviveErr := revive(); reviveErr != nil {
+			cfg.Progress.Begin("revive")
+			if reviveErr := revive(cfg.Progress); reviveErr != nil {
 				fmt.Fprintf(os.Stderr, "revival failed: %v\n", reviveErr)
 				// The failure is an incident, not a log line: a revival
 				// that dies before minting its intent would otherwise
@@ -478,19 +510,26 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 					fmt.Fprintf(os.Stderr, "revive-failure incident could not queue: %v\n", qErr)
 				}
 			}
+			cfg.Progress.Item()
 		}
+		cfg.Progress.Begin("seat-recovery-requests")
 		recordDuty(top, "seat-recovery-requests", ReconcileRecoveryRequests(top, cfg, timed), deps.Now())
+		cfg.Progress.Item()
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
+		cfg.Progress.Begin("notifications-pending")
 		_, deliverErr := deps.DeliverPending(top)
+		cfg.Progress.Item()
 		recordDuty(top, "notifications-pending", deliverErr, deps.Now())
 		channelDuty()
 		// The machine caches are trimmed last, after the tick released
 		// arbitration; the trim holds only its own per-cache flock, runs
 		// under its budget and ends at the stop file.
 		if deps.TrimCaches != nil {
+			cfg.Progress.Begin("cache-trim")
 			recordDuty(top, "cache-trim", deps.TrimCaches(context.Background(), top, cfg), deps.Now())
+			cfg.Progress.Item()
 		}
 		if stopped := wait(keeping); stopped {
 			return nil

@@ -58,7 +58,7 @@ func TestAlertClearHealthBed(t *testing.T) {
 		return
 	}
 	if *alertClearBedAction == "restart" {
-		if err := examineLedgerMove(root, b.base); err != nil {
+		if err := examineLedgerMove(root, b.base, nil); err != nil {
 			t.Fatalf("startup must preserve the acknowledged tip: %v", err)
 		}
 	}

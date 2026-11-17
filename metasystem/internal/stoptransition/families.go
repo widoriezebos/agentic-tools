@@ -698,7 +698,12 @@ func (f *stewardFamily) Inventory() ([]Item, error) {
 	key := "steward:runner"
 	f.items[key] = record
 	generation := record.FenceGeneration
-	return []Item{{Key: key, StatusLine: fmt.Sprintf("steward-runner pid %d started %d: running", record.Pid, record.PidStartedAt), FenceGeneration: &generation,
+	activity, since, ok := steward.RunnerActivity(f.root, record)
+	line := fmt.Sprintf("steward-runner pid %d started %d", record.Pid, record.PidStartedAt)
+	if ok {
+		line += ", doing " + activity
+	}
+	return []Item{{Key: key, StatusLine: line + ": running", Activity: activity, ActivitySince: since, FenceGeneration: &generation,
 		Survivor: stopfence.Survivor{Component: "steward-runner", Pid: record.Pid, PidStartedAt: record.PidStartedAt}}}, nil
 }
 

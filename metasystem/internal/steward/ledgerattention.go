@@ -315,11 +315,13 @@ func promoteLedgerAttentionStage(repoRoot string, state *ledgerAttentionState, n
 
 // examineLedgerMove also covers a move promoted before this steward started.
 // The accepted diff is rebuilt from the last examined tip when no stage remains.
-func examineLedgerMove(repoRoot string, now time.Time) error {
+func examineLedgerMove(repoRoot string, now time.Time, progress *Progress) error {
+	progress.Wait("arbitration", 0)
 	held, err := AcquireArbitration(repoRoot)
 	if err != nil {
 		return err
 	}
+	progress.Working()
 	defer held.Release()
 	return examineLedgerMoveWithRepositoryAndWriter(repoRoot, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 }

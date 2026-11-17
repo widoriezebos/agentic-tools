@@ -46,11 +46,11 @@ func TestFleetBoundaryRunnerOrdersConsumers(t *testing.T) {
 					}
 					return nil
 				},
-				RearmAtBoundary: func() (bool, error) { calls = append(calls, "engine"); return false, nil },
+				RearmAtBoundary: func(*Progress) (bool, error) { calls = append(calls, "engine"); return false, nil },
 				KeepLandingLane: func() lane.AgentRun { calls = append(calls, "keeper"); return lane.AgentRun{} },
 			}
 			deps.Sleep = func(d time.Duration) { now = now.Add(d); loop.stop(t) }
-			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { calls = append(calls, "revival"); return nil }, time.Second, cfg, deps); err != nil {
+			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { calls = append(calls, "revival"); return nil }, time.Second, cfg, deps); err != nil {
 				t.Fatal(err)
 			}
 			want := []string{"boundary", "engine", "keeper", "seat", "revival", "delivery"}

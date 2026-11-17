@@ -64,7 +64,7 @@ func TestStewardBoundaryRefreshSkipsNonSourceInstallation(t *testing.T) {
 	changed, err := RearmStewardAtBoundary(t.TempDir(), func() (bool, error) {
 		t.Fatal("a non-source installation reached the unit boundary check")
 		return true, nil
-	})
+	}, nil)
 	if changed || err != nil {
 		t.Fatalf("non-source refresh: changed=%t err=%v", changed, err)
 	}

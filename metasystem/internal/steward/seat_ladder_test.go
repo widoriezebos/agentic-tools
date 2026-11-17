@@ -1496,7 +1496,7 @@ func TestRunnerStartsTheSelectedSeatInsteadOfARevival(t *testing.T) {
 			return SeatRecord{}, nil
 		},
 	}
-	if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { revives++; return nil }, 200*time.Millisecond, TickConfig{Now: now, Seat: &fakeSeatLauncher{}}, deps); err != nil {
+	if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { revives++; return nil }, 200*time.Millisecond, TickConfig{Now: now, Seat: &fakeSeatLauncher{}}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if len(started) != 1 || started[0].Goal != "alpha" || revives != 0 {

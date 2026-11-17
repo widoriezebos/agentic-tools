@@ -24,7 +24,7 @@ func TestRunnerFollowReplacementEndsNormalAndHelmPass(t *testing.T) {
 			follows, rebuilds := 0, 0
 			cfg := TickConfig{Prober: seatBusyDeadProber{},
 				FollowDeployedEngine: func() (bool, bool, error) { follows++; loop.stop(t); return true, false, nil },
-				RearmAtBoundary:      func() (bool, error) { rebuilds++; loop.stop(t); return false, nil },
+				RearmAtBoundary:      func(*Progress) (bool, error) { rebuilds++; loop.stop(t); return false, nil },
 			}
 			deps.Sleep = func(time.Duration) { loop.stop(t) }
 			if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, time.Second, cfg, deps); err != nil {

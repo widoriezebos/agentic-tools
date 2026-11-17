@@ -81,7 +81,7 @@ func (bed *fleetBoundaryBed) observe(t *testing.T) (int, string) {
 	t.Helper()
 	var problem bytes.Buffer
 	code := runStewardRunWithDependencies([]string{"--repo", bed.root()}, io.Discard, &problem,
-		func(root string, _ steward.WorkerCensus, _ func() error, _ time.Duration, cfg steward.TickConfig) error {
+		func(root string, _ steward.WorkerCensus, _ func(*steward.Progress) error, _ time.Duration, cfg steward.TickConfig) error {
 			cfg.WorkStateRoot = filepath.Dir(bed.unitRoot)
 			wireStewardSeat(&cfg, bed.owners)
 			return cfg.CompletedBoundary(root, bed.now)
@@ -362,7 +362,7 @@ func TestFleetBoundaryPublicLoopRevivesWithoutSession(t *testing.T) {
 					if registered[i].verbs[j].name == "run" {
 						registered[i].verbs[j].run = func(args []string, stdout, stderr io.Writer) int {
 							return runStewardRunWithDependencies(args, stdout, stderr,
-								func(root string, census steward.WorkerCensus, _ func() error, interval time.Duration, cfg steward.TickConfig) error {
+								func(root string, census steward.WorkerCensus, _ func(*steward.Progress) error, interval time.Duration, cfg steward.TickConfig) error {
 									cfg.Now = now
 									observer := cfg.CompletedBoundary
 									cfg.CompletedBoundary = func(root string, at time.Time) error {
@@ -373,7 +373,7 @@ func TestFleetBoundaryPublicLoopRevivesWithoutSession(t *testing.T) {
 										}
 										return err
 									}
-									return steward.RunLoop(root, census, func() error { revives++; stop(); return nil }, interval, cfg)
+									return steward.RunLoop(root, census, func(*steward.Progress) error { revives++; stop(); return nil }, interval, cfg)
 								}, probeStewardRuntime, clock, func(string) int { return 1 }, func() (bool, error) { return false, nil })
 						}
 					}

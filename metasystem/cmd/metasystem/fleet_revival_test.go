@@ -121,7 +121,7 @@ esac
 				var outcome steward.ReviveOutcome
 				var problem bytes.Buffer
 				code := runStewardRunWithDependencies([]string{"--repo", root}, io.Discard, &problem,
-					func(_ string, _ steward.WorkerCensus, _ func() error, _ time.Duration, cfg steward.TickConfig) error {
+					func(_ string, _ steward.WorkerCensus, _ func(*steward.Progress) error, _ time.Duration, cfg steward.TickConfig) error {
 						cfg.Now = now
 						cfg.ProviderHome = home
 						var err error

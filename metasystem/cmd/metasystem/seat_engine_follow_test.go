@@ -166,14 +166,14 @@ func (b *centralFollowBed) centralRun(t *testing.T, passes int, start func() err
 	}
 	var problem bytes.Buffer
 	code := runStewardRunWithDependencies([]string{"--repo", b.root}, io.Discard, &problem,
-		func(root string, _ steward.WorkerCensus, _ func() error, interval time.Duration, cfg steward.TickConfig) error {
+		func(root string, _ steward.WorkerCensus, _ func(*steward.Progress) error, interval time.Duration, cfg steward.TickConfig) error {
 			if inspect != nil {
 				inspect(&cfg)
 			}
 			// Preserve the command's follow and rebuild closures while other duties stay idle.
 			cfg = steward.TickConfig{Now: b.now, RunnerClock: clock, Prober: prober, FollowDeployedEngine: cfg.FollowDeployedEngine, RearmAtBoundary: cfg.RearmAtBoundary}
 			return steward.RunLoop(root, fleetHandoffCensus{}, nil, interval, cfg)
-		}, nil, clock, func(string) int { return 1 }, nil, stewardRunDependencies{Prober: prober, FollowOperations: ops, FollowStart: start, RearmBoundary: func(string, func() (bool, error)) (bool, error) { b.rebuilds++; return false, nil }})
+		}, nil, clock, func(string) int { return 1 }, nil, stewardRunDependencies{Prober: prober, FollowOperations: ops, FollowStart: start, RearmBoundary: func(string, func() (bool, error), func(bool)) (bool, error) { b.rebuilds++; return false, nil }})
 	if code != 0 {
 		t.Fatalf("runner exit=%d: %s", code, &problem)
 	}
@@ -191,12 +191,12 @@ func TestCentralFollowRunnerInstallsOnce(t *testing.T) {
 		if cfg.FollowDeployedEngine == nil {
 			t.Fatal("central follow missing")
 		}
-		replaced, err := cfg.RearmAtBoundary()
+		replaced, err := cfg.RearmAtBoundary(nil)
 		if replaced || err != nil {
 			t.Fatalf("central rebuild=%v %v", replaced, err)
 		}
 		rebuild := cfg.RearmAtBoundary
-		cfg.RearmAtBoundary = func() (bool, error) { rebuilds++; return rebuild() }
+		cfg.RearmAtBoundary = func(p *steward.Progress) (bool, error) { rebuilds++; return rebuild(p) }
 	})
 	data, err := os.ReadFile(b.binary)
 	staged, _ := filepath.Glob(filepath.Join(b.root, "bin", ".metasystem.follow-*"))
@@ -313,11 +313,11 @@ func TestSourceFollowWiringAndRefreshOverride(t *testing.T) {
 			if mode == "central-refresh" {
 				refresh = func() (bool, error) { refreshes++; return true, nil }
 			}
-			code := runStewardRunWithDependencies([]string{"--repo", b.root}, io.Discard, io.Discard, func(_ string, _ steward.WorkerCensus, _ func() error, _ time.Duration, cfg steward.TickConfig) error {
+			code := runStewardRunWithDependencies([]string{"--repo", b.root}, io.Discard, io.Discard, func(_ string, _ steward.WorkerCensus, _ func(*steward.Progress) error, _ time.Duration, cfg steward.TickConfig) error {
 				if cfg.FollowDeployedEngine != nil || cfg.RearmAtBoundary == nil {
 					t.Fatalf("%s: follow=%v rearm=%v", mode, cfg.FollowDeployedEngine != nil, cfg.RearmAtBoundary != nil)
 				}
-				replaced, err := cfg.RearmAtBoundary()
+				replaced, err := cfg.RearmAtBoundary(nil)
 				if err != nil || replaced != (mode == "central-refresh") {
 					t.Fatalf("source/override=%v %v", replaced, err)
 				}

@@ -351,7 +351,7 @@ func probeStewardRuntime(root, runtime string) error {
 }
 
 func runStewardRunWith(args []string, stdout, stderr io.Writer,
-	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
+	runLoop func(string, steward.WorkerCensus, func(*steward.Progress) error, time.Duration, steward.TickConfig) error,
 	probeRuntime func(string, string) error) int {
 	return runStewardRunWithDependencies(args, stdout, stderr, runLoop, probeRuntime, nil, steward.TickSeconds, nil)
 }
@@ -362,11 +362,11 @@ type stewardRunDependencies struct {
 	ReviveLaunch     steward.LaunchSeam
 	FollowOperations steward.RearmOperations
 	FollowStart      func() error
-	RearmBoundary    func(string, func() (bool, error)) (bool, error)
+	RearmBoundary    func(string, func() (bool, error), func(bool)) (bool, error)
 }
 
 func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
-	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
+	runLoop func(string, steward.WorkerCensus, func(*steward.Progress) error, time.Duration, steward.TickConfig) error,
 	probeRuntime func(string, string) error,
 	clock *steward.HandoffClock, tickSeconds func(string) int, refresh func() (bool, error), supplied ...stewardRunDependencies) int {
 	flags := newFlagSet("steward run", stdout, stderr)
@@ -407,7 +407,7 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	if dependencies.RearmBoundary != nil {
 		rearm = dependencies.RearmBoundary
 	}
-	tickConfig.RearmAtBoundary = func() (bool, error) {
+	tickConfig.RearmAtBoundary = func(progress *steward.Progress) (bool, error) {
 		_, err := steward.VerifyIdentity(steward.RepoIdentityPath(*repo), *repo)
 		if err != nil {
 			return false, nil
@@ -425,6 +425,13 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 				now = clock.Now()
 			}
 			return steward.SeatAtUnitBoundary(*repo, home, now, tickConfig.Prober)
+		}, func(waiting bool) {
+			if waiting {
+				progress.Wait("external", 0)
+			} else {
+				progress.Working()
+				progress.Item()
+			}
 		})
 	}
 	if followsDeployedEngine(*repo) {
@@ -455,11 +462,11 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 			}
 			return replaced, refused, err
 		}
-		tickConfig.RearmAtBoundary = func() (bool, error) { return false, nil }
+		tickConfig.RearmAtBoundary = func(progress *steward.Progress) (bool, error) { return false, nil }
 	}
 	if refresh != nil {
 		tickConfig.FollowDeployedEngine = nil
-		tickConfig.RearmAtBoundary = refresh
+		tickConfig.RearmAtBoundary = func(*steward.Progress) (bool, error) { return refresh() }
 	}
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
@@ -476,8 +483,10 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
 	}
 	interval := time.Duration(tickSeconds(*repo)) * time.Second
-	err := runLoop(*repo, stewardCensusFor(*repo, tickConfig.Prober), func() error {
-		out, err := stewardReviveOwner(*repo, tickConfig, dependencies.ReviveLaunch)
+	err := runLoop(*repo, stewardCensusFor(*repo, tickConfig.Prober), func(progress *steward.Progress) error {
+		reviveConfig := tickConfig
+		reviveConfig.Progress = progress
+		out, err := stewardReviveOwner(*repo, reviveConfig, dependencies.ReviveLaunch)
 		if err != nil {
 			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))
 		}

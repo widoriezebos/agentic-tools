@@ -93,6 +93,11 @@ func (inv *intentInvocation) statusView(checkout string, report stoptransition.R
 			helperFact = textui.Count(len(helpers), "helper", "helpers")
 		}
 		page.Headline(state, helperFact, textui.Count(len(work), "job", "jobs"))
+		for _, item := range helpers {
+			if item.Family == "steward" && item.Activity != "" {
+				page.Section("", "").Text("steward runner: " + item.Activity + ", " + env.Since(item.ActivitySince))
+			}
+		}
 		if page.Verbose() {
 			page.Facts(textui.KV{Key: "checkout", Value: []textui.Span{textui.Plain(env.Path(checkout))}})
 		}

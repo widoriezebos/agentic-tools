@@ -117,3 +117,18 @@ func (p *Progress) update(change func(time.Time)) {
 	}
 	p.warned = err != nil
 }
+
+// RunnerActivity describes only progress belonging to this live runner.
+func RunnerActivity(root string, runner RunnerRecord) (activity string, since time.Time, ok bool) {
+	var record RunnerProgress
+	if err := readJSON(runnerProgressPath(root), &record); err != nil ||
+		record.Pid != runner.Pid || record.PidStartedAt != runner.PidStartedAt ||
+		record.StartTicks != runner.StartTicks || record.BootID != runner.BootID {
+		return "", time.Time{}, false
+	}
+	state := record.State
+	if record.State == "waiting" {
+		state += " " + record.Reason
+	}
+	return fmt.Sprintf("%s (%s, %d done)", record.Operation, state, record.Done), record.OperationSince, true
+}

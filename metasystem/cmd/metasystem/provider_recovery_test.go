@@ -475,7 +475,7 @@ esac
 						for j := range registered[i].verbs {
 							if registered[i].verbs[j].name == "run" {
 								registered[i].verbs[j].run = func(args []string, out, errout io.Writer) int {
-									return runStewardRunWithDependencies(args, out, errout, func(r string, _ steward.WorkerCensus, revive func() error, interval time.Duration, cfg steward.TickConfig) error {
+									return runStewardRunWithDependencies(args, out, errout, func(r string, _ steward.WorkerCensus, revive func(*steward.Progress) error, interval time.Duration, cfg steward.TickConfig) error {
 										cfg.Now, cfg.ProviderHome, cfg.WorkStateRoot, cfg.RecoveryRegistry, cfg.Seat = at, home, root, registryPath, launcher
 										cfg.GoalProjection = readProjection
 										cfg.RearmAtBoundary, cfg.CompletedBoundary, cfg.KeepLandingLane = nil, nil, nil

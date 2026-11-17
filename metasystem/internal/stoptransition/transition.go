@@ -23,6 +23,8 @@ import (
 type Item struct {
 	Key             string
 	StatusLine      string
+	Activity        string
+	ActivitySince   time.Time
 	FenceGeneration *int64
 	Survivor        stopfence.Survivor
 	// ObserveOnly marks an identity whose family reports it without signalling,
@@ -101,13 +103,15 @@ type Report struct {
 // StatusItem is one live item of Status: its family, the line status
 // prints for it, and the identity the family recorded.
 type StatusItem struct {
-	Family       string
-	Line         string
-	Component    string
-	ID           string
-	MachineID    string
-	Pid          int64
-	PidStartedAt int64
+	Family        string
+	Activity      string
+	ActivitySince time.Time
+	Line          string
+	Component     string
+	ID            string
+	MachineID     string
+	Pid           int64
+	PidStartedAt  int64
 	// ObserveOnly marks an item stop reports without signalling, such as a
 	// process that is not the metasystem's.
 	ObserveOnly bool
@@ -340,6 +344,7 @@ func (t *Transition) Status() (Report, error) {
 		}
 		line := entry.item.StatusLine
 		report.Items = append(report.Items, StatusItem{Family: entry.family, Line: entry.item.StatusLine,
+			Activity: entry.item.Activity, ActivitySince: entry.item.ActivitySince,
 			Component: entry.item.Survivor.Component, ID: entry.item.Survivor.ID, MachineID: entry.item.Survivor.MachineID,
 			Pid: entry.item.Survivor.Pid, PidStartedAt: entry.item.Survivor.PidStartedAt, ObserveOnly: entry.item.ObserveOnly})
 		for index, survivor := range record.NotStopped {

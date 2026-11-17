@@ -191,12 +191,16 @@ func TestRevivalUsesTheInjectedProber(t *testing.T) {
 	}}
 	var problem bytes.Buffer
 	code := runStewardRunWithDependencies([]string{"--repo", root}, io.Discard, &problem,
-		func(root string, _ steward.WorkerCensus, revive func() error, interval time.Duration, cfg steward.TickConfig) error {
+		func(root string, _ steward.WorkerCensus, revive func(*steward.Progress) error, interval time.Duration, cfg steward.TickConfig) error {
 			cfg.Now, cfg.WorkStateRoot = now, t.TempDir()
 			cfg.CompletedBoundary = nil
 			return steward.RunLoop(root, fleetHandoffCensus{}, revive, interval, cfg)
 		}, nil, clock, func(string) int { return 1 }, func() (bool, error) { return false, nil }, stewardRunDependencies{Prober: table, Signal: func(int, syscall.Signal) error { signals++; return nil }, ReviveLaunch: func(got steward.Intent) error {
 			launches++
+			activity, _, ok := steward.RunnerActivity(root, steward.RunnerRecord{Pid: predecessor.Pid, PidStartedAt: predecessor.StartedAt.Unix()})
+			if !ok || activity != "revive (waiting external, 0 done)" {
+				t.Fatalf("revive launch activity=%q ok=%v", activity, ok)
+			}
 			if got.Nonce != it.Nonce {
 				t.Fatalf("wrong launch: %+v", got)
 			}
@@ -250,7 +254,7 @@ func TestBoundaryPassUsesTheInjectedProber(t *testing.T) {
 	}}
 	var problem bytes.Buffer
 	code = runStewardRunWithDependencies([]string{"--repo", bed.root()}, io.Discard, &problem,
-		func(root string, _ steward.WorkerCensus, revive func() error, interval time.Duration, cfg steward.TickConfig) error {
+		func(root string, _ steward.WorkerCensus, revive func(*steward.Progress) error, interval time.Duration, cfg steward.TickConfig) error {
 			cfg.Now, cfg.WorkStateRoot = now, filepath.Dir(bed.unitRoot)
 			wireStewardSeat(&cfg, owners)
 			observe := cfg.CompletedBoundary
@@ -282,5 +286,57 @@ func TestBoundaryPassUsesTheInjectedProber(t *testing.T) {
 	pending, err := steward.PendingNotifications(bed.root())
 	if err != nil || len(pending) != 0 || len(episodes) != 1 {
 		t.Fatalf("production transport: pending=%d episodes=%d error=%v", len(pending), len(episodes), err)
+	}
+}
+
+func TestRearmAdmissionStartsANewQuietPeriodBeforeBuild(t *testing.T) {
+	t.Parallel()
+	if !injectedRunnerChild(t) {
+		return
+	}
+	b := newCentralFollowBed(t)
+	injectedRunnerFile(t, filepath.Join(b.root, "metasystem.conf"), []byte("metasystem.engine-delivery=source\nlaunch.seat.runtime=claude\n"))
+	testprovider.Register(t, b.root)
+	now := b.now
+	self := identity.Exact{Pid: int64(os.Getpid()), StartedAt: now.Add(-time.Hour)}
+	table := &runnerProbeTable{t: t, exact: map[int64]identity.Exact{self.Pid: self}, dead: map[int64]bool{}, calls: map[int64]int{}}
+	clock := &steward.HandoffClock{Now: func() time.Time { return now }, Sleep: func(d time.Duration) {
+		now = now.Add(d)
+		injectedRunnerFile(t, filepath.Join(b.root, "artifacts", "agents", "steward", "stop"), nil)
+	}}
+	read := func() steward.RunnerProgress {
+		t.Helper()
+		var r steward.RunnerProgress
+		data, err := os.ReadFile(filepath.Join(b.root, "artifacts", "agents", "steward", "runner-progress.json"))
+		if err != nil || json.Unmarshal(data, &r) != nil {
+			t.Fatalf("progress: %v %s", err, data)
+		}
+		return r
+	}
+	builds := 0
+	deps := stewardRunDependencies{Prober: table, RearmBoundary: func(_ string, _ func() (bool, error), admission func(bool)) (bool, error) {
+		admission(true)
+		before := read()
+		if before.Operation != "rearm" || before.State != "waiting" || before.Reason != "external" || before.Deadline != nil || before.Done != 0 {
+			t.Fatalf("admission: %+v", before)
+		}
+		now = now.Add(31 * time.Minute)
+		admission(false)
+		build := read()
+		builds++
+		if build.State != "working" || build.Done != 1 || !build.ProgressAt.After(before.ProgressAt) || !build.ProgressAt.Equal(now) {
+			t.Fatalf("build still has admission's occurrence: before=%+v build=%+v", before, build)
+		}
+		injectedRunnerFile(t, filepath.Join(b.root, "artifacts", "agents", "steward", "stop"), nil)
+		return false, nil
+	}}
+	code := runStewardRunWithDependencies([]string{"--repo", b.root}, io.Discard, io.Discard,
+		func(root string, _ steward.WorkerCensus, _ func(*steward.Progress) error, interval time.Duration, cfg steward.TickConfig) error {
+			cfg.Now = now
+			cfg.CompletedBoundary = nil
+			return steward.RunLoop(root, fleetHandoffCensus{}, nil, interval, cfg)
+		}, nil, clock, func(string) int { return 1 }, nil, deps)
+	if code != 0 || builds != 1 {
+		t.Fatalf("exit=%d builds=%d", code, builds)
 	}
 }

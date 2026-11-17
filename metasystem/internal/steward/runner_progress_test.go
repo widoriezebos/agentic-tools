@@ -74,6 +74,13 @@ func TestTheRunnerPublishesItsTickAndItsWait(t *testing.T) {
 	if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, time.Second, TickConfig{Now: start, ProviderHome: testprovider.Home(loop.root)}, deps); err != nil {
 		t.Fatal(err)
 	}
+	var tickAndWait []RunnerProgress
+	for _, record := range writes {
+		if record.Operation == "tick" || record.Operation == "wait" {
+			tickAndWait = append(tickAndWait, record)
+		}
+	}
+	writes = tickAndWait
 	if len(writes) != 5 {
 		t.Fatalf("writes=%+v", writes)
 	}

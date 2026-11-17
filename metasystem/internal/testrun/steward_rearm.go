@@ -27,7 +27,8 @@ type stewardRearmDependencies struct {
 
 // RearmStewardAtBoundary uses the seat's own fetch and build. The replacement
 // up runs detached: the resident runner must exit before up can replace it.
-func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error)) (replaced bool, err error) {
+// admission receives true before resource admission and false when it returns.
+func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error), admission func(bool)) (replaced bool, err error) {
 	defer func() {
 		if err != nil {
 			_ = steward.NoteRearmFailure(projectRoot, err, time.Now())
@@ -49,7 +50,9 @@ func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error)) (
 	if err != nil {
 		return false, nil
 	}
-	return rearmStewardWithDependencies(projectRoot, stewardBoundaryDependencies(ctx, projectRoot, prefix, boundary, steward.RearmOperations{Clock: landedRearmClock}))
+	deps := stewardBoundaryDependencies(ctx, projectRoot, prefix, boundary, steward.RearmOperations{Clock: landedRearmClock})
+	deps.rebuild = func() error { return landedRearmRebuild(ctx, projectRoot, admission) }
+	return rearmStewardWithDependencies(projectRoot, deps)
 }
 
 func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string, boundary func() (bool, error), ops steward.RearmOperations) stewardRearmDependencies {
@@ -92,7 +95,7 @@ func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string
 		lock:     func() (func(), error) { return landedRearmMutationLock(installation) },
 		attempts: func() ([]proofrun.Attempt, error) { return proofrun.ReadAttempts(installation) },
 		forward:  func(tip string) error { return landedRearmFastForward(ctx, installation, tip) },
-		rebuild:  func() error { return landedRearmRebuild(ctx, installation) },
+		rebuild:  func() error { return landedRearmRebuild(ctx, installation, nil) },
 		start: func() error {
 			log, err := os.OpenFile(filepath.Join(projectRoot, "artifacts", "agents", "steward", "runner.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 			if err != nil {

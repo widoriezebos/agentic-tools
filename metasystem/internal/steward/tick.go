@@ -84,7 +84,7 @@ type TickConfig struct {
 	KeepLandingLane func() lane.AgentRun
 	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
 	// A true result ends this runner so its replacement can take the lock.
-	RearmAtBoundary func() (bool, error)
+	RearmAtBoundary func(*Progress) (bool, error)
 	// FollowDeployedEngine installs deployed bytes at a safe boundary, including at the helm.
 	FollowDeployedEngine func() (replaced, refused bool, err error)
 	// CompletedBoundary retains completed work before later boundary consumers.

@@ -100,7 +100,7 @@ func TestPersonClaimRunnerNeverGenericallyRevivesReservation(t *testing.T) {
 						return SeatRecord{}, nil
 					},
 				}
-				if err := runLoopWithDependencies(bed.root, fakeCensus{workers: deadWorkers}, func() error { revivals++; return nil }, time.Minute, TickConfig{Now: bed.now}, deps); err != nil {
+				if err := runLoopWithDependencies(bed.root, fakeCensus{workers: deadWorkers}, func(*Progress) error { revivals++; return nil }, time.Minute, TickConfig{Now: bed.now}, deps); err != nil {
 					t.Fatal(err)
 				}
 				if ticks != 1 || revivals != 0 || launches != 0 || !reflect.DeepEqual(before, goal.RenderFile(f)) {
@@ -138,7 +138,7 @@ func TestPersonClaimApprovedZeroEpochStartsItsSeatAndRechecksApproval(t *testing
 					return bed.startUnder(selection, census)
 				},
 			}
-			if err := runLoopWithDependencies(bed.root, fakeCensus{workers: deadWorkers}, func() error { delegates++; return nil }, time.Minute, TickConfig{Now: bed.now}, deps); err != nil {
+			if err := runLoopWithDependencies(bed.root, fakeCensus{workers: deadWorkers}, func(*Progress) error { delegates++; return nil }, time.Minute, TickConfig{Now: bed.now}, deps); err != nil {
 				t.Fatal(err)
 			}
 			want := 1

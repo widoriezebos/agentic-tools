@@ -610,10 +610,19 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 
 func seatDependenciesForConfig(cfg TickConfig) seatDependencies {
 	dependencies := defaultSeatDependencies(cfg.Seat)
+	dependencies.Progress = cfg.Progress
 	dependencies.Now, dependencies.ProviderHome = cfg.now, cfg.ProviderHome
 	dependencies.WorkStateRoot, dependencies.Prober = cfg.WorkStateRoot, cfg.Prober
 	if cfg.GoalProjection != nil {
 		dependencies.Project = cfg.GoalProjection
+	}
+	project := dependencies.Project
+	dependencies.Project = func(root string, now time.Time) (goal.Projection, error) {
+		cfg.Progress.Wait("external", 0)
+		reading, err := project(root, now)
+		cfg.Progress.Working()
+		cfg.Progress.Item()
+		return reading, err
 	}
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
@@ -845,10 +854,12 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if !person && selection.Goal == "" && selection.Kind != "steward" {
 		return SeatRecord{}, errors.New("a seat start names its goal")
 	}
+	dependencies.Progress.Wait("arbitration", 0)
 	arbitration, err := AcquireArbitration(repoRoot)
 	if err != nil {
 		return SeatRecord{}, err
 	}
+	dependencies.Progress.Working()
 	defer arbitration.Release()
 	closed, reason, err := dependencies.Fence(repoRoot)
 	if err != nil {
@@ -1094,6 +1105,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 
 // seatDependencies are the seat ladder's readers and its launcher.
 type seatDependencies struct {
+	Progress                           *Progress
 	Person                             humanauthority.Proof
 	After, WorkStateRoot, RegistryPath string
 	Census                             WorkerCensus

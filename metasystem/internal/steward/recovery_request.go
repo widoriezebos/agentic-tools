@@ -36,13 +36,16 @@ func ReconcileRecoveryRequests(self string, cfg TickConfig, census WorkerCensus)
 	for _, seat := range seats {
 		root, err := goal.ResolveStateRoot(seat.Path)
 		if err == nil {
+			cfg.Progress.Wait("arbitration", 0)
 			held, lockErr := AcquireArbitration(root)
+			cfg.Progress.Working()
 			err = lockErr
 			if err == nil {
 				err = reconcileSeatRecovery(root, cfg, census, providers, seat.Armed)
 				held.Release()
 			}
 		}
+		cfg.Progress.Item()
 		if err != nil {
 			obligations = errors.Join(obligations, fmt.Errorf("seat %s: %w", seat.Path, err))
 		}

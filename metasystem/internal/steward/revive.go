@@ -104,10 +104,12 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 
 func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admit AdmitSeam, dependencies openWorkDependencies, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	// The critical section: fence, verdict, consume, launch, stamp.
+	cfg.Progress.Wait("arbitration", 0)
 	arb, err := AcquireArbitration(repoRoot)
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
+	cfg.Progress.Working()
 	defer arb.Release()
 	intents, err := LiveIntents(repoRoot)
 	if err != nil {
@@ -193,7 +195,11 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 		if len(claimOption) > 0 && claimOption[0] != nil {
 			claim = claimOption[0]
 		}
-		if claimErr := claim(*it); claimErr != nil {
+		cfg.Progress.Wait("external", 0)
+		claimErr := claim(*it)
+		cfg.Progress.Working()
+		cfg.Progress.Item()
+		if claimErr != nil {
 			reason := "the deferred seat-idle claim was refused: " + claimErr.Error()
 			if err := CancelIntent(repoRoot, it.Nonce, reason); err != nil {
 				return ReviveOutcome{}, err
@@ -250,7 +256,11 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 		return ReviveOutcome{}, err
 	}
-	if err := launch(consumed); err != nil {
+	cfg.Progress.Wait("external", 0)
+	err = launch(consumed)
+	cfg.Progress.Working()
+	cfg.Progress.Item()
+	if err != nil {
 		return ReviveOutcome{Escalate: true, Reason: "dispatch failed after consumption; next tick reconciles: " + err.Error()}, nil
 	}
 	if err := StampLaunch(repoRoot, consumed.Nonce); err != nil {

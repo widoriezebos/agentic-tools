@@ -170,7 +170,7 @@ func TestRunLoopAttemptsRevivalBeforeNotifyingItsFailure(t *testing.T) {
 	command := `printf '%s\n' "$STEWARD_MESSAGE" >> ` + sink
 	alertedBeforeRepair := false
 	sleeps, published := 0, 0
-	revive := func() error {
+	revive := func(*Progress) error {
 		if data, err := os.ReadFile(sink); err == nil && strings.Contains(string(data), "stalled-dead") {
 			alertedBeforeRepair = true
 		}

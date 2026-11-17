@@ -101,7 +101,17 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 		observedWait = true
 		cancel()
 	})
-	err = landedRearmRebuild(proofrun.WithResourceCustodyExecutable(blocked, engine), installation)
+	var admissions []bool
+	observeAdmission := func(waiting bool) {
+		admissions = append(admissions, waiting)
+		if _, err := os.Stat(filepath.Join(installation, "build-ran")); !os.IsNotExist(err) {
+			t.Fatalf("build began before admission was published: %v", err)
+		}
+	}
+	err = landedRearmRebuild(proofrun.WithResourceCustodyExecutable(blocked, engine), installation, observeAdmission)
+	if !slices.Equal(admissions, []bool{true, false}) {
+		t.Fatalf("admission callbacks=%v", admissions)
+	}
 	cancel()
 	if !observedWait || !errors.Is(err, context.Canceled) {
 		t.Fatalf("rebuild contender did not complete a failed host resource scan: observed=%t err=%v", observedWait, err)
@@ -123,8 +133,12 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := landedRearmRebuild(proofrun.WithResourceCustodyExecutable(context.Background(), engine), installation); err != nil {
+	admissions = nil
+	if err := landedRearmRebuild(proofrun.WithResourceCustodyExecutable(context.Background(), engine), installation, observeAdmission); err != nil {
 		t.Fatalf("admitted rebuild failed: %v", err)
+	}
+	if !slices.Equal(admissions, []bool{true, false}) {
+		t.Fatalf("admitted callbacks=%v", admissions)
 	}
 	if data, err := os.ReadFile(filepath.Join(installation, "build-ran")); err != nil || string(data) != "built\n" {
 		t.Fatalf("rebuild script did not run: data=%q err=%v", data, err)
@@ -628,7 +642,7 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	upResult := UpOutcome{Summary: "supervision is armed", Outcome: "armed", ReArmed: "generation=2 previous=1"}
 	var upErr error
 	enrolledGeneration := 2
-	landedRearmRebuild = func(_ context.Context, installation string) error { rebuiltIn = installation; return nil }
+	landedRearmRebuild = func(_ context.Context, installation string, _ func(bool)) error { rebuiltIn = installation; return nil }
 	landedRearmUp = func(_ context.Context, installation, projectRoot string) (UpOutcome, error) {
 		upInstallation, upScope = installation, projectRoot
 		return upResult, upErr
@@ -688,7 +702,7 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 		t.Fatalf("fast-forward failure lost its cause: %v", err)
 	}
 	landedRearmFastForward = func(context.Context, string, string) error { return nil }
-	landedRearmRebuild = func(context.Context, string) error { return errors.New("compiler failed") }
+	landedRearmRebuild = func(context.Context, string, func(bool)) error { return errors.New("compiler failed") }
 	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(fullRefusal(err), "cause=rebuild-failed") {
 		t.Fatalf("rebuild failure lost its cause: %v", err)
 	}

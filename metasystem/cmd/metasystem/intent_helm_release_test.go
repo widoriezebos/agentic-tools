@@ -89,7 +89,7 @@ func TestReleaseOneWithRunningSteward(t *testing.T) {
 	var revived atomic.Int32
 	done := make(chan error, 1)
 	go func() {
-		done <- steward.RunLoop(root, releaseCensus{}, func() error { revived.Add(1); return nil }, time.Hour, steward.TickConfig{Now: helmNow})
+		done <- steward.RunLoop(root, releaseCensus{}, func(*steward.Progress) error { revived.Add(1); return nil }, time.Hour, steward.TickConfig{Now: helmNow})
 	}()
 	// Wait for the loop's first tick by its own record, on no clock: the
 	// outcome asserted below does not depend on how long the tick took.

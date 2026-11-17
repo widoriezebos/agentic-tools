@@ -1616,3 +1616,60 @@ func TestRepeatedStopWithOnlyOtherProcessesIsAlreadyStopped(t *testing.T) {
 		t.Fatalf("the repeat wrote generation %d and signalled %d", record.Generation, family.stops)
 	}
 }
+
+func TestStewardFamilyShowsOnlyItsRunnersActivity(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	self, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("self: %v %v", state, err)
+	}
+	dir := filepath.Join(root, "artifacts", "agents", "steward")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, value any) {
+		t.Helper()
+		data, err := json.Marshal(value)
+		if err == nil {
+			err = os.WriteFile(filepath.Join(dir, name), data, 0644)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := steward.RunnerRecord{Pid: self.Pid, PidStartedAt: self.StartedAt.Unix(), StartTicks: self.StartTicks, BootID: self.BootID}
+	write("runner.json", runner)
+	since := time.Date(2026, 11, 17, 8, 1, 0, 0, time.UTC)
+	for _, mismatch := range []string{"", "pid", "start", "ticks", "boot"} {
+		record := steward.RunnerProgress{Pid: runner.Pid, PidStartedAt: runner.PidStartedAt, StartTicks: runner.StartTicks, BootID: runner.BootID, Operation: "situation", State: "working", Done: 12, OperationSince: since}
+		switch mismatch {
+		case "pid":
+			record.Pid++
+		case "start":
+			record.PidStartedAt++
+		case "ticks":
+			record.StartTicks++
+		case "boot":
+			record.BootID += "other"
+		}
+		write("runner-progress.json", record)
+		report, err := (&Transition{Checkout: root, Families: []Family{newStewardFamily(root)}}).Status()
+		if err != nil || len(report.Items) != 1 {
+			t.Fatalf("status=%+v %v", report, err)
+		}
+		item := report.Items[0]
+		want := fmt.Sprintf("steward-runner pid %d started %d", runner.Pid, runner.PidStartedAt)
+		if mismatch == "" {
+			want += ", doing situation (working, 12 done)"
+			if item.Activity != "situation (working, 12 done)" || !item.ActivitySince.Equal(since) {
+				t.Fatalf("activity=%+v", item)
+			}
+		} else if item.Activity != "" || !item.ActivitySince.IsZero() {
+			t.Fatalf("stale activity=%+v", item)
+		}
+		if item.Line != want+": running" {
+			t.Fatalf("%s: line=%q", mismatch, item.Line)
+		}
+	}
+}

@@ -76,7 +76,7 @@ func TestStewardFixtureRunnerNeverProbes(t *testing.T) {
 	probed := false
 	var stdout, stderr bytes.Buffer
 	code := runStewardRunWith([]string{"--repo", root}, &stdout, &stderr,
-		func(got string, _ steward.WorkerCensus, _ func() error, _ time.Duration, cfg steward.TickConfig) error {
+		func(got string, _ steward.WorkerCensus, _ func(*steward.Progress) error, _ time.Duration, cfg steward.TickConfig) error {
 			if got != root {
 				t.Fatalf("runner root %q, want %q", got, root)
 			}
