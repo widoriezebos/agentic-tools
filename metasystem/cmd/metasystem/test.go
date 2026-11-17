@@ -545,6 +545,7 @@ type testRunInvocation struct {
 // envelope: the error it ended on (its code and plain reason), and its data,
 // the result it would have printed.
 type testRunOutcome struct {
+	summary string
 	err     error
 	data    any
 	results bytes.Buffer
@@ -578,7 +579,9 @@ func (invocation *testRunInvocation) envelope(name string, args []string) func(i
 			data = json.RawMessage(bytes.TrimSpace(outcome.results.Bytes()))
 		}
 		result := verbresult.FromError(name, exit, outcome.err, data)
-		if result.Summary == "" {
+		if outcome.summary != "" {
+			result.Summary = outcome.summary
+		} else if result.Summary == "" {
 			result.Summary = testRunSummary(exit)
 		}
 		_ = verbresult.Write(stdout, result)

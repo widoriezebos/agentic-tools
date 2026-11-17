@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -153,7 +154,7 @@ func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
-		usage: []string{"metasystem landing prove [--impact|--gate|--trunk] [--wait] [--fresh]"},
+		usage: []string{"metasystem landing prove [--plan|--impact|--gate|--trunk] [--wait] [--fresh]"},
 		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full, scoped or impact, LANDING_PROOF_BASE naming the base tree (empty for full), LANDING_PROOF_GROUPS naming space-separated declared group ids, and LANDING_PROOF_PACKAGES naming space-separated packages or package=TestA,TestB selections (both empty for full), LANDING_ONLY naming failed units when they are checked again alone, and LANDING_ONLY_TESTS naming space-separated tests for a single Go unit replay; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green is reported at once so landing push can follow in the same turn. Changed record inputs run their affected checks; main and a batch keep their last full check while only records change. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained.",
@@ -161,8 +162,9 @@ func landingProveCommand() intentCommand {
 			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait starts the same background check and waits for its saved result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
 			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
 			"--fresh bypasses saved and inherited green proofs and runs the requested check again, including the baseline for --gate. A full proof runs in full, and the result records fresh.",
+			"--plan prints the batch impact proposal from the current checkout against its recorded batch base, without running or accepting a proof.",
 			"--trunk checks main when it lacks applicable proof; with --fresh, a new full check. --gate and --trunk cannot be used together."},
-		flags: []intentFlag{{name: "fresh", usage: "run the requested check again without reusing a saved proof"}, {name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "checks main when it lacks applicable proof; with --fresh, a new full check"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
+		flags: []intentFlag{{name: "plan", usage: "print the batch impact proposal without running or accepting it"}, {name: "fresh", usage: "run the requested check again without reusing a saved proof"}, {name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "checks main when it lacks applicable proof; with --fresh, a new full check"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
@@ -172,6 +174,30 @@ func landingProveCommand() intentCommand {
 
 func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	targets := laneTargets(admitted.record.Root)
+	if inv.input.switched("plan") {
+		for _, flag := range []string{"impact", "gate", "trunk", "wait", "fresh", "classify", "attempt"} {
+			if inv.input.switched(flag) || inv.input.text(flag) != "" {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--plan cannot be combined with an execution or classification flag"})
+			}
+		}
+		batch, err := plain.ReadBatch(admitted.installation)
+		if err == nil && batch == nil {
+			err = fmt.Errorf("no batch base is recorded")
+		}
+		if err != nil {
+			return inv.render(landingLaneFailure(targets, "the batch plan could not be read", err))
+		}
+		git := admitted.owners.plainProve.Git
+		if git == nil {
+			git = plain.Git
+		}
+		sources := impactSources{git, goadapter.UnitImpact, os.Environ(), config.Get, os.Getenv}
+		plan, err := sources.batchPlan(admitted.installation, batch.Base)
+		if err != nil {
+			return inv.render(landingLaneFailure(targets, "the batch plan could not be computed", err))
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "batch proof proposal; no proof was started", Data: plan, text: []string{plan.text()}})
+	}
 	if inv.input.switched("gate") && inv.input.switched("trunk") || inv.input.switched("impact") && (inv.input.switched("gate") || inv.input.switched("trunk")) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: "--impact, --gate and --trunk cannot be used together, so nothing was proven"})

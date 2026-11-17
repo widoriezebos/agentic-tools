@@ -39,13 +39,18 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	return (impactSources{plain.Git, goadapter.UnitImpact, os.Environ(), config.Get, os.Getenv}).run(args, stdout, stderr, only)
 }
 
-func (sources impactSources) run(args []string, stdout, stderr io.Writer, only string) (code int) {
+func (sources impactSources) run(args []string, stdout, stderr io.Writer, only string) int {
+	return sources.runConsumer(args, stdout, stderr, only, impactUnit, nil)
+}
+
+func (sources impactSources) runConsumer(args []string, stdout, stderr io.Writer, only string, consumer impactConsumer, capture *batchImpactPlan) (code int) {
 	invocation := testRunInvocation{stdout: stdout, stderr: stderr, name: "test impact"}
 	finish := invocation.envelope(invocation.name, args)
 	defer func() { finish(code) }()
 	stdout = invocation.stdout
 	flags := newFlagSet("test impact", stdout, stderr)
 	flags.Bool("json", false, "print the plan as a JSON result")
+	requestedConsumer := flags.String("consumer", string(consumer), "plan for unit or batch; batch is plan-only")
 	output := plain.ImpactPlan{Selections: []string{}}
 	base := flags.String("base", sources.getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
 	check := flags.Bool("check", false, "check a unit at impact depth only when cheap")
@@ -54,6 +59,27 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 	root := pathFlag(flags, "root", ".", "the Go module installation")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
+	}
+	if *requestedConsumer != string(impactUnit) && *requestedConsumer != string(impactBatch) {
+		fmt.Fprintln(stderr, "consumer must be unit or batch")
+		return 2
+	}
+	if *requestedConsumer == string(impactBatch) && (!*plan || *check || *publicationOnly || only != "") {
+		fmt.Fprintln(stderr, "the batch consumer requires --plan and cannot execute a check or replay")
+		return 2
+	}
+	if *requestedConsumer == string(impactBatch) && capture == nil {
+		result, err := sources.batchPlan(*root, *base)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if invocation.outcome != nil {
+			invocation.outcome.data = result
+			invocation.outcome.summary = "batch proof proposal; no tests were run"
+		}
+		fmt.Fprint(stdout, result.text())
+		return 0
 	}
 	if *publicationOnly {
 		only = ""
@@ -64,6 +90,9 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 		return 2
 	}
 	selectionPath := sources.getenv("METASYSTEM_CHECK_SELECTION")
+	if consumer == impactBatch {
+		selectionPath = ""
+	}
 	selection := launch.CheckSelection{Mode: "impact", Settings: map[string]string{}}
 	var results []proofrun.NamedGroupResult
 	var description string
@@ -197,13 +226,16 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 			}
 		}
 		fmt.Fprintf(stdout, "plan: base %s (%s)\n", sha, subject)
-		impact, err := sources.impact(installation, sha, sources.getenv("LANDING_PROOF_SCOPE") == "impact")
+		impact, err := sources.impact(installation, sha, consumer != impactBatch && sources.getenv("LANDING_PROOF_SCOPE") == "impact")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		for i := range impact.Paths {
 			impact.Paths[i] = prefix + impact.Paths[i]
+		}
+		if consumer == impactBatch {
+			impact.Paths = capture.Paths
 		}
 		affected, err := testpolicy.Affected(contract, impact.Paths)
 		if err != nil {
@@ -262,14 +294,15 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 			if slices.Contains(required, group.ID) || group.Selector() {
 				continue
 			}
+			mandatory := consumer == impactBatch && slices.Contains(testpolicy.BatchRosterIDs(), group.ID)
 			canary := slices.Contains(contract.Always.Canary, group.ID)
 			audit := auditGroup(contract, group) && reads[group.ID]
-			if strings.HasPrefix(group.ID, "section/") || !canary && !audit && (group.Phase == "acceptance" || !wanted[group.ID]) {
+			if strings.HasPrefix(group.ID, "section/") || !mandatory && !canary && !audit && (group.Phase == "acceptance" || !wanted[group.ID]) {
 				continue
 			}
 			for _, input := range group.Inputs {
 				pattern, _ := pathpattern.Parse(input)
-				if !audit && pattern.Covers(prefix+"cmd") {
+				if consumer != impactBatch && !audit && pattern.Covers(prefix+"cmd") {
 					continue groups
 				}
 			}
@@ -326,7 +359,7 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 			ids = append(ids, id)
 		}
 	}
-	if (*check || *plan) && !replay && !*publicationOnly {
+	if consumer != impactBatch && (*check || *plan) && !replay && !*publicationOnly {
 		effective := &selection
 		var selection strings.Builder
 		for _, item := range selections {
@@ -374,6 +407,14 @@ func (sources impactSources) run(args []string, stdout, stderr io.Writer, only s
 	}
 	if *plan && !replay {
 		fmt.Fprintln(stdout, "required: "+strings.Join(required, " "))
+	}
+	if consumer == impactBatch {
+		capture.Base = output.Base
+		ids = append(slices.Clone(required), ids...)
+		if err := capture.expand(installation, contract, ids, sources.environment); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
 	}
 	if *plan && (!replay || invocation.outcome != nil) {
 		if invocation.outcome != nil {
