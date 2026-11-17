@@ -28882,6 +28882,51 @@
       "opened": "2026-11-17T08:07:59Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestWorkCommitRealLaneFixImpactPlanGitAdapter-6",
+      "identity": "red:metasystem/cmd/metasystem:TestWorkCommitRealLaneFixImpactPlanGitAdapter",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T075510.327326000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestWorkCommitRealLaneFixImpactPlanGitAdapter",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261117T075510.327326000Z",
+          "batch": "20261117T075510.327326000Z",
+          "baseCommit": "cd41703721147e71f9b81946a57a7fb572635522",
+          "baseTree": "a765f8e1eed0892a159474988306436ffe08033c",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T075510.327326000Z.log",
+          "logDigest": "30ba3025e34e57e59b856cda6ec6b3096707784f247ee9c1559e0d0071388a8c",
+          "seenAt": "2026-11-17T08:58:19Z",
+          "opid": "ABYAB7RZ06XSDPKWC05W51FMC7-landing-m1f-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261117T075510.327326000Z"
+      ],
+      "opened": "2026-11-17T08:58:19Z",
+      "closed": null
     }
   ],
   "cadence": {
