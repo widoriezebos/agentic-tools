@@ -1,0 +1,66 @@
+{
+  "canonicalRead": {
+    "engine": "a91fdfe47994670a7581b61402e3290861b51824",
+    "findings": [
+      {
+        "change": "Optional: give the publisher an injected stderr writer so the test can stay in-process. No change is required for this unit.",
+        "claim": "The commit adds a fourth test that the brief does not name, TestProgressWriteFailuresRecoverAndReportOnce. To capture what the publisher prints on stderr, it starts the test binary again as a child process. It tests a real clause of the contract: a failed write is reported once until a write succeeds. It does not depend on wall time. It is still a real-process test where an injected stderr writer would have been enough.",
+        "class": "other",
+        "evidence": "runner_progress_test.go:234-260 runs exec.Command(os.Args[0], \"-test.run=...\") and expects exactly two 'publish steward runner progress:' lines. The test passed under the race detector. It does not wait on time or observe process state, so R-104-m1e (the artificial-clock ruling) does not apply. Not material: the change works and is safe without any edit.",
+        "id": "code-critic-370cde198f309d494feab269:1",
+        "material": false,
+        "relation": "skills/code-critique/SKILL.md materiality criterion (recorded as noted, non-blocking)",
+        "severity": "low",
+        "where": "metasystem/internal/steward/runner_progress_test.go"
+      },
+      {
+        "change": "None required. Later units should pass 0 for arbitration waits, as the brief already says.",
+        "claim": "Wait ignores a positive duration unless the reason is 'idle' or 'external'. A call like Wait(\"arbitration\", d) therefore silently records no deadline. This matches the brief: a deadline exists only for 'idle' and for an 'external' wait whose owner has one. But a later unit (U1b to U1d) that passes the wrong reason with a duration would lose the deadline without any warning.",
+        "class": "other",
+        "evidence": "runner_progress.go Wait: `if within \u003e 0 \u0026\u0026 (reason == \"idle\" || reason == \"external\")`. No caller in U1a passes arbitration with a duration. Not material: U1a works and is safe as it stands.",
+        "id": "code-critic-370cde198f309d494feab269:2",
+        "material": false,
+        "relation": "skills/code-critique/SKILL.md materiality criterion (recorded as noted, non-blocking)",
+        "severity": "low",
+        "where": "metasystem/internal/steward/runner_progress.go"
+      }
+    ],
+    "id": "code-critic-370cde198f309d494feab269",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-370cde198f309d494feab269/rounds/1/return.md",
+    "subject": {
+      "commit": "8707c60b7b13d38ba281ae8d7317753a0319b80c",
+      "diffDigest": "23eda21566896d6507bd8d23ba3f8fdedeb69a4c204d09c6a9a0cbc0eac52d5a",
+      "kind": "commit",
+      "parent": "a91fdfe47994670a7581b61402e3290861b51824",
+      "tree": "27b6db68d8dff2aa2b9a8755be45eb52e3d9f72d"
+    }
+  },
+  "readDigest": "e711adf372d0a2000c2a0e3091770ea537dbccf7d21ca2ee180945244e2f5654",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U1a",
+  "subject": {
+    "commit": "8707c60b7b13d38ba281ae8d7317753a0319b80c",
+    "parent": "a91fdfe47994670a7581b61402e3290861b51824",
+    "tree": "27b6db68d8dff2aa2b9a8755be45eb52e3d9f72d",
+    "patchDigest": "23eda21566896d6507bd8d23ba3f8fdedeb69a4c204d09c6a9a0cbc0eac52d5a",
+    "unitDigest": "7f467a675e98d202f01f976f4b639d0980f0594d765114f22ce1d3e4054b386d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-370cde198f309d494feab269",
+    "round": 1,
+    "closureSha256": "46453e2ca7b560fbdd9dc172d842bedad64a04ccb0fba843a7de59899026355a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "27b6db68d8dff2aa2b9a8755be45eb52e3d9f72d",
+    "runId": "goal-read-gate-20261117t091511z-34c9c898c8bb7316"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "9b181cad09d3e56c50b9eaa78dad17ad4f17c90818a3164aa8792824758b8bd1"
+}
