@@ -231,8 +231,9 @@ func resolveLandingIdentityWith(repo, goalID, approvedBy string, human func(stri
 	return landingIdentity{Name: address.Name, Email: address.Address}, nil
 }
 
+// Read from the tree's root for repository-relative diff-tree raw paths; treeEntryAt uses installation-relative paths.
 func treeEntry(repo, tree, path string) (mode, blob string, present bool, err error) {
-	out, err := gitOutput(repo, "ls-tree", "-z", tree, "--", path)
+	out, err := gitOutput(repo, "ls-tree", "--full-tree", "-z", tree, "--", path)
 	if err != nil {
 		return "", "", false, err
 	}
