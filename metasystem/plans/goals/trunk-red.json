@@ -23578,6 +23578,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T08:29:59Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestIntentGoalReviewCompletion",
       "id": "flake:aba16492de286e2455b2f705174b245d46e271e9ded80891d3255efeab41fff8",
@@ -23660,7 +23661,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion",
       "fixBranch": {
         "name": "",
         "commit": "",
