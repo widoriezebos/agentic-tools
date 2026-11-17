@@ -29251,11 +29251,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261117T131816.734156000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-17T17:41:44Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-17T18:24:18Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "APYDAMGBJE16V60HFNASYB8ASW-landing-a9d15439",
+        "by": "Wido",
+        "why": "Caused by commit 3dab110a92 (read-once ledger files), which hung two steward-loop tests and added a run-state audit crossing; reverted on main at 4e5971550a on 17 Nov 16:38. Recorded from the proof of the pre-revert main; not a defect of current main."
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestEveryStatefulActionRepeatsAsSuccess/machine_revive/channel_answer",
