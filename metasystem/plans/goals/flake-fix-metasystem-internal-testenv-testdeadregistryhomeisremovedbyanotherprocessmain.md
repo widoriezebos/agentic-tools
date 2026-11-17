@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 152
+- Sequence: 151
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="attempt 20261019T212050.742776000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T212050.742776000Z.log, load 5.310546875; attempt 20261020T054219.063899000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log, load 4.70703125"
 - Tier: 3
 - Intent: the test TestDeadRegistryHomeIsRemovedByAnotherProcessMain in metasystem/internal/testenv failed 2 times in the landing lane and was green on every named repeat (attempt 20261019T212050.742776000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T212050.742776000Z.log, load 5.310546875; attempt 20261020T054219.063899000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log, load 4.70703125); make it hold under load without a wall clock (R-104: artificial clocks, never load-fragile tests)
 - Origin: main
 - Next step: fix the test, run it 20 times under -p 4 with the package, hand it in
 - OpenedAt: 2026-10-20T06:36:34Z
-- Revision: 6
+- Revision: 7
 - BudgetExceptions: 0
 
 History:
@@ -19,4 +19,5 @@ History:
 - 2026-10-20T13:31:29Z DJD55PZJZ60N4JW5H4275YH500-m1e-f2f350ed done actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-proof-unit-ends-on-time-2,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2 reason=priority-order from=1:63 to=1:62
 - 2026-10-21T10:10:28Z 5CJ5NSFWN1JXET5K2E4J91YC12-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,a-stop-waits-for-the-unit-boundary-2,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home
 - 2026-11-17T08:29:59Z D01509F7D902DEEB4186A0F334-landing-41ad7d6c reopen actor=landing+landing-agent targets=flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain reason=priority-order from=1:62 to=1:152
-Integrity: sha256=c7a10758e5dbb18748c85d202638c84e4771549b0eee24ffdc6828ab88044d56
+- 2026-11-17T12:29:19Z CCTY8MDBZC3AD8PEVAN02F0FXB-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testrevivalusestheinjectedprober,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:152 to=1:151
+Integrity: sha256=7898f5a137223f8bee3646504a06ee143d00b4200cd12ab28b3603ff67118c01
