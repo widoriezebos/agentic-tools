@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -127,6 +128,9 @@ func (f *advanceRawFixture) run(r gittree.RawRequest) gittree.RawResult {
 		f.t.Fatalf("raw call %d dir = %q, want %q", f.next, r.Dir, step.dir())
 	}
 	wantArgs := append([]string{"-C", r.Dir}, advancePins...)
+	if args := step.args(); len(args) >= 2 && args[0] == "worktree" && args[1] == "add" {
+		wantArgs = append(wantArgs, "-c", fmt.Sprintf("checkout.workers=%d", min(8, max(1, runtime.NumCPU()))))
+	}
 	wantArgs = append(wantArgs, step.args()...)
 	if !reflect.DeepEqual(r.Args, wantArgs) {
 		f.t.Fatalf("raw call %d argv = %q, want %q", f.next, r.Args, wantArgs)
