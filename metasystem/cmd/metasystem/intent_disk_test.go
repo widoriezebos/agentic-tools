@@ -50,6 +50,7 @@ type diskBed struct {
 	owners                intentOwners
 	person                error
 	census                *diskstore.UseCensus
+	headroomCalls         int
 }
 
 func newDiskBed(t *testing.T) *diskBed {
@@ -72,6 +73,14 @@ func newDiskBed(t *testing.T) *diskBed {
 			pass.Home, pass.TempRoots, pass.Volumes, pass.Checkouts = bed.home, []string{bed.tmp}, []string{root}, []string{}
 			pass.Proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskProof{}}
 			pass.Clock = func() time.Time { return diskNow }
+			pass.Headroom = func(paths []string, floor int64) ([]diskstore.VolumeFree, error) {
+				bed.headroomCalls++
+				var volumes []diskstore.VolumeFree
+				for _, path := range paths {
+					volumes = append(volumes, diskstore.VolumeFree{Path: path, FreeBytes: 1 << 40, FloorBytes: floor})
+				}
+				return volumes, nil
+			}
 			// The bed starts no process: the pass's use census reads an
 			// empty table, never the host's.
 			pass.Processes = identity.ListedProcessTable{}
@@ -293,7 +302,7 @@ func TestDiskPreviewReportsFreeSpaceAgainstFloor(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "free:") || !strings.Contains(flatPage(out), "below the floor of 1048576.0 GiB") || !strings.Contains(out, "Preview: nothing was changed") {
 		t.Fatalf("preview = %d:\n%s", code, out)
 	}
-	if len(report.Volumes) != 1 || report.Volumes[0].Path != bed.root || report.Volumes[0].FloorBytes != 1048576<<30 || !report.Volumes[0].BelowFloor {
+	if len(report.Volumes) != 1 || report.Volumes[0].Path != bed.root || report.Volumes[0].FreeBytes != 1<<40 || report.Volumes[0].FloorBytes != 1048576<<30 || !report.Volumes[0].BelowFloor {
 		t.Fatalf("preview did not measure the injected volume against the floor: %+v", report.Volumes)
 	}
 }
@@ -355,6 +364,9 @@ func TestDiskStraysGroupTheirOutcomes(t *testing.T) {
 	helmMust(t, os.Chtimes(idle[3], diskNow.Add(-72*time.Hour), diskNow.Add(-72*time.Hour)))
 	if code, out := bed.run("disk", "clean", "--preview"); code != 0 || strings.Count(out, "metasystem-audit.idle") != 3 {
 		t.Fatalf("preview = %d, want the idle strays grouped with three named:\n%s", code, out)
+	}
+	if bed.headroomCalls != 1 {
+		t.Fatalf("preview headroom calls = %d, want one fixture measurement", bed.headroomCalls)
 	}
 	if code, out := bed.run("disk", "clean", "--preview", "--verbose"); code != 0 || strings.Count(out, "  stray: ") != 10 {
 		t.Fatalf("preview --verbose = %d, want one line per stray:\n%s", code, out)

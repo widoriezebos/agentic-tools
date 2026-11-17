@@ -150,6 +150,9 @@ type DiskPass struct {
 	// production.
 	TempRoots, Volumes []string
 	Home               string
+	// Headroom replaces the host's free-space measurement in fixtures;
+	// nil uses janitor.Headroom.
+	Headroom func(paths []string, floor int64) ([]diskstore.VolumeFree, error)
 	// Proofs replaces the engine's owner-kind proofs, and Checkouts the
 	// armed checkouts read from the host registry (fixtures).
 	Proofs    map[diskstore.OwnerKind]diskstore.OwnerProof
@@ -384,13 +387,16 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	options.FloorMinAge = own.Duration(config.DiskFloorMinAgeKey)
 	options.CensusMinBudget = host.Duration(config.DiskCensusMinBudgetKey)
 	options.CensusReader = KernelCensusReader(pass.processes(), home, checkouts)
-	options.Headroom = func(paths []string, floor int64) ([]diskstore.VolumeFree, error) {
-		measured, err := janitor.Headroom(paths, floor)
-		var volumes []diskstore.VolumeFree
-		for _, volume := range measured {
-			volumes = append(volumes, diskstore.VolumeFree{Path: volume.Path, FreeBytes: volume.FreeBytes, FloorBytes: volume.FloorBytes})
+	options.Headroom = pass.Headroom
+	if options.Headroom == nil {
+		options.Headroom = func(paths []string, floor int64) ([]diskstore.VolumeFree, error) {
+			measured, err := janitor.Headroom(paths, floor)
+			var volumes []diskstore.VolumeFree
+			for _, volume := range measured {
+				volumes = append(volumes, diskstore.VolumeFree{Path: volume.Path, FreeBytes: volume.FreeBytes, FloorBytes: volume.FloorBytes})
+			}
+			return volumes, err
 		}
-		return volumes, err
 	}
 	options.Consumers = func(ctx context.Context, census *diskstore.UseCensus) []diskstore.Consumer {
 		roots := consumerRoots(home, tempRoots, gitRoots, evidenceRoots)

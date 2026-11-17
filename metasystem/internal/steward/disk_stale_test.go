@@ -47,6 +47,13 @@ func (bed staleBed) pass(mode diskstore.Mode, checkouts []string, forget bool) D
 	return DiskPass{Mode: mode, Now: staleNow, Clock: func() time.Time { return staleNow }, Home: bed.home,
 		TempRoots: []string{bed.tmp}, Volumes: []string{bed.root}, Checkouts: checkouts, Registry: bed.registry, ForgetRemoved: forget,
 		Proofs: map[diskstore.OwnerKind]diskstore.OwnerProof{},
+		Headroom: func(paths []string, floor int64) ([]diskstore.VolumeFree, error) {
+			var volumes []diskstore.VolumeFree
+			for _, path := range paths {
+				volumes = append(volumes, diskstore.VolumeFree{Path: path, FreeBytes: 1 << 40, FloorBytes: floor})
+			}
+			return volumes, nil
+		},
 		// The bed starts no process: its use census and process proofs read
 		// an empty table, never the host's.
 		Processes: identity.ListedProcessTable{},

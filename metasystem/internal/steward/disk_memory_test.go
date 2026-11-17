@@ -185,7 +185,7 @@ func TestMachinePassExcludesTestMemoryVolumes(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			// A petabyte floor exceeds both the fixture volume and the host disk.
+			// A petabyte floor exceeds the fixture's injected terabyte of free space.
 			conf := "metasystem.template=true\ndisk.floor-gib=1048576\nevidence.root=" + evidenceRoot + "\n"
 			if err := os.WriteFile(filepath.Join(bed.inst, "metasystem.conf"), []byte(conf), 0o600); err != nil {
 				t.Fatal(err)
