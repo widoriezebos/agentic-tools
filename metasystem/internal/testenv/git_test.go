@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -54,7 +55,7 @@ func TestResolveTestGit(t *testing.T) {
 				t.Fatalf("resolved %q with %d xcrun calls, want %q with %d", got, calls, tc.want, tc.calls)
 			}
 			const inherited = "/fixture/bin:/usr/bin"
-			path := namespaceGitPath(t.TempDir(), got, inherited)
+			path := namespaceGitPath(t.TempDir(), got, inherited, func(string) ([]byte, error) { return []byte(root), nil })
 			if tc.want == "" && path != inherited {
 				t.Fatalf("PATH changed to %q", path)
 			}
@@ -67,7 +68,7 @@ func TestNamespaceGitFailureKeepsPath(t *testing.T) {
 	root := t.TempDir()
 	checkTestenv(t, os.WriteFile(filepath.Join(root, "git-bin"), nil, 0o600))
 	const inherited = "/fixture/bin:/usr/bin"
-	if got := namespaceGitPath(root, "/developer/git", inherited); got != inherited {
+	if got := namespaceGitPath(root, "/developer/git", inherited, func(string) ([]byte, error) { t.Fatal("probe after mkdir failure"); return nil, nil }); got != inherited {
 		t.Fatalf("PATH changed after directory creation failed: %q", got)
 	}
 }
@@ -82,14 +83,19 @@ func TestNamespaceGitMatchesAppleWrapper(t *testing.T) {
 	git, err := exec.LookPath("git")
 	checkTestenv(t, err)
 	directory := filepath.Join(filepath.Dir(os.Getenv("GIT_CONFIG_GLOBAL")), "git-bin")
-	if git != filepath.Join(directory, "git") {
-		t.Fatalf("git = %q, want the namespace git in %q", git, directory)
+	if git == "/usr/bin/git" {
+		t.Log("namespace prefix guard retained Apple's wrapper")
+	} else {
+		if git != filepath.Join(directory, "git") {
+			t.Fatalf("git = %q, want the namespace git in %q or Apple's wrapper", git, directory)
+		}
+		entries, err := os.ReadDir(directory)
+		checkTestenv(t, err)
+		if len(entries) != 1 || entries[0].Name() != "git" || entries[0].Type()&os.ModeSymlink == 0 {
+			t.Fatalf("namespace git directory must contain only the git symlink: %v", entries)
+		}
 	}
-	entries, err := os.ReadDir(directory)
-	checkTestenv(t, err)
-	if len(entries) != 1 || entries[0].Name() != "git" || entries[0].Type()&os.ModeSymlink == 0 {
-		t.Fatalf("namespace git directory must contain only the git symlink: %v", entries)
-	}
+	t.Logf("selected git: %s", git)
 	for _, argument := range []string{"--version", "--exec-path"} {
 		wrapper, err := exec.Command("/usr/bin/git", argument).CombinedOutput()
 		checkTestenv(t, err)
@@ -100,6 +106,35 @@ func TestNamespaceGitMatchesAppleWrapper(t *testing.T) {
 		}
 		t.Logf("git %s: %s", argument, direct)
 	}
+	hooks := func(git string) map[string]string {
+		t.Helper()
+		command := exec.Command(git, "submodule", "-h")
+		if output, err := command.CombinedOutput(); err != nil || !bytes.Contains(output, []byte("usage: git submodule")) {
+			t.Fatalf("%s submodule -h: %v\n%s", git, err, output)
+		}
+		repo := t.TempDir()
+		if output, err := exec.Command(git, "init", "-q", repo).CombinedOutput(); err != nil {
+			t.Fatalf("%s init: %v\n%s", git, err, output)
+		}
+		directory := filepath.Join(repo, ".git", "hooks")
+		entries, err := os.ReadDir(directory)
+		checkTestenv(t, err)
+		if len(entries) == 0 {
+			t.Fatal("git init created no hook templates")
+		}
+		contents := make(map[string]string)
+		for _, entry := range entries {
+			data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+			checkTestenv(t, err)
+			contents[entry.Name()] = string(data)
+		}
+		return contents
+	}
+	wrapper, selected := hooks("/usr/bin/git"), hooks("git")
+	if !reflect.DeepEqual(wrapper, selected) {
+		t.Fatal("git init hook templates differ from Apple's wrapper")
+	}
+	t.Logf("submodule found; git init produced %d matching hook templates", len(selected))
 }
 
 func TestNamespaceGitLetsLaterFakeWin(t *testing.T) {
@@ -116,7 +151,7 @@ func TestNamespaceGitLetsLaterFakeWin(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "real-git")
 	checkTestenv(t, testexec.WriteFile(target, nil, 0o700))
-	path := namespaceGitPath(root, target, os.Getenv("PATH"))
+	path := namespaceGitPath(root, target, os.Getenv("PATH"), func(string) ([]byte, error) { return []byte(root), nil })
 	fake := t.TempDir()
 	checkTestenv(t, testexec.WriteFile(filepath.Join(fake, "git"), nil, 0o700))
 	for _, tc := range []struct{ name, path, want string }{
@@ -128,6 +163,64 @@ func TestNamespaceGitLetsLaterFakeWin(t *testing.T) {
 			command.Env = append(os.Environ(), "PATH="+tc.path, helper+"="+tc.want)
 			if output, err := command.CombinedOutput(); err != nil {
 				t.Fatalf("git selection in child: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func TestNamespaceGitExecPathGuard(t *testing.T) {
+	t.Parallel()
+	resources := t.TempDir()
+	missing := filepath.Join(resources, "missing")
+	file := filepath.Join(resources, "file")
+	checkTestenv(t, os.WriteFile(file, nil, 0o600))
+	failed := errors.New("git unavailable")
+	for _, tc := range []struct {
+		name, wrapper, namespace string
+		wrapperErr, namespaceErr error
+		used                     bool
+	}{
+		{name: "equal", wrapper: resources + "\n", namespace: resources + "\n", used: true},
+		{name: "different", wrapper: resources, namespace: t.TempDir()},
+		{name: "missing directory", wrapper: missing, namespace: missing},
+		{name: "not a directory", wrapper: file, namespace: file},
+		{name: "empty", wrapper: "", namespace: ""},
+		{name: "wrapper fails", wrapper: resources, namespace: resources, wrapperErr: failed},
+		{name: "namespace fails", wrapper: resources, namespace: resources, namespaceErr: failed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			target := filepath.Join(root, "real-git")
+			checkTestenv(t, testexec.WriteFile(target, nil, 0o700))
+			link := filepath.Join(root, "git-bin", "git")
+			calls := map[string]int{}
+			const inherited = "/fixture/bin:/usr/bin"
+			path := namespaceGitPath(root, target, inherited, func(git string) ([]byte, error) {
+				calls[git]++
+				switch git {
+				case "/usr/bin/git":
+					return []byte(tc.wrapper), tc.wrapperErr
+				case link:
+					actual, err := os.Readlink(link)
+					checkTestenv(t, err)
+					if actual != target {
+						t.Fatalf("symlink target = %q, want %q", actual, target)
+					}
+					return []byte(tc.namespace), tc.namespaceErr
+				default:
+					t.Fatalf("probed %q instead of the namespace git", git)
+					return nil, nil
+				}
+			})
+			want := inherited
+			if tc.used {
+				want = filepath.Dir(link) + string(os.PathListSeparator) + inherited
+			}
+			if path != want {
+				t.Fatalf("PATH = %q, want %q", path, want)
+			}
+			if calls["/usr/bin/git"] != 1 || calls[link] != 1 {
+				t.Fatalf("exec-path probes = %v, want each git once", calls)
 			}
 		})
 	}

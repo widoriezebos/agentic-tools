@@ -45,6 +45,7 @@ var structuredOutputExceptions = map[string]string{
 	"internal/proofrun/resource_custody.go:startResourceCustody": "our custodian: the --ready-fd protocol is the answer; its stderr is quoted only in a failure",
 	"internal/runtimes/external/external.go:Adapter.Call":        "an adopter's external adapter JSON protocol",
 	"internal/seat/launch/host.go:OSRunner.Run":                  "seat launch steps (git and our engine): the exit decides, the words are quoted into the launch record",
+	"internal/testenv/git.go:gitExecPath":                       "Apple git --exec-path through the wrapper and namespace symlink: compare resource directories before changing PATH",
 	"internal/testrun/worker.go:RequireWorkerCapabilities":       "our engine's worker handshake: one typed JSON answer on stdout, not words",
 }
 

@@ -663,7 +663,7 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 		"GIT_CONFIG_GLOBAL":   gitConfig,
 	}
 	if git := resolveTestGit(runtime.GOOS, exec.LookPath, developerGit); git != "" {
-		values["PATH"] = namespaceGitPath(root, git, os.Getenv("PATH"))
+		values["PATH"] = namespaceGitPath(root, git, os.Getenv("PATH"), gitExecPath)
 	}
 	for name, value := range directories {
 		values[name] = value
