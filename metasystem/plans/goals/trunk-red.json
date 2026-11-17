@@ -10982,6 +10982,7 @@
       }
     },
     {
+      "fixOpenedAt": "2026-11-17T08:29:59Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker",
       "id": "flake:510c0e7d50125950ae014bcc16a104db454299ebe7b7787cf4d28fc28a0ada37",
@@ -11064,7 +11065,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testfrozenpublicversiononecorpusrunsallsixcasesthroughf-970ab07d",
       "fixBranch": {
         "name": "",
         "commit": "",
