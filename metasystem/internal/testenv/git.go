@@ -1,6 +1,9 @@
 package testenv
 
 import (
+	"bytes"
+	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,42 +41,128 @@ func resolveTestGit(goos string, lookPath func(string) (string, error), xcrun fu
 	return resolved
 }
 
-// Only git lives here: exposing the developer tools directory would also change
-// how tests find other tools. Failure leaves the inherited PATH usable.
-func namespaceGitPath(root, git, path string, execPath func(string) ([]byte, error)) string {
+type gitResources struct {
+	execPath string
+	hooks    map[string]string
+}
+
+// Only git lives on PATH: exposing the developer tools directory would also
+// change how tests find other tools. Its adjacent resources retain the real
+// installation's layout because Apple's git derives its prefix from this path.
+func namespaceGitPath(root, git, path string, probe func(string, string) (gitResources, error)) string {
 	if git == "" {
 		return path
 	}
-	directory := filepath.Join(root, "git-bin")
+	prefix := filepath.Join(root, "git-prefix")
+	if err := os.Mkdir(prefix, 0o700); err != nil {
+		return path
+	}
+	published := false
+	defer func() {
+		if !published {
+			_ = os.RemoveAll(prefix)
+		}
+	}()
+	directory := filepath.Join(prefix, "bin")
 	if err := os.Mkdir(directory, 0o700); err != nil {
 		return path
 	}
 	if err := os.Symlink(git, filepath.Join(directory, "git")); err != nil {
 		return path
 	}
-	// Apple's git can lose its installation prefix when invoked through a
-	// symlink. Probe that exact entry before publishing it on PATH, while the
-	// process namespace is being created once at test-binary startup.
-	wrapper, wrapperErr := execPath("/usr/bin/git")
-	namespaced, namespaceErr := execPath(filepath.Join(directory, "git"))
-	resources := strings.TrimSpace(string(namespaced))
-	info, statErr := os.Stat(resources)
-	if wrapperErr != nil || namespaceErr != nil || resources != strings.TrimSpace(string(wrapper)) || statErr != nil || !info.IsDir() {
-		_ = os.RemoveAll(directory)
+	realPrefix := filepath.Dir(filepath.Dir(git))
+	for _, name := range []string{"libexec", "share", "etc"} {
+		target := filepath.Join(realPrefix, name)
+		info, err := os.Stat(target)
+		if name == "etc" && os.IsNotExist(err) {
+			continue
+		}
+		if err != nil || !info.IsDir() {
+			return path
+		}
+		if err := os.Symlink(target, filepath.Join(prefix, name)); err != nil {
+			return path
+		}
+	}
+	// Probe the exact entry before publishing it once at test-binary startup.
+	// A usable exec path alone does not prove helpers and templates still work.
+	wrapper, wrapperErr := probe("/usr/bin/git", root)
+	namespaced, namespaceErr := probe(filepath.Join(directory, "git"), root)
+	if wrapperErr != nil || namespaceErr != nil || len(wrapper.hooks) == 0 || !maps.Equal(wrapper.hooks, namespaced.hooks) {
 		return path
 	}
+	if !filepath.IsAbs(strings.TrimSpace(wrapper.execPath)) || !filepath.IsAbs(strings.TrimSpace(namespaced.execPath)) {
+		return path
+	}
+	wrapperPath, wrapperErr := filepath.EvalSymlinks(strings.TrimSpace(wrapper.execPath))
+	namespacePath, namespaceErr := filepath.EvalSymlinks(strings.TrimSpace(namespaced.execPath))
+	info, statErr := os.Stat(namespacePath)
+	if wrapperErr != nil || namespaceErr != nil || namespacePath != wrapperPath || statErr != nil || !info.IsDir() {
+		return path
+	}
+	published = true
 	return directory + string(os.PathListSeparator) + path
 }
 
-func gitExecPath(git string) ([]byte, error) {
-	command := exec.Command(git, "--exec-path")
-	// Fixtures can scrub GIT_* variables, so an inherited override must not
-	// hide a broken installation prefix during the probe.
-	command.Env = []string{}
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GIT_EXEC_PATH=") {
-			command.Env = append(command.Env, entry)
+func probeGitResources(git, root string) (gitResources, error) {
+	directory, err := os.MkdirTemp(root, "git-probe-")
+	if err != nil {
+		return gitResources{}, err
+	}
+	defer os.RemoveAll(directory)
+	environment := gitProbeEnvironment(os.Environ(), directory)
+	return inspectGitResources(directory, func(args ...string) ([]byte, error) {
+		command := exec.Command(git, args...)
+		command.Dir = directory
+		command.Env = environment
+		return command.CombinedOutput()
+	})
+}
+
+func gitProbeEnvironment(environment []string, home string) []string {
+	clean := make([]string, 0, len(environment)+4)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		// Fixtures scrub GIT_* variables. Overrides must not mask a broken
+		// prefix, and a person's init.templateDir must not mask missing templates.
+		if !strings.HasPrefix(name, "GIT_") && name != "HOME" && name != "XDG_CONFIG_HOME" {
+			clean = append(clean, entry)
 		}
 	}
-	return command.Output()
+	return append(clean, "HOME="+home, "XDG_CONFIG_HOME="+home, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+}
+
+func inspectGitResources(directory string, run func(...string) ([]byte, error)) (gitResources, error) {
+	output, err := run("--exec-path")
+	if err != nil {
+		return gitResources{}, err
+	}
+	resources := gitResources{execPath: string(output), hooks: make(map[string]string)}
+	output, err = run("submodule", "-h")
+	if err != nil {
+		return gitResources{}, err
+	}
+	if !bytes.Contains(output, []byte("usage: git submodule")) {
+		return gitResources{}, fmt.Errorf("git submodule help is unavailable")
+	}
+	repo := filepath.Join(directory, "repository")
+	if _, err := run("init", "-q", repo); err != nil {
+		return gitResources{}, err
+	}
+	hooks := filepath.Join(repo, ".git", "hooks")
+	entries, err := os.ReadDir(hooks)
+	if err != nil {
+		return gitResources{}, err
+	}
+	if len(entries) == 0 {
+		return gitResources{}, fmt.Errorf("git init created no hook templates")
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(hooks, entry.Name()))
+		if err != nil {
+			return gitResources{}, err
+		}
+		resources.hooks[entry.Name()] = string(data)
+	}
+	return resources, nil
 }
