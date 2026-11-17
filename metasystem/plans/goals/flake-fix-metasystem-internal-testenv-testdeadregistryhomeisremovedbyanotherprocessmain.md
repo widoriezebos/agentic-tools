@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 142
+- Sequence: 141
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="attempt 20261019T212050.742776000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T212050.742776000Z.log, load 5.310546875; attempt 20261020T054219.063899000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log, load 4.70703125"
 - Tier: 3
 - Intent: the test TestDeadRegistryHomeIsRemovedByAnotherProcessMain in metasystem/internal/testenv failed 2 times in the landing lane and was green on every named repeat (attempt 20261019T212050.742776000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T212050.742776000Z.log, load 5.310546875; attempt 20261020T054219.063899000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log, load 4.70703125); make it hold under load without a wall clock (R-104: artificial clocks, never load-fragile tests)
 - Origin: main
 - Next step: fix the test, run it 20 times under -p 4 with the package, hand it in
 - OpenedAt: 2026-10-20T06:36:34Z
-- Revision: 16
+- Revision: 17
 - BudgetExceptions: 0
 
 History:
@@ -29,4 +29,5 @@ History:
 - 2026-11-17T12:32:03Z 5TYASAE6Q1JFWSD1YNZ9Y4H85B-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testauthenticatedouterproofkeepsitsnestedworkloadoutofo-6b1c9eda,flake-fix-metasystem-cmd-metasystem-testgitadaptergomanifestinventorymatchesnativegolist,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:145 to=1:144
 - 2026-11-17T12:32:23Z DS2TVH6QA1TXKGCB3MVV3J0CYS-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testgitadaptergomanifestinventorymatchesnativegolist,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:144 to=1:143
 - 2026-11-17T12:32:39Z J5F0BBRE3RKHD6XZDNT2NEMVVN-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,a-question-reminds-and-anyone-can-ask,a-review-keeps-every-read,a-stewards-standing-defect-reaches-an-owner,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:143 to=1:142
-Integrity: sha256=8c131271e28adebd065d2b5d47be8334728f1546f2fcacb7e8b48a6017d55e62
+- 2026-11-17T12:32:57Z JMM5WMAD1FQ42ZWN72Z8MA6ZJZ-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,a-question-reminds-and-anyone-can-ask,a-review-keeps-every-read,a-stewards-standing-defect-reaches-an-owner,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:142 to=1:141
+Integrity: sha256=5a00cce3f2694ee1df040b4474767c7132f3ae7292d1c479b324eff3a149cf5a
