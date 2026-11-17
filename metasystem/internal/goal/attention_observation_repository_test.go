@@ -114,11 +114,11 @@ func (tr *waitObservationTranscript) acceptance(before, after string) {
 		if !ok {
 			tr.t.Fatalf("acceptance of undeclared ledger commit %s", tip)
 		}
-		root, ok := commit.files[goalsPrefix+"backlog.md"]
+		_, ok = commit.files[goalsPrefix+"backlog.md"]
 		if !ok {
 			tr.t.Fatalf("declared commit %s has no ledger root", tip)
 		}
-		tr.expect(string(root), "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
+		tr.files(tip, goalsPrefix+"backlog.md")
 	}
 	tr.expect("", "merge-base", "--is-ancestor", before, after)
 	tr.expect("", "diff", "--name-status", "--no-renames", before, after, "--", legacyDonePrefix)
@@ -131,11 +131,11 @@ func (tr *waitObservationTranscript) rewind(before, after string) {
 		if !ok {
 			tr.t.Fatalf("rewind of undeclared ledger commit %s", tip)
 		}
-		root, ok := commit.files[goalsPrefix+"backlog.md"]
+		_, ok = commit.files[goalsPrefix+"backlog.md"]
 		if !ok {
 			tr.t.Fatalf("declared commit %s has no ledger root", tip)
 		}
-		tr.expect(string(root), "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
+		tr.files(tip, goalsPrefix+"backlog.md")
 	}
 	tr.expectError(fmt.Errorf("the fetched tip is not a descendant"), "merge-base", "--is-ancestor", before, after)
 }
@@ -202,7 +202,7 @@ func (tr *waitObservationTranscript) dependencies() waitGitDependencies {
 		run: tr.run,
 		withTimeout: func(parent context.Context, _ time.Duration, args []string) (context.Context, context.CancelFunc) {
 			ctx, cancel := context.WithCancel(parent)
-			if len(tr.steps) > 0 && tr.steps[0].cancel && reflect.DeepEqual(args, tr.expandedArgs(tr.steps[0].args)) {
+			if len(tr.steps) > 0 && tr.steps[0].cancel && reflect.DeepEqual(waitContentArgs(args), tr.expandedArgs(tr.steps[0].args)) {
 				cancel()
 			}
 			return ctx, cancel
@@ -223,6 +223,10 @@ func (tr *waitObservationTranscript) expandedArgs(args []string) []string {
 
 func (tr *waitObservationTranscript) run(ctx context.Context, root string, input []byte, args ...string) (string, error) {
 	tr.t.Helper()
+	if len(args) > 0 && (args[0] == "ls-tree" || args[0] == "cat-file") {
+		tr.t.Fatal("committed content read permits replacement")
+	}
+	args = waitContentArgs(args)
 	tr.calls = append(tr.calls, append([]string(nil), args...))
 	if root != tr.root || len(tr.steps) == 0 {
 		err := fmt.Errorf("unexpected wait Git command: root=%q args=%q input=%q", root, args, input)
@@ -278,4 +282,17 @@ func (tr *waitObservationTranscript) done() {
 	if len(tr.steps) != 0 {
 		tr.t.Errorf("unused required wait Git commands: %+v", tr.steps)
 	}
+}
+
+func waitContentArgs(args []string) []string {
+	if len(args) > 0 && args[0] == "--no-replace-objects" {
+		return args[1:]
+	}
+	return args
+}
+
+// Root identity probes also list files; replay limits count full projections.
+func waitLedgerListing(args []string) bool {
+	args = waitContentArgs(args)
+	return len(args) > 5 && args[0] == "ls-tree" && slices.Contains(args[5:], goalsPrefix)
 }

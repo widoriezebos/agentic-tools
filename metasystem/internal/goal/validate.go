@@ -9,14 +9,9 @@ package goal
 // owns what must hold on any tree at rest.
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
-	"io"
-	"os/exec"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -669,73 +664,7 @@ func ReadCommitGoals(root, commit string, environments ...[]string) (map[string]
 	if len(environments) > 0 {
 		environment = environments[0]
 	}
-	out, err := gitInWithEnvironment(root, environment, "ls-tree", "-r", "--name-only", commit, "--", goalsPrefix, recordsGoalsPrefix)
-	if err != nil {
-		return nil, fmt.Errorf("cannot list the ledger tree of %s: %w", commit, err)
-	}
-	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		p := strings.TrimSpace(line)
-		if p == "" {
-			continue
-		}
-		paths = append(paths, p)
-	}
-	return readCommitGoalBlobs(root, commit, paths, environment)
-}
-
-func readCommitGoalBlobs(root, commit string, paths []string, environment []string) (map[string][]byte, error) {
-	return readCommitGoalBlobsWithRun(root, commit, paths, environment, func(cmd *exec.Cmd) error { return cmd.Run() })
-}
-
-func readCommitGoalBlobsWithRun(root, commit string, paths []string, environment []string, run func(*exec.Cmd) error) (map[string][]byte, error) {
-	files := make(map[string][]byte, len(paths))
-	if len(paths) == 0 {
-		return files, nil
-	}
-	var input strings.Builder
-	for _, goalPath := range paths {
-		input.WriteString(commit + ":./" + goalPath + "\n")
-	}
-	args := []string{"cat-file", "--batch"}
-	cmd := commandWithEnvironment(environment, "git", args...)
-	cmd.Dir = root
-	cmd.Stdin = strings.NewReader(input.String())
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := run(cmd); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			return nil, &gitError{ExitError: exit, stderr: strings.TrimSpace(stderr.String()), args: args}
-		}
-		return nil, fmt.Errorf("git cat-file --batch: %v", err)
-	}
-
-	reader := bufio.NewReader(&stdout)
-	for _, goalPath := range paths {
-		header, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, fmt.Errorf("cannot read %s at %s: malformed git cat-file header: %w", goalPath, commit, err)
-		}
-		fields := strings.Fields(header)
-		if len(fields) != 3 || fields[1] != "blob" {
-			return nil, fmt.Errorf("cannot read %s at %s: unexpected git cat-file header %q", goalPath, commit, strings.TrimSpace(header))
-		}
-		size, err := strconv.ParseInt(fields[2], 10, 64)
-		if err != nil || size < 0 {
-			return nil, fmt.Errorf("cannot read %s at %s: invalid git cat-file size %q", goalPath, commit, fields[2])
-		}
-		content := make([]byte, size)
-		if _, err := io.ReadFull(reader, content); err != nil {
-			return nil, fmt.Errorf("cannot read %s at %s: truncated git cat-file content: %w", goalPath, commit, err)
-		}
-		separator, err := reader.ReadByte()
-		if err != nil || separator != '\n' {
-			return nil, fmt.Errorf("cannot read %s at %s: malformed git cat-file separator", goalPath, commit)
-		}
-		files[goalPath] = content
-	}
-	return files, nil
+	return (gitRepository{endpoint: Endpoint{Root: root, commandEnv: environment}}).Files(commit, goalsPrefix, recordsGoalsPrefix)
 }
 
 // ValidateCommit is the one-call seam Publish and the read-side

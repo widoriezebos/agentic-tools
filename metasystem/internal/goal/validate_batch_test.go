@@ -42,6 +42,8 @@ func TestReadCommitGoalsUsesOneBatchBlobRead(t *testing.T) {
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "git-calls.log")
 	script := fmt.Sprintf(`#!/bin/sh
+[ "$1" = --no-replace-objects ] || exit 97
+shift
 printf '%%s\n' "$*" >> %q
 [ "$(pwd -P)" = %q ] || exit 97
 if [ "$#" -eq 7 ] && [ "$1" = ls-tree ] && [ "$2" = -r ] &&
