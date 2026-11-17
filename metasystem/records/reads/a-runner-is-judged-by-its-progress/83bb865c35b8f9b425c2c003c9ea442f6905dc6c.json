@@ -1,0 +1,124 @@
+{
+  "canonicalRead": {
+    "engine": "4e5971550ac45b3af9ecc1631abce3ba35200653",
+    "findings": [
+      {
+        "change": "None for U1d. Note for U3's brief that the tick's completion item is counted under the last tick phase name.",
+        "claim": "After a non-helm tick, the runner counts the tick's completion (U1a's ticked(), which adds one to `done`) under the last phase name, 'tick:reports', not under the name 'tick'. So between the tick and the next loop duty, the progress record reads operation 'tick:reports' with done 1. A future reader (U3) that expects to see 'tick' with done 1 would need to know this.",
+        "class": "other",
+        "evidence": "tick.go: the deferred function now calls cfg.Progress.Begin(\"tick:reports\"), and runner.go calls ticked(err) after RunTick returns without starting a new operation. The updated Ta2 in runner_progress_test.go shows the operation is 'tick:reports' inside the reports pass. The brief itself places tick:reports first in the deferred function, U1 decides nothing from the record, and the brief's disagreement 5 leaves tick-count semantics to U3. Not material under R-124: U1d works and is safe without a change.",
+        "id": "code-critic-ee45891c33e22f3e4ed8c446:1",
+        "material": false,
+        "relation": "R-124-m1u",
+        "severity": "low",
+        "where": "metasystem/internal/steward/tick.go"
+      }
+    ],
+    "id": "code-critic-ee45891c33e22f3e4ed8c446",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-ee45891c33e22f3e4ed8c446/rounds/1/return.md",
+    "subject": {
+      "commit": "83bb865c35b8f9b425c2c003c9ea442f6905dc6c",
+      "diffDigest": "88c939099f11c09a460bdc20cd2939b3a870dddf0d7f08b0f12957148422ea9f",
+      "kind": "commit",
+      "parent": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "tree": "a7a5e7fbd0be0ec72acbe8dbf9b0b517d9825197"
+    }
+  },
+  "readDigest": "86dfe122e8fdeaaf5243be22a86380b75eee222df68546e66f85500acc5c4f2e",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U1d",
+  "subject": {
+    "commit": "83bb865c35b8f9b425c2c003c9ea442f6905dc6c",
+    "parent": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+    "tree": "a7a5e7fbd0be0ec72acbe8dbf9b0b517d9825197",
+    "patchDigest": "88c939099f11c09a460bdc20cd2939b3a870dddf0d7f08b0f12957148422ea9f",
+    "unitDigest": "f53ee69007f61ab14b678270e085abfd4694340ef898805408af32fae0c8640d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ee45891c33e22f3e4ed8c446",
+    "round": 1,
+    "closureSha256": "c6dfe5ccc708e9d1fdb50f5122d42c36842c0ad64db4f13a6e93db21203947ed"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a7a5e7fbd0be0ec72acbe8dbf9b0b517d9825197",
+    "runId": "goal-read-gate-20261117t231936z-4d86c1cbf6cb8e35"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/delivery_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/disk_role_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/governed_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/health_bed_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/health_proof_attempts_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/health_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/health_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/public_remedy_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/remedy_remaining_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_idle_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_progress_items_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_progress_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    },
+    {
+      "path": "metasystem/internal/steward/tick_test.go",
+      "readerWord": "reviewed by critic root code-critic-ee45891c33e22f3e4ed8c446"
+    }
+  ],
+  "sha256": "2898b756015caec810018948994dac999ba3a983135e759271da5101a3fae569"
+}
