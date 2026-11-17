@@ -11081,7 +11081,15 @@
       },
       "holds": [],
       "opened": "2026-11-07T19:16:50Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-17T12:38:38Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "YN9PSC3BK6899HY4C834PEKK25-m1e-b31c18eb",
+        "by": "Wido",
+        "why": "Not a flake: the slow system disk of the MacBook (7 Nov) and the full memory volume (16 Nov); tests run on the memory volume now, bounded by 6126c668d1. Goal abandoned 17 Nov; evidence panes/flakefix-20261117/table.md."
+      },
       "class": "flake"
     },
     {
