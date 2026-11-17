@@ -28689,6 +28689,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T10:12:17Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestDiskStraysGroupTheirOutcomes",
       "id": "flake:d90eb4a98e1abf3c3c24a101704bd09934dc2563193c97f48ad92864669e919c",
@@ -28734,6 +28735,35 @@
           },
           "load": 10.4521484375,
           "repeat": "alone"
+        },
+        {
+          "attempt": "20261117T090114.007092000Z",
+          "batch": "",
+          "baseCommit": "11838ed9eb2273ba3bc8a56541aff1b187ad56da",
+          "baseTree": "c1b2513c422c9c33b0102dab6ae58788d092da2a",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T090114.007092000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-17T10:01:36Z",
+          "opid": "E871FB281F7BBE11F2F2EFC34B-landing-m1f-41ad7d6c",
+          "tree": "c1b2513c422c9c33b0102dab6ae58788d092da2a",
+          "rerun": {
+            "attempt": "20261117T090114.007092000Z-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T090114.007092000Z-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T090114.007092000Z-repeat-1.log.d90eb4a98e1abf3c3c24a101704bd09934dc2563193c97f48ad92864669e919c.output",
+              "digest": "063f32ff6399347a9860d5b2a88d79045648036655df8ab24e717d811eec9d80",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T090114.007092000Z.log.d90eb4a98e1abf3c3c24a101704bd09934dc2563193c97f48ad92864669e919c.output",
+            "digest": "31241cac5e909da52dabe570eb6b3cc21343b68704e435560719fddbf0c7ed10",
+            "outcome": "fail"
+          },
+          "load": 4.0927734375,
+          "repeat": "alone"
         }
       ],
       "owner": {
@@ -28742,7 +28772,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes",
       "fixBranch": {
         "name": "",
         "commit": "",
@@ -28882,6 +28912,51 @@
       "opened": "2026-11-17T08:07:59Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestWorkCommitRealLaneFixImpactPlanGitAdapter-6",
+      "identity": "red:metasystem/cmd/metasystem:TestWorkCommitRealLaneFixImpactPlanGitAdapter",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T075510.327326000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestWorkCommitRealLaneFixImpactPlanGitAdapter",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261117T075510.327326000Z",
+          "batch": "20261117T075510.327326000Z",
+          "baseCommit": "cd41703721147e71f9b81946a57a7fb572635522",
+          "baseTree": "a765f8e1eed0892a159474988306436ffe08033c",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261117T075510.327326000Z.log",
+          "logDigest": "30ba3025e34e57e59b856cda6ec6b3096707784f247ee9c1559e0d0071388a8c",
+          "seenAt": "2026-11-17T08:58:19Z",
+          "opid": "ABYAB7RZ06XSDPKWC05W51FMC7-landing-m1f-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "m1f",
+        "since": "2026-11-17T09:02:35Z",
+        "how": "taken",
+        "by": ""
+      },
+      "fixGoal": "a-fixture-commit-exists-before-head-names-it",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261117T075510.327326000Z"
+      ],
+      "opened": "2026-11-17T08:58:19Z",
+      "closed": null
     }
   ],
   "cadence": {
