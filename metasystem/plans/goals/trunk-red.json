@@ -21891,7 +21891,15 @@
       },
       "holds": [],
       "opened": "2026-11-16T18:05:48Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-17T12:40:10Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "EX3EV4V8HAJKJTYBNNT5F6E4XT-m1e-b31c18eb",
+        "by": "Wido",
+        "why": "Not a flake: the test timed out in disk floor mode while the host had under 50 GiB free; removed on main by ceaa5f899f. Goal abandoned 17 Nov; evidence panes/flakefix-20261117/table.md."
+      },
       "class": "flake"
     },
     {
