@@ -11329,7 +11329,15 @@
       },
       "holds": [],
       "opened": "2026-11-07T19:16:50Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-17T12:39:38Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "YWC57Q1HF5M2M0PCJ1MR78H2GF-m1e-b31c18eb",
+        "by": "Wido",
+        "why": "Not a flake: timeouts on the slow system disk of the MacBook; tests run on the memory volume since 16 Nov. Goal abandoned 17 Nov; evidence panes/flakefix-20261117/table.md."
+      },
       "class": "flake"
     },
     {
