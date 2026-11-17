@@ -1,7 +1,6 @@
 package diskstore
 
 import (
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -734,10 +733,8 @@ func ReadReceipts(ledger string) ([]DisposalReceipt, error) {
 		return nil, err
 	}
 	var receipts []DisposalReceipt
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 64*1024), 16<<20)
-	for scanner.Scan() {
-		text := strings.TrimSpace(scanner.Text())
+	for line := range bytes.Lines(data) {
+		text := strings.TrimSpace(string(line))
 		if text == "" {
 			continue
 		}
@@ -747,7 +744,7 @@ func ReadReceipts(ledger string) ([]DisposalReceipt, error) {
 		}
 		receipts = append(receipts, receipt)
 	}
-	return receipts, scanner.Err()
+	return receipts, nil
 }
 
 // ReceiptCommitted reports whether a receipt with this id, for this item,

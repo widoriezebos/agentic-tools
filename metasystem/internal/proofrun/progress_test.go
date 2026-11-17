@@ -101,3 +101,23 @@ func TestDeepestLiveHeartbeatTracksNestedOpenSection(t *testing.T) {
 		t.Fatalf("closed heartbeat = %q, %v", got, ok)
 	}
 }
+
+func TestProgressReadsLongHeader(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "progress.jsonl")
+	header := ProgressHeader{LogPaths: make([]string, 150000)}
+	for i := range header.LogPaths {
+		header.LogPaths[i] = "proof/test-output.log"
+	}
+	if err := AppendProgressHeader(path, header); err != nil {
+		t.Fatal(err)
+	}
+	event := SectionEvent{Suite: "validate", Section: "first", Event: "start", At: "2026-11-17T00:00:00Z"}
+	if err := AppendSectionEvent(path, event); err != nil {
+		t.Fatal(err)
+	}
+	run, err := ReadLatestProgressRun(path)
+	if err != nil || len(run.Header.LogPaths) != len(header.LogPaths) || len(run.Events) != 1 {
+		t.Fatalf("paths %d, events %d, error %v", len(run.Header.LogPaths), len(run.Events), err)
+	}
+}

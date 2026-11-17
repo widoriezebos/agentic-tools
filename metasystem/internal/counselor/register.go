@@ -260,12 +260,18 @@ func appendRegisterLine(root, relative, id string, value any) (returnErr error) 
 		}
 	}()
 	if file, err := os.Open(path); err == nil {
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
+		reader := bufio.NewReader(file)
+		var readErr error
+		for readErr == nil {
+			var raw []byte
+			raw, readErr = reader.ReadBytes('\n')
+			if len(raw) == 0 {
+				break
+			}
 			var row struct {
 				ID string `json:"id"`
 			}
-			if json.Unmarshal(scanner.Bytes(), &row) == nil && row.ID == id {
+			if json.Unmarshal(raw, &row) == nil && row.ID == id {
 				file.Close()
 				return nil
 			}

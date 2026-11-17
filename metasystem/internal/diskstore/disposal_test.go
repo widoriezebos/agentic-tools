@@ -2,6 +2,7 @@ package diskstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -138,5 +139,26 @@ func TestInventoryNamesTheLogicalOriginalOfADistilledFile(t *testing.T) {
 	}
 	if !logical || !physical {
 		t.Fatalf("the inventory names the physical replacement and the logical original: %+v", files)
+	}
+}
+
+func TestDisposalReceiptsReadLongLines(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "disposals.jsonl")
+	receipt := DisposalReceipt{ID: "long", Overrides: []string{strings.Repeat("x", 17*1024*1024)}}
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, []byte("\n{\"id\":\"normal\"}")...)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	receipts, err := ReadReceipts(path)
+	if err != nil || len(receipts) != 2 {
+		t.Fatalf("receipts %d, error %v", len(receipts), err)
+	}
+	if receipts[0].Overrides[0] != receipt.Overrides[0] || receipts[1].ID != "normal" {
+		t.Fatal("receipt contents changed")
 	}
 }

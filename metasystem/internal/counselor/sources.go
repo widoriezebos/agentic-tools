@@ -111,13 +111,18 @@ func loadAcceptedRiskRegisterFile(root, source string) ([]RegisterEntry, []Limit
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	reader := bufio.NewReader(file)
+	var readErr error
 	var entries []RegisterEntry
 	malformed := 0
 	incomplete := 0
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for readErr == nil {
+		var raw []byte
+		raw, readErr = reader.ReadBytes('\n')
+		if len(raw) == 0 {
+			break
+		}
+		line := strings.TrimSpace(string(raw))
 		if line == "" {
 			continue
 		}
@@ -132,8 +137,8 @@ func loadAcceptedRiskRegisterFile(root, source string) ([]RegisterEntry, []Limit
 		}
 	}
 	var limitations []Limitation
-	if err := scanner.Err(); err != nil {
-		limitations = append(limitations, acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register reader stopped early: "+sanitizeEvidenceDetail(err.Error())+".", "Restore register lines below the scanner limit and keep the file readable."))
+	if err := readErr; err != nil && err != io.EOF {
+		limitations = append(limitations, acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register reader stopped early: "+sanitizeEvidenceDetail(err.Error())+".", "Restore readable register bytes."))
 	}
 	if malformed > 0 || incomplete > 0 {
 		var details []string

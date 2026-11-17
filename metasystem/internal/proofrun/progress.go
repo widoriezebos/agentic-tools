@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -93,19 +94,23 @@ func ReadLatestProgressRun(path string) (ProgressRun, error) {
 
 	var run ProgressRun
 	foundHeader := false
-	scanner := bufio.NewScanner(file)
-	buffer := make([]byte, 64*1024)
-	scanner.Buffer(buffer, 1024*1024)
+	reader := bufio.NewReader(file)
+	var readErr error
 	line := 0
-	for scanner.Scan() {
+	for readErr == nil {
+		var raw []byte
+		raw, readErr = reader.ReadBytes('\n')
+		if len(raw) == 0 {
+			break
+		}
 		line++
 		var shape map[string]json.RawMessage
-		if err := json.Unmarshal(scanner.Bytes(), &shape); err != nil {
+		if err := json.Unmarshal(raw, &shape); err != nil {
 			return ProgressRun{}, fmt.Errorf("suite progress line %d is not JSON: %w", line, err)
 		}
 		if _, isHeader := shape["tmpPaths"]; isHeader {
 			var header ProgressHeader
-			if err := json.Unmarshal(scanner.Bytes(), &header); err != nil || len(header.LogPaths) == 0 {
+			if err := json.Unmarshal(raw, &header); err != nil || len(header.LogPaths) == 0 {
 				return ProgressRun{}, fmt.Errorf("suite progress line %d is an invalid header", line)
 			}
 			run = ProgressRun{Header: header}
@@ -116,7 +121,7 @@ func ReadLatestProgressRun(path string) (ProgressRun, error) {
 			continue
 		}
 		var event SectionEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		if err := json.Unmarshal(raw, &event); err != nil {
 			return ProgressRun{}, fmt.Errorf("suite progress line %d is an invalid event: %w", line, err)
 		}
 		if event.Event != "start" && event.Event != "end" && event.Event != "verdict" {
@@ -130,7 +135,7 @@ func ReadLatestProgressRun(path string) (ProgressRun, error) {
 		}
 		run.Events = append(run.Events, event)
 	}
-	if err := scanner.Err(); err != nil {
+	if err := readErr; err != nil && err != io.EOF {
 		return ProgressRun{}, fmt.Errorf("read the suite progress log: %w", err)
 	}
 	if !foundHeader {

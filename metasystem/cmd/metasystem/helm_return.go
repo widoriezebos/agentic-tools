@@ -202,9 +202,16 @@ func helmYieldsSince(seat helm.Seat, since time.Time) ([]helm.Yield, error) {
 	}
 	defer file.Close()
 	var yields []helm.Yield
-	for scanner := bufio.NewScanner(file); scanner.Scan(); {
+	reader := bufio.NewReader(file)
+	var readErr error
+	for readErr == nil {
+		var raw []byte
+		raw, readErr = reader.ReadBytes('\n')
+		if len(raw) == 0 {
+			break
+		}
 		var yield helm.Yield
-		if json.Unmarshal(scanner.Bytes(), &yield) == nil && !yield.At.Before(since) {
+		if json.Unmarshal(raw, &yield) == nil && !yield.At.Before(since) {
 			yields = append(yields, yield)
 		}
 	}

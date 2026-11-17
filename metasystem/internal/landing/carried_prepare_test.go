@@ -385,3 +385,21 @@ func runAdvanceGitInput(t *testing.T, root, input string, args ...string) string
 	}
 	return strings.TrimSpace(string(out))
 }
+
+func TestCarriedCounselorReadsLongLines(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "records", "counselor", "carried-landings.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"id":"long","failing":"` + strings.Repeat("x", 6*1024*1024) + "\"}\n{\"id\":\"normal\"}"
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"long", "normal"} {
+		if !carriedCounselorLinePresent(root, id) {
+			t.Fatalf("missing %s after long record", id)
+		}
+	}
+}

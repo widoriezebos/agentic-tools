@@ -1169,3 +1169,48 @@ func TestAppendCarriedRowWritesTheRowsRegisterLine(t *testing.T) {
 		t.Fatalf("a refused carry = %v; want it refused", err)
 	}
 }
+
+func TestRegistersReadLongLinesWithoutDuplicating(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	valid := acceptedRiskRegisterLine{
+		SchemaVersion: 1, ID: "valid", RecordedAt: "2026-08-12T12:00:00Z", Kind: string(RegisterNearMiss),
+		Class: "fixture-blindness", Title: "Valid near miss", AcceptanceStatus: "recorded for review",
+		AcceptanceReason: "The specimen is retained for the counselor sitting.",
+		SpecimenFacts: []acceptedRiskRegisterSpecimenFact{{
+			Fact: "A durable record carried the specimen.",
+			Citations: []acceptedRiskRegisterCitation{
+				{Kind: "record", Target: "records/acp/acp-s1-code-critique.md", Detail: "finding 1"},
+			},
+		}},
+		ReviewLinks: []acceptedRiskRegisterReviewLink{{Kind: "goal", Target: "counselor", Detail: "sitting intake"}},
+	}
+	valid.SpecimenFacts[0].Fact = strings.Repeat("x", 6*1024*1024)
+	if err := appendRegisterLine(root, acceptedRiskRegisterSource, valid.ID, valid); err != nil {
+		t.Fatal(err)
+	}
+	normal := valid
+	normal.ID = "normal"
+	normal.SpecimenFacts = nil
+	normal.SpecimenFacts = []acceptedRiskRegisterSpecimenFact{{Fact: "normal", Citations: valid.SpecimenFacts[0].Citations}}
+	if err := appendRegisterLine(root, acceptedRiskRegisterSource, normal.ID, normal); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(root, acceptedRiskRegisterSource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []acceptedRiskRegisterLine{valid, normal} {
+		if err := appendRegisterLine(root, acceptedRiskRegisterSource, row.ID, row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(root, acceptedRiskRegisterSource))
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("duplicate append changed the register: %v", err)
+	}
+	entries, limitations := loadAcceptedRiskRegisterFile(root, acceptedRiskRegisterSource)
+	if len(entries) != 2 || len(limitations) != 0 {
+		t.Fatalf("entries %d, limitations %+v", len(entries), limitations)
+	}
+}

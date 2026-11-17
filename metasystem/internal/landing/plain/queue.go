@@ -11,7 +11,6 @@
 package plain
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -183,21 +182,19 @@ func countedLineOrdinals[T any](path string) ([]T, []int, int, error) {
 	}
 	var out []T
 	skipped := 0
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	ordinal := 0
-	for scanner.Scan() {
+	for line := range bytes.Lines(data) {
 		ordinal++
 		var value T
 		switch {
-		case json.Unmarshal(scanner.Bytes(), &value) == nil:
+		case json.Unmarshal(line, &value) == nil:
 			out = append(out, value)
 			ordinals = append(ordinals, ordinal)
-		case len(bytes.TrimSpace(scanner.Bytes())) > 0:
+		case len(bytes.TrimSpace(line)) > 0:
 			skipped++
 		}
 	}
-	return out, ordinals, skipped, scanner.Err()
+	return out, ordinals, skipped, nil
 }
 
 // Entries are the queue's hand-ins, oldest first, each with its recorded

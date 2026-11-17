@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -223,5 +224,32 @@ func TestHelmActLineIndentsAnOwnersSecondLine(t *testing.T) {
 	want := "goal done g1: refused: goal g1 has an open read item\n  run: metasystem goal notes g1"
 	if got != want {
 		t.Fatalf("helmActLine = %q, want %q", got, want)
+	}
+}
+
+func TestHelmYieldsReadLongLines(t *testing.T) {
+	t.Parallel()
+	seat := helm.Seat{Yields: filepath.Join(t.TempDir(), "yields.log")}
+	at := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	var data []byte
+	for _, subject := range []string{strings.Repeat("x", 6*1024*1024), "normal"} {
+		encoded, err := json.Marshal(helm.Yield{At: at, Subject: subject})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(append(data, encoded...), '\n')
+	}
+	if err := os.WriteFile(seat.Yields, data[:len(data)-1], 0600); err != nil {
+		t.Fatal(err)
+	}
+	yields, err := helmYieldsSince(seat, at)
+	if err != nil || len(yields) != 2 {
+		t.Fatalf("yields %d, error %v", len(yields), err)
+	}
+	if len(yields[0].Subject) != 6*1024*1024 || yields[1].Subject != "normal" {
+		t.Fatal("yield subjects changed")
+	}
+	if count := helmYieldCount(seat, at); count != "2" {
+		t.Fatalf("count %s", count)
 	}
 }
