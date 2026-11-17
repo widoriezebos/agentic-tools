@@ -20,6 +20,7 @@ func fakeMemoryRoot(t *testing.T) memoryRootProbe {
 		mount: func(string, os.FileInfo) bool { return true },
 		statfs: func(_ string, space *unix.Statfs_t) error {
 			space.Bsize, space.Bavail = 4096, (512<<20)/4096
+			space.Blocks = (1 << 30) / 4096
 			return nil
 		},
 		lease: &memoryRootLeaseState{},
@@ -99,6 +100,41 @@ func TestProvenMemoryRoot(t *testing.T) {
 				if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
 					t.Fatalf("keeper was not excluded: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestProvenMemoryRootSpace(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		capacity uint64
+		free     uint64
+		want     bool
+	}{
+		{"just under half", 4 << 30, (2 << 30) - 4096, false},
+		{"exactly half", 4 << 30, 2 << 30, true},
+		{"odd capacity below half", (4 << 30) + 4096, 2 << 30, false},
+		{"odd capacity above half", (4 << 30) + 4096, (2 << 30) + 4096, true},
+		{"small volume half", 768 << 20, 384 << 20, false},
+		{"small volume below minimum", 768 << 20, (512 << 20) - 4096, false},
+		{"small volume at minimum", 768 << 20, 512 << 20, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			probe := fakeMemoryRoot(t)
+			probe.statfs = func(_ string, space *unix.Statfs_t) error {
+				space.Bsize = 4096
+				space.Blocks, space.Bavail = tc.capacity/4096, tc.free/4096
+				return nil
+			}
+			wantRoot := ""
+			if tc.want {
+				wantRoot = probe.path()
+			}
+			if root, ok := probe.provenRoot(); root != wantRoot || ok != tc.want {
+				t.Fatalf("provenRoot = %q, %v; want %q, %v", root, ok, wantRoot, tc.want)
 			}
 		})
 	}

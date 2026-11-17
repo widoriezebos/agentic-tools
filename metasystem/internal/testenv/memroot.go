@@ -82,5 +82,9 @@ func (probe memoryRootProbe) provenRoot() (string, bool) {
 	if err := probe.statfs(path, &space); err != nil || space.Bsize <= 0 || uint64(space.Bavail)*uint64(space.Bsize) < 512<<20 {
 		return "", false
 	}
+	// Admission leaves at least half the volume free; existing users may keep growing.
+	if space.Bavail < space.Blocks/2+space.Blocks%2 {
+		return "", false
+	}
 	return path, true
 }
