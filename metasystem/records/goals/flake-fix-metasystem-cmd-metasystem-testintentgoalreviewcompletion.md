@@ -1,6 +1,6 @@
 # flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion
 
-- State: queued
+- State: abandoned
 - Priority: 1
 - Sequence: 146
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="attempt 20261116T193240.815881000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T193240.815881000Z.log, load 4.77490234375; attempt 20261116T205103.844778000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261116T205103.844778000Z.log, load 5.03125"
@@ -9,9 +9,10 @@
 - Origin: main
 - Next step: fix the test, run it 20 times under -p 4 with the package, hand it in
 - OpenedAt: 2026-11-17T08:29:59Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Abandoned: by=human:Wido at=2026-11-17T12:31:25Z revision=6 opid=8M9GS30XFFQVRTHCCQRG337F68-m1e-f2b56c95 because=Not flaky: 'no space left on device' on the tests' memory volume (16 Nov, MacBook); bounded on main by 6126c668d1. Evidence: /Users/wido/agentic-tools-evidence/lane-test-20261009/panes/flakefix-20261117/table.md.
 
 History:
 - 2026-11-17T08:29:59Z DB4D93A52A397B398F07E3D71A-landing-41ad7d6c open actor=landing+landing-agent targets=flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion
@@ -19,4 +20,5 @@ History:
 - 2026-11-17T12:30:16Z NQH6HY2G7GXYKQPD0B8KVWNYMN-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testintentreservedgoalnames,flake-fix-metasystem-cmd-metasystem-testfrozenpublicversiononecorpusrunsallsixcasesthroughf-970ab07d,flake-fix-metasystem-cmd-metasystem-testexceptionlandingreleasesitslandedworkspaces,flake-fix-metasystem-cmd-metasystem-testfleetrevisepublicadmission,flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:149 to=1:148
 - 2026-11-17T12:30:44Z 7YDRN5MQNM4JZJHFQT2R03WN4T-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testexceptionlandingreleasesitslandedworkspaces,flake-fix-metasystem-cmd-metasystem-testfleetrevisepublicadmission,flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:148 to=1:147
 - 2026-11-17T12:31:05Z P5DFJJ7S3QJX068SJYGHST7CKA-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testfleetrevisepublicadmission,flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=priority-order from=1:147 to=1:146
-Integrity: sha256=adb47eba58a1260a5b814f6a47c9d11ae8d96413af10620a811e229976cb2b35
+- 2026-11-17T12:31:25Z 8M9GS30XFFQVRTHCCQRG337F68-m1e-f2b56c95 abandon actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testintentgoalreviewcompletion,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes reason=Not flaky: 'no space left on device' on the tests' memory volume (16 Nov, MacBook); bounded on main by 6126c668d1. Evidence: /Users/wido/agentic-tools-evidence/lane-test-20261009/panes/flakefix-20261117/table.md.
+Integrity: sha256=a9e834ab192431f6b3023f2abd33dd78f09fa79aea2ec48d1de050d661647df7
