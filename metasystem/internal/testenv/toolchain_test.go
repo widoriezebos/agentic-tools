@@ -15,7 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv/testdata/buildlock"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
 )
 
@@ -432,55 +431,4 @@ func TestBuildSharedCommandVariantsAndFallback(t *testing.T) {
 			t.Fatal("different flags or private fallback reused the shared inode")
 		}
 	}
-}
-
-func TestLinkExecutableFallback(t *testing.T) {
-	t.Parallel()
-	directory := t.TempDir()
-	source, target := filepath.Join(directory, "source"), filepath.Join(directory, "target")
-	if err := testexec.WriteFile(source, []byte("immutable executable"), 0o500); err != nil {
-		t.Fatal(err)
-	}
-	fallback := func(string, string) error { return unix.EXDEV }
-	if err := linkExecutable(source, target, fallback); err != nil {
-		t.Fatal(err)
-	}
-	original, err := os.Stat(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	copied, err := os.Stat(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(target)
-	if err != nil || string(data) != "immutable executable" || copied.Mode().Perm() != original.Mode().Perm() || os.SameFile(original, copied) {
-		t.Fatalf("fallback: info=%v data=%q err=%v", copied, data, err)
-	}
-	if err := linkExecutable(source, target, fallback); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("existing destination: %v", err)
-	}
-	linked := filepath.Join(directory, "linked")
-	Link(t, source, linked)
-	info, err := os.Stat(linked)
-	if err != nil || !os.SameFile(original, info) {
-		t.Fatalf("link: %v %v", info, err)
-	}
-}
-
-func TestTestBinaryBuildTakesBuildLock(t *testing.T) {
-	t.Parallel()
-	root, cache := t.TempDir(), t.TempDir()
-	cmd := fakeBuild(t, context.Background(), root)
-	cmd.Args[1] = "test"
-	cmd.Args = append(cmd.Args, "-c")
-	cmd.Env = append(cmd.Env, "GOCACHE="+cache)
-	path := lockPath(t, cmd)
-	checkTestenv(t, os.Remove(path))
-	checkTestenv(t, os.Mkdir(path, 0o700))
-	_, err := cmd.Output()
-	if err == nil || !strings.Contains(err.Error(), "build lock:") || !strings.Contains(err.Error(), path) {
-		t.Fatalf("test compilation bypassed the build lock: %v", err)
-	}
-	noLockEntry(t, root)
 }

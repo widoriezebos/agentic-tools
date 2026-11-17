@@ -147,7 +147,16 @@ func TestHealthRemediesAreActsThatClear(t *testing.T) {
 func runHealthRemedyCommandChild(t *testing.T) bool {
 	t.Helper()
 	if *remedyClearProducer == "" {
-		producer := stewardTestBinary(t)
+		goBin, err := exec.LookPath("go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		producer := filepath.Join(t.TempDir(), "steward.test")
+		build := exec.Command(goBin, "test", "-c", "-timeout", "30m", "-o", producer, "./internal/steward")
+		build.Dir = "../.."
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build health bed: %v\n%s", err, out)
+		}
 		self, err := os.Executable()
 		if err != nil {
 			t.Fatal(err)

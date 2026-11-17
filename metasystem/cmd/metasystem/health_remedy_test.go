@@ -3,18 +3,15 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -40,7 +37,12 @@ func TestHealthSystemCheckFailedProbeKeepsStewardGreen(t *testing.T) {
 		if err := os.Symlink(goBin, filepath.Join(path, "go")); err != nil {
 			t.Fatal(err)
 		}
-		binary := stewardTestBinary(t)
+		binary := filepath.Join(t.TempDir(), "steward.test")
+		build := exec.Command(goBin, "test", "-c", "-timeout", "30m", "-o", binary, "./internal/steward/")
+		build.Dir = "../.."
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build steward fixture: %v\n%s", err, out)
+		}
 		env := os.Environ()
 		for index, value := range env {
 			if strings.HasPrefix(value, "PATH=") {
@@ -101,32 +103,4 @@ func TestHealthSystemCheckFailedProbeKeepsStewardGreen(t *testing.T) {
 	if code != 1 || found != 2 {
 		t.Fatalf("system check: code=%d roles=%+v", code, preview.Verdict.Roles)
 	}
-}
-
-var stewardTestBuild struct {
-	once sync.Once
-	path string
-	err  error
-}
-
-// stewardTestBinary is the health producer shared by this command test run.
-func stewardTestBinary(t *testing.T) string {
-	t.Helper()
-	stewardTestBuild.once.Do(func() {
-		directory, err := testenv.MkdirTemp("steward-test-")
-		if err != nil {
-			stewardTestBuild.err = err
-			return
-		}
-		stewardTestBuild.path = filepath.Join(directory, "steward.test")
-		build := testenv.Go("test", "-c", "-timeout", "30m", "-o", stewardTestBuild.path, "./internal/steward")
-		build.Dir = "../.."
-		if output, err := build.CombinedOutput(); err != nil {
-			stewardTestBuild.err = fmt.Errorf("build steward fixture: %w\n%s", err, output)
-		}
-	})
-	if stewardTestBuild.err != nil {
-		t.Fatal(stewardTestBuild.err)
-	}
-	return stewardTestBuild.path
 }

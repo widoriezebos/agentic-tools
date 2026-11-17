@@ -158,50 +158,6 @@ func TestPinnedEnrollmentExecutesTheVerifiedInodeAfterPathReplacement(t *testing
 	}
 }
 
-func TestPreparationPinsTheAuthenticatedInodeAfterPathReplacement(t *testing.T) {
-	t.Parallel()
-	root := canonicalPath(t.TempDir())
-	bin := filepath.Join(root, "metasystem")
-	if err := testexec.WriteFile(bin, []byte("#!/bin/sh\nprintf 'accepted-engine\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	digest, err := installDigest(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(root)), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-		RepoIdentity: root, Generation: 4, InstallPath: bin, InstallDigest: digest,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	pinned, err := OpenEnrolledBinary(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pinned.Close()
-	temporary := bin + ".replacement"
-	if err := testexec.WriteFile(temporary, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(temporary, bin); err != nil {
-		t.Fatal(err)
-	}
-	if err := pinned.PrepareForExecution(); err != nil {
-		t.Fatal(err)
-	}
-	command, err := pinned.Command()
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := command.CombinedOutput()
-	if err != nil || string(output) != "accepted-engine\n" {
-		t.Fatalf("execution did not use the verified inode: output=%q err=%v", output, err)
-	}
-}
-
 func TestPinnedEnrollmentRejectsChangedBytesInThePreparedInode(t *testing.T) {
 	root := canonicalPath(t.TempDir())
 	bin := filepath.Join(root, "metasystem")

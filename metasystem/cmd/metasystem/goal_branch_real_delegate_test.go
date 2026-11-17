@@ -323,7 +323,9 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	testenv.Link(t, engine, installed)
+	if err := testexec.WriteFile(installed, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	digest := fmt.Sprintf("%x", sha256.Sum256(body))
 	writeTestingFixtureFile(t, filepath.Join(worktree, "artifacts", "agents", "steward", "identity.json"), []byte(
 		`{"repoIdentity":"`+worktree+`","generation":1,"installPath":"`+installed+`","installDigest":"sha256:`+digest+

@@ -20,14 +20,14 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fileclone"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"golang.org/x/sys/unix"
 )
 
 // Engine is one candidate engine built from an exact project tree: its
@@ -351,7 +351,14 @@ func CopyArtifact(source, target string) error {
 		return err
 	}
 	defer input.Close()
-	return fileclone.Copy(input, target, 0o500)
+	output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o500)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	syncErr := output.Sync()
+	closeErr := output.Close()
+	return errors.Join(copyErr, syncErr, closeErr)
 }
 
 // Build materializes the exact project tree, stamps its

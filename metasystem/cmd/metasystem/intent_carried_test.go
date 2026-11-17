@@ -342,12 +342,12 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 		}
 		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), filepath.FromSlash(name)), data, 0o644)
 	}
-	// The commit owner's proof engine is the bed's built engine, linked by
+	// The commit owner's proof engine is the bed's built engine, copied by
 	// the bed's go-build.sh: this bed proves the carried transport, not the
 	// suites.
-	gate := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --proof-out && -n \"${2:-}\" ]]\nln %[1]q \"$2\" || cp %[1]q \"$2\"\n", engine)
+	gate := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --proof-out && -n \"${2:-}\" ]]\ncp %q \"$2\"\n", engine)
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "devgate-static.sh"), []byte(gate), 0o755)
-	build := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --trimpath && \"${2:-}\" == --out && -n \"${3:-}\" ]]\nln %[1]q \"$3\" || cp %[1]q \"$3\"\n", engine)
+	build := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --trimpath && \"${2:-}\" == --out && -n \"${3:-}\" ]]\ncp %q \"$3\"\nchmod +x \"$3\"\n", engine)
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "go-build.sh"), []byte(build), 0o755)
 	writeFixtureDevgate(t, filepath.Join(clone, filepath.FromSlash(prefix)))
 	// The carried commit runs the contract's battery for real: a

@@ -11,7 +11,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestClaimLaunchCapabilitySurvivesRelativeExecutableProcessShape(t *testing.T) {
@@ -51,7 +51,14 @@ func TestClaimLaunchCapabilitySurvivesRelativeExecutableProcessShape(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	testenv.Link(t, self, filepath.Join(binDir, "metasystem.test"))
+	data, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(binDir, "metasystem.test")
+	if err := testexec.WriteFile(copyPath, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := dispatchcore.MintDelegateClaimCapability(root, dispatchcore.DispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)

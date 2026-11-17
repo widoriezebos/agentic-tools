@@ -19,7 +19,7 @@ var (
 )
 
 // rearmUpEngine is this tree's engine, built once for the package.
-func rearmUpEngine(t *testing.T) string {
+func rearmUpEngine(t *testing.T) []byte {
 	t.Helper()
 	rearmUpEngineOnce.Do(func() {
 		dir, err := os.MkdirTemp("", "metasystem-rearm-up.")
@@ -37,11 +37,15 @@ func rearmUpEngine(t *testing.T) string {
 	if rearmUpEngineErr != nil {
 		t.Fatalf("build the engine: %v", rearmUpEngineErr)
 	}
-	return rearmUpEnginePath
+	data, err := os.ReadFile(rearmUpEnginePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 // rearmUpInstallation is an installation whose bin/metasystem is engine.
-func rearmUpInstallation(t *testing.T, engine string) string {
+func rearmUpInstallation(t *testing.T, engine []byte) string {
 	t.Helper()
 	installation := t.TempDir()
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
@@ -50,7 +54,9 @@ func rearmUpInstallation(t *testing.T, engine string) string {
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	testenv.Link(t, engine, filepath.Join(installation, "bin", "metasystem"))
+	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), engine, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return installation
 }
 

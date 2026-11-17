@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fileclone"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -71,8 +71,18 @@ func installDeployedEngineWithRename(installation string, engine steward.Deploye
 	defer source.Close()
 	staging := filepath.Join(installation, "bin", fmt.Sprintf(".metasystem.follow-%d", os.Getpid()))
 	defer func() { _ = os.Remove(staging) }()
-	if err := fileclone.Copy(source, staging, 0o755); err != nil {
+	target, err := os.OpenFile(staging, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	if err != nil {
 		return err
+	}
+	defer target.Close()
+	if _, err := io.Copy(target, source); err != nil {
+		return err
+	}
+	for _, step := range []func() error{target.Sync, func() error { return target.Chmod(0o755) }, target.Close} {
+		if err := step(); err != nil {
+			return err
+		}
 	}
 	sum, err := fileSHA256(staging)
 	if err != nil {

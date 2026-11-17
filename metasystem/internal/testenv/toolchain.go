@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -20,7 +18,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
 )
 
@@ -80,7 +77,7 @@ func (command *GoCmd) execute(run func() ([]byte, error)) ([]byte, error) {
 		return nil, command.ctx.Err()
 	}
 	defer func() { <-toolchainSlot }()
-	if len(command.Args) > 1 && (command.Args[1] == "build" || command.Args[1] == "test" && slices.Contains(command.Args[2:], "-c")) {
+	if len(command.Args) > 1 && command.Args[1] == "build" {
 		release, err := buildLock(command.ctx, command)
 		if err != nil {
 			return nil, fmt.Errorf("build lock: %w", err)
@@ -194,42 +191,16 @@ func Built(t testing.TB, pkg string) string {
 	return build.path
 }
 
-// Link places an immutable executable at destination, preferring a hard link.
-// Across filesystems it copies under the fork lock, so a child cannot inherit
-// a writable descriptor. Callers must not change the shared file or its mode.
+// Link places a shared build at destination as a hard link: no bytes are
+// copied and no writable descriptor exists for a concurrent fork to inherit.
+// The destination's directory must exist and share the build's file system
+// (any directory under the test binary's temporary namespace does).
 func Link(t testing.TB, built, destination string) string {
 	t.Helper()
-	if err := linkExecutable(built, destination, os.Link); err != nil {
-		t.Fatalf("link or copy the shared test executable to %s: %v", destination, err)
+	if err := os.Link(built, destination); err != nil {
+		t.Fatalf("link the shared test executable to %s: %v", destination, err)
 	}
 	return destination
-}
-
-func linkExecutable(built, destination string, link func(string, string) error) error {
-	if err := link(built, destination); err == nil {
-		return nil
-	}
-	return testexec.Locked(func() error {
-		source, err := os.Open(built)
-		if err != nil {
-			return err
-		}
-		defer source.Close()
-		info, err := source.Stat()
-		if err != nil {
-			return err
-		}
-		output, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(output, source)
-		err = errors.Join(copyErr, output.Close())
-		if err != nil {
-			_ = os.Remove(destination)
-		}
-		return err
-	})
 }
 
 func buildShared(pkg string) (string, error) {
