@@ -18,42 +18,44 @@ import (
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
-	LineText            string `json:"line"`
-	LoopRuns            int    `json:"loop_runs,omitempty"`
-	description         landingstate.Description
-	Drift               []Fired              `json:"drift,omitempty"`
-	ObservationProblem  string               `json:"observation_problem,omitempty"`
-	Shadow              *landingstate.Record `json:"shadow,omitempty"`
-	Flakes              []goal.FlakeFact     `json:"flakes,omitempty"`
-	FlakeGoalStates     map[string]string    `json:"flake_goal_states,omitempty"`
-	Report              string               `json:"report,omitempty"`
-	ReportPath          string               `json:"-"`
-	Routed              []Occurrence         `json:"routed,omitempty"`
-	Interventions       []Intervention       `json:"interventions,omitempty"`
-	Refusals            []Intervention       `json:"refusals,omitempty"`
-	PersonActs          []PersonAct          `json:"person_acts,omitempty"`
-	PendingAct          *PersonAct           `json:"pending_act,omitempty"`
-	OwnRed              []OwnRed             `json:"own_red,omitempty"`
-	observedAt          time.Time
-	recentActs          map[[2]string]bool
-	StateReason         string           `json:"state_reason,omitempty"`
-	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
-	StalePendingMerge   string           `json:"stale_pending_merge,omitempty"`
-	SealedBehindMain    bool             `json:"sealed_behind_main,omitempty"`
-	State               string           `json:"state"`
-	Stops               []Stop           `json:"stops,omitempty"`
-	Goals               []GoalHealth     `json:"goals"`
-	Batch               *BatchHealth     `json:"batch,omitempty"`
-	Agent               AgentHealth      `json:"agent"`
-	Paused              *PauseHealth     `json:"paused,omitempty"`
-	Questions           []QuestionHealth `json:"questions"`
-	Incidents           []IncidentHealth `json:"incidents"`
-	Load                LoadHealth       `json:"load"`
-	Engine              EngineHealth     `json:"engine"`
-	Proofs              ProofHealth      `json:"proofs"`
-	LastPush            string           `json:"last_push,omitempty"`
-	AbandonedResolution string           `json:"abandoned_resolution,omitempty"`
-	LastProof           *Result          `json:"last_proof,omitempty"`
+	InitializingWorktrees []string `json:"initializing_worktrees,omitempty"`
+	WorktreeProblem       string   `json:"worktree_problem,omitempty"`
+	LineText              string   `json:"line"`
+	LoopRuns              int      `json:"loop_runs,omitempty"`
+	description           landingstate.Description
+	Drift                 []Fired              `json:"drift,omitempty"`
+	ObservationProblem    string               `json:"observation_problem,omitempty"`
+	Shadow                *landingstate.Record `json:"shadow,omitempty"`
+	Flakes                []goal.FlakeFact     `json:"flakes,omitempty"`
+	FlakeGoalStates       map[string]string    `json:"flake_goal_states,omitempty"`
+	Report                string               `json:"report,omitempty"`
+	ReportPath            string               `json:"-"`
+	Routed                []Occurrence         `json:"routed,omitempty"`
+	Interventions         []Intervention       `json:"interventions,omitempty"`
+	Refusals              []Intervention       `json:"refusals,omitempty"`
+	PersonActs            []PersonAct          `json:"person_acts,omitempty"`
+	PendingAct            *PersonAct           `json:"pending_act,omitempty"`
+	OwnRed                []OwnRed             `json:"own_red,omitempty"`
+	observedAt            time.Time
+	recentActs            map[[2]string]bool
+	StateReason           string           `json:"state_reason,omitempty"`
+	AdmissibleWaiting     []string         `json:"admissible_waiting,omitempty"`
+	StalePendingMerge     string           `json:"stale_pending_merge,omitempty"`
+	SealedBehindMain      bool             `json:"sealed_behind_main,omitempty"`
+	State                 string           `json:"state"`
+	Stops                 []Stop           `json:"stops,omitempty"`
+	Goals                 []GoalHealth     `json:"goals"`
+	Batch                 *BatchHealth     `json:"batch,omitempty"`
+	Agent                 AgentHealth      `json:"agent"`
+	Paused                *PauseHealth     `json:"paused,omitempty"`
+	Questions             []QuestionHealth `json:"questions"`
+	Incidents             []IncidentHealth `json:"incidents"`
+	Load                  LoadHealth       `json:"load"`
+	Engine                EngineHealth     `json:"engine"`
+	Proofs                ProofHealth      `json:"proofs"`
+	LastPush              string           `json:"last_push,omitempty"`
+	AbandonedResolution   string           `json:"abandoned_resolution,omitempty"`
+	LastProof             *Result          `json:"last_proof,omitempty"`
 }
 
 // Occurrence is one cannot-heal condition, from its route until it clears.
@@ -799,6 +801,12 @@ func (h Health) Text() string {
 	}
 	var out strings.Builder
 	fmt.Fprintln(&out, h.Line())
+	if h.WorktreeProblem != "" {
+		fmt.Fprintln(&out, "Worktree registrations could not be read: "+h.WorktreeProblem)
+	}
+	for _, path := range h.InitializingWorktrees {
+		fmt.Fprintln(&out, "Initializing worktree registration (inspect before removing): "+path)
+	}
 	d := h.description
 	if d.Headline == "" && h.Shadow != nil {
 		d = landingstate.Describe(*h.Shadow, landingstate.RenderInputs{})
@@ -933,4 +941,37 @@ func waitSince(stamp string, since landingstate.Since, _ time.Time) string {
 		text = "seen since " + text + " (observed)"
 	}
 	return text
+}
+
+// An initializing registration may still have a live creator. Health lists
+// these paths for inspection and never infers that they can be removed.
+func initializingWorktrees(listing string) []string {
+	var paths []string
+	for _, record := range strings.Split(listing, "\n\n") {
+		var path string
+		initializing := false
+		for _, line := range strings.Split(record, "\n") {
+			if strings.HasPrefix(line, "worktree ") {
+				path = strings.TrimPrefix(line, "worktree ")
+			}
+			if line == "locked initializing" {
+				initializing = true
+			}
+		}
+		if initializing && path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// ReadWorktreeRegistrations adds the explicit health verb's read-only listing.
+// Ordinary status renders its captured facts without another Git query.
+func (h *Health) ReadWorktreeRegistrations(checkout string, seams ProveSeams) {
+	listing, err := seams.git(checkout, "worktree", "list", "--porcelain")
+	if err != nil {
+		h.WorktreeProblem = err.Error()
+		return
+	}
+	h.InitializingWorktrees = initializingWorktrees(listing)
 }

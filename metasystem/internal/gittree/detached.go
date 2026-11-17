@@ -253,6 +253,10 @@ func (detached *DetachedWorktree) materialize(w Workspace, tree, prefix string) 
 		return nil, err
 	}
 	_, err = detached.control.git(nil, "worktree", "add", "--detach", detached.top, "HEAD")
+	detached.registered = err == nil
+	if err != nil && detached.common == "" {
+		err = errors.Join(err, detached.removeFailedAdd(admin))
+	}
 	if releaseErr := admin.release(); releaseErr != nil {
 		err = errors.Join(err, releaseErr)
 	}
@@ -343,7 +347,12 @@ func (w Workspace) NewDetachedCommitWorktree(commit string) (_ *DetachedWorktree
 	}
 	stdout, stderr, code, probeErr := detached.control.gitProbe(top, nil, nil,
 		"worktree", "add", "--detach", detached.top, commit)
-	releaseErr := admin.release()
+	detached.registered = probeErr == nil && code == 0
+	var cleanupErr error
+	if probeErr != nil || code != 0 {
+		cleanupErr = detached.removeFailedAdd(admin)
+	}
+	releaseErr := errors.Join(cleanupErr, admin.release())
 	if probeErr != nil {
 		return nil, errors.Join(probeErr, releaseErr)
 	}
@@ -425,7 +434,10 @@ func combinedProbeOutput(stderr, stdout string) string {
 // 2026-09-12). The lock is a file in the common git dir, so every engine
 // on the repository serializes its adds and removes, within one process
 // and across processes alike.
-type worktreeAdminLock struct{ held *lock.FileLock }
+type worktreeAdminLock struct {
+	held   *lock.FileLock
+	common string
+}
 
 func (w Workspace) lockWorktreeAdmin(blocking bool) (*worktreeAdminLock, error) {
 	common, err := w.gitPathLine(nil, "rev-parse", "--git-common-dir")
@@ -451,7 +463,7 @@ func lockWorktreeAdminAt(common string, blocking bool) (*worktreeAdminLock, erro
 	if err != nil {
 		return nil, err
 	}
-	return &worktreeAdminLock{held: held}, nil
+	return &worktreeAdminLock{held: held, common: common}, nil
 }
 
 func (l *worktreeAdminLock) release() error {
@@ -625,4 +637,40 @@ func RemoveRecordedWorktree(tuple WorktreeTuple, control Workspace) (string, err
 		}
 		return removeParent()
 	}
+}
+
+// removeFailedAdd runs only after our add has exited and while its admin lock
+// is held. A basename is not ownership: Git may suffix it on a collision.
+func (d *DetachedWorktree) removeFailedAdd(admin *worktreeAdminLock) error {
+	if !filepath.IsAbs(d.parent) || filepath.Dir(d.top) != d.parent {
+		return fmt.Errorf("gittree failed add: temporary paths are not exact")
+	}
+	entries, err := os.ReadDir(filepath.Join(admin.common, "worktrees"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(admin.common, "worktrees", entry.Name())
+		back, err := os.ReadFile(filepath.Join(path, "gitdir"))
+		if err != nil {
+			continue
+		}
+		target := strings.TrimSuffix(string(back), "\n")
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(path, target)
+		}
+		if filepath.Clean(target) != filepath.Join(d.top, ".git") {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+	}
+	return nil
 }

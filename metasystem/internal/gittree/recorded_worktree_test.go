@@ -1,6 +1,8 @@
 package gittree
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -320,5 +322,52 @@ func TestPlannedWorktreeFailedAddStaysUnresolvedUntilRecordedRecovery(t *testing
 		if _, err := os.Lstat(gone); !os.IsNotExist(err) {
 			t.Fatalf("%s survived: %v", gone, err)
 		}
+	}
+}
+
+func TestScratchFailedAddRemovesOnlyItsRegistration(t *testing.T) {
+	t.Parallel()
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprint(canceled), func(t *testing.T) {
+			t.Parallel()
+			control, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			common := filepath.Join(control, ".git")
+			parent := filepath.Join(control, "scratch")
+			top := filepath.Join(parent, "worktree-same")
+			other := filepath.Join(control, "proof", "worktree-same")
+			writeEntry(t, common, "worktree-same", filepath.Join(other, ".git"))
+			stub := Workspace{Dir: control, RawSource: func(request RawRequest) RawResult {
+				args := strings.Join(request.Args, " ")
+				switch {
+				case strings.HasSuffix(args, "rev-parse --git-common-dir"):
+					return RawResult{Stdout: []byte(common + "\n")}
+				case strings.Contains(args, "worktree add --detach"):
+					writeEntry(t, common, "worktree-same1", filepath.Join(top, ".git"))
+					writeDetachedFile(t, filepath.Join(top, ".git"), "gitdir: "+filepath.Join(common, "worktrees", "worktree-same1")+"\n")
+					if canceled {
+						return RawResult{Err: context.Canceled}
+					}
+					return RawResult{ExitCode: 128, Stderr: []byte("failed checkout")}
+				}
+				t.Errorf("unexpected git %s", args)
+				return RawResult{ExitCode: 1}
+			}}
+			d := &DetachedWorktree{control: stub, parent: parent, top: top}
+			if _, err := d.materialize(stub, strings.Repeat("a", 40), ""); err == nil {
+				t.Fatal("failed add succeeded")
+			}
+			for _, gone := range []string{parent, filepath.Join(common, "worktrees", "worktree-same1")} {
+				if _, err := os.Lstat(gone); !os.IsNotExist(err) {
+					t.Fatalf("%s survived: %v", gone, err)
+				}
+			}
+			back, err := os.ReadFile(filepath.Join(common, "worktrees", "worktree-same", "gitdir"))
+			if err != nil || string(back) != filepath.Join(other, ".git")+"\n" {
+				t.Fatalf("proof registration changed: %s %v", back, err)
+			}
+		})
 	}
 }

@@ -660,3 +660,28 @@ func TestLandingHealthBatchShowsSelectedWaitingMembers(t *testing.T) {
 		t.Fatalf("selected waiting facts: %+v", h.Batch)
 	}
 }
+
+func TestLandingHealthListsInitializingRegistrationsWithoutRemoving(t *testing.T) {
+	t.Parallel()
+	listing := "worktree /live\nHEAD abc\n\nworktree /scratch/worktree-one\nlocked initializing\n\nworktree /proof/worktree-one\nlocked proof\n"
+	b := newStatusBed(t)
+	s := healthSeams(bedNow)
+	prior := s.Git
+	s.Git = func(dir string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "worktree" {
+			if strings.Join(args, " ") != "worktree list --porcelain" {
+				t.Fatalf("health mutated registrations: %q", args)
+			}
+			return listing, nil
+		}
+		return prior(dir, args...)
+	}
+	h := readHealthBed(t, b, s).Health
+	h.ReadWorktreeRegistrations(b.record.Root, s)
+	if !reflect.DeepEqual(h.InitializingWorktrees, []string{"/scratch/worktree-one"}) {
+		t.Fatalf("initializing: %q", h.InitializingWorktrees)
+	}
+	if !strings.Contains(h.Text(), "Initializing worktree registration (inspect before removing): /scratch/worktree-one") {
+		t.Fatal(h.Text())
+	}
+}

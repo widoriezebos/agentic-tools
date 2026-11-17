@@ -52,6 +52,7 @@ func runIntentLandingHealth(inv *intentInvocation, admitted laneAdmitted) int {
 	if status.Health == nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the lane health cannot be read: " + strings.Join(status.Problems, "; ")})
 	}
+	status.Health.ReadWorktreeRegistrations(admitted.record.Root, admitted.owners.plainProve)
 	if len(status.Problems) > 0 || status.Health.ObservationProblem != "" {
 		rows := []string{"the lane health cannot be read"}
 		for _, row := range status.Health.Rows() {

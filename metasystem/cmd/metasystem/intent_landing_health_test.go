@@ -19,9 +19,25 @@ func TestLandingHealthTextJSONAndReadOnly(t *testing.T) {
 	t.Parallel()
 	b := newPlainVerbBed(t)
 	b.cwd = b.checkout
+	originalGit := b.owners.landing.plainProve.Git
+	if originalGit == nil {
+		originalGit = plain.Git
+	}
+	registrationReads := 0
+	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "worktree" {
+			if strings.Join(args, " ") != "worktree list --porcelain" {
+				t.Fatalf("health mutated worktrees: %q", args)
+			}
+			registrationReads++
+			return "worktree /scratch/worktree-one\nlocked initializing\n", nil
+		}
+		return originalGit(dir, args...)
+	}
 	_, err := plain.RefreshShadow(b.home, laneTestNow, "fixture", b.owners.landing.plainProve)
 	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}, {"landing", "status", "--json"}} {
+		readsBefore := registrationReads
 		before := idemTreeDigest(t, b.installation)
 		code, text := b.run(t, args...)
 		if code != 0 {
@@ -58,6 +74,13 @@ func TestLandingHealthTextJSONAndReadOnly(t *testing.T) {
 			if h.State != "idle" || h.Load.AtStart != nil || h.Load.AtEnd != nil {
 				t.Fatalf("health: %+v", h)
 			}
+		}
+		if args[1] == "health" {
+			if registrationReads != readsBefore+1 || !strings.Contains(text, "/scratch/worktree-one") {
+				t.Fatalf("health did not list the initializing registration: %s", text)
+			}
+		} else if registrationReads != readsBefore {
+			t.Fatal("ordinary status queried worktree registrations")
 		}
 		idemSameTree(t, "read health", before, idemTreeDigest(t, b.installation))
 	}
