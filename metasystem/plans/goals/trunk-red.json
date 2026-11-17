@@ -12274,7 +12274,15 @@
       },
       "holds": [],
       "opened": "2026-11-15T11:49:05Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-17T12:39:58Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "VHA2CZ7EVDPF2WQYT8Q1NCN3H8-m1e-b31c18eb",
+        "by": "Wido",
+        "why": "Not a flake: git worktree add of 8.4k files ran 430-480 s on the slow system disk of the MacBook; tests run on the memory volume since 16 Nov. Goal abandoned 17 Nov; evidence panes/flakefix-20261117/table.md."
+      },
       "class": "flake"
     },
     {
