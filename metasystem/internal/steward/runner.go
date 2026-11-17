@@ -56,6 +56,7 @@ type RunnerRecord struct {
 	PidStartedAt    int64  `json:"pidStartedAt"` // seconds identity: darwin has no ticks pair
 	StartedAt       string `json:"startedAt"`
 	FenceGeneration int64  `json:"fenceGeneration"`
+	Capable         int    `json:"capable,omitempty"`
 }
 
 // StoppedError is the process-creation refusal returned while the checkout's
@@ -176,6 +177,7 @@ type runnerLoopDependencies struct {
 	TrimCaches           func(context.Context, string, TickConfig) error
 	Now                  func() time.Time
 	Sleep                func(time.Duration)
+	progressWrite        func(string, string) error
 	AfterRecordPublished func()
 	// SweepDisk runs the disk sweeper's passes after the tick has returned
 	// and released arbitration (Part B 3.3); helm reports without acting.
@@ -280,6 +282,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		PidStartedAt:    self.StartedAt.Unix(),
 		StartedAt:       cfg.now().Format(time.RFC3339),
 		FenceGeneration: fence.Generation,
+		Capable:         1,
 	}); err != nil {
 		return err
 	}
@@ -304,6 +307,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	// runner knows the identity it was enrolled with and the lineage its
 	// arming caller handed it, so only the resident runner publishes presence.
 	cfg.Runner = runnerContext(top, cfg.ArmedLineage, interval)
+	progressWrite := deps.progressWrite
+	if progressWrite == nil {
+		progressWrite = atomicfile.WriteVolatile
+	}
+	cfg.Progress = newProgress(top, self, cfg.Runner.Generation, deps.Now, progressWrite)
 	if deps.ExamineLedger != nil {
 		if err := deps.ExamineLedger(top, cfg.now()); err != nil {
 			fmt.Fprintf(os.Stderr, "examine ledger at steward start: %v\n", err)
@@ -339,7 +347,12 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		var slept time.Duration
 		waiting := deps
 		waiting.Sleep = func(d time.Duration) { before := deps.Now(); deps.Sleep(d); slept += deps.Now().Sub(before) }
+		cfg.Progress.Begin("wait")
+		cfg.Progress.Wait("idle", interval-work)
 		stopped := runnerWait(top, interval-work, waiting, drain, keeper, cfg.ProbeProvider)
+		if !stopped {
+			cfg.Progress.cycled()
+		}
 		logTick(work, slept)
 		return stopped
 	}
@@ -352,7 +365,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		reads.tick++
 		reads.Unlock()
 		started, timed.elapsed, paged = deps.Now(), 0, 0
+		cfg.Progress.Begin("tick")
 		result, err = deps.Tick(top, cfg, timed)
+		cfg.Progress.ticked(err)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}

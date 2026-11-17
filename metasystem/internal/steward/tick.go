@@ -98,6 +98,9 @@ type TickConfig struct {
 	// the tick finishes the stop in progress and starts no further one.
 	// Only RunLoop sets it; nil is never stopping.
 	Stopping func() bool
+	// Progress publishes the resident runner's work. Only RunLoop sets it;
+	// nil publishes nothing for manual commands.
+	Progress *Progress
 	// Seat starts and reads the steward's seat launches (g1-s77); nil starts
 	// no seat and keeps today's notification for ready work.
 	Seat SeatLauncher
