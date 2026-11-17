@@ -22302,6 +22302,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T08:29:59Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestIntentReservedGoalNames",
       "id": "flake:3fda9ef55a43768554ca8c3bf49933a099f0e557a37f7476a1aac035b9dcd931",
@@ -22471,7 +22472,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testintentreservedgoalnames",
       "fixBranch": {
         "name": "",
         "commit": "",
