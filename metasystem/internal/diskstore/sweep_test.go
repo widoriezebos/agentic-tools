@@ -575,3 +575,35 @@ func TestPreviewWritesOnlyThePlan(t *testing.T) {
 		t.Fatalf("plan = %+v, %v", plan, err)
 	}
 }
+
+// inspectingClass observes a release while Apply still owns its work.
+type inspectingClass struct {
+	countingClass
+	before func()
+}
+
+func (c inspectingClass) Apply(ctx context.Context, p *Pass, item Item) Verdict {
+	c.before()
+	return c.countingClass.Apply(ctx, p, item)
+}
+
+func TestPassCountsEachClassAndAppliedItemAfterItsWork(t *testing.T) {
+	t.Parallel()
+	root := realDir(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	count, spent := 0, 0
+	class := func(name string, before int) Class {
+		return inspectingClass{countingClass{name: name, items: 1, applied: map[string]int{}, spent: &spent, per: 99, cancel: &cancel}, func() {
+			if count != before {
+				t.Fatalf("inside %s Apply: count=%d want=%d", name, count, before)
+			}
+		}}
+	}
+	opts := passOptions(Registry{Dir: filepath.Join(root, "stores")}, root, class("a", 0), class("b", 2))
+	opts.Item = func() { count++ }
+	report, err := RunPass(ctx, opts)
+	if err != nil || count != 4 || len(report.Classes) != 2 {
+		t.Fatalf("count=%d report=%+v err=%v", count, report, err)
+	}
+}

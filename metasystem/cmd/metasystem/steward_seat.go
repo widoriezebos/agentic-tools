@@ -189,8 +189,9 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 	config.Units = stewardUnitStages(owners)
 	config.Workspace = stewardGoalWorkspace(owners)
 	config.ClaimLaneState = stewardClaimLaneState(owners)
-	config.Situation = func(root string, now time.Time) steward.Situation {
+	config.Situation = func(root string, now time.Time, progress steward.ProgressItems) steward.Situation {
 		src := owners.situation
+		src.Progress = progress
 		src.Now = func() time.Time { return now }
 		return steward.ReadSituation(root, situationSources(owners, src))
 	}

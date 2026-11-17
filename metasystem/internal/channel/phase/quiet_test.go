@@ -91,7 +91,7 @@ func TestTickPostsNoPeriodicStatusReport(t *testing.T) {
 	if err := channel.SaveStatusState(root, channel.StatusState{ContentDigest: channel.Digest("an older report")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := phase.Run(context.Background(), root); err != nil {
+	if _, err := phase.Run(context.Background(), root, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := posts(t, dir); len(got) != 0 {
@@ -124,7 +124,7 @@ func TestTickRetriesAFailedLandedLineOnce(t *testing.T) {
 		t.Fatal("a post to an unreachable channel reported no error")
 	}
 	for range 2 {
-		if _, err := phase.Run(context.Background(), root); err != nil {
+		if _, err := phase.Run(context.Background(), root, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

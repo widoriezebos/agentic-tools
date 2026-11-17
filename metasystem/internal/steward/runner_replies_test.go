@@ -30,11 +30,11 @@ func TestHelmSettlesReplies(t *testing.T) {
 				t.Fatal("helm launched a seat")
 				return SeatRecord{}, nil
 			}
-			deps.Channel = func(context.Context, string) (int, error) {
+			deps.Channel = func(context.Context, string, func()) (int, error) {
 				t.Fatal("helm received or delivered messages")
 				return 0, nil
 			}
-			deps.SettleReplies = func(ctx context.Context, _ string) (int, error) {
+			deps.SettleReplies = func(ctx context.Context, _ string, item func()) (int, error) {
 				settlements++
 				c := replies.Config()
 				c.Machine, c.Lineage = "helm", "steward"
@@ -96,7 +96,7 @@ func TestHelmDefaultSettlesReplies(t *testing.T) {
 				t.Fatal("helm launched a seat")
 				return SeatRecord{}, nil
 			}
-			deps.Channel = func(context.Context, string) (int, error) {
+			deps.Channel = func(context.Context, string, func()) (int, error) {
 				t.Fatal("helm received or delivered messages")
 				return 0, nil
 			}

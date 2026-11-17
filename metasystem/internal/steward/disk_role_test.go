@@ -38,8 +38,8 @@ func TestRunnerSweepsDiskAfterTheTickReleasedArbitration(t *testing.T) {
 			return TickResult{}, nil
 		},
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
-		DeliverPending: func(string) (int, error) { return 0, nil },
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 		Now:            func() time.Time { return now },
 		Sleep: func(d time.Duration) {
 			now = now.Add(d)
@@ -49,7 +49,7 @@ func TestRunnerSweepsDiskAfterTheTickReleasedArbitration(t *testing.T) {
 			}
 			loop.stop(t)
 		},
-		SweepDisk: func(top string, _ time.Time, helm bool) error {
+		SweepDisk: func(top string, _ time.Time, helm bool, _ func()) error {
 			free, err := ProbeArbitration(top)
 			if err != nil {
 				t.Error(err)

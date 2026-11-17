@@ -127,8 +127,8 @@ func TestRunnerDeliversFollowFailureAtHelmAndNormally(t *testing.T) {
 				passes++
 				return TickResult{}, nil
 			}
-			deps.Channel = func(context.Context, string) (int, error) { duties++; b.poll(); return 0, nil }
-			deps.SettleReplies = func(context.Context, string) (int, error) { return 0, nil }
+			deps.Channel = func(context.Context, string, func()) (int, error) { duties++; b.poll(); return 0, nil }
+			deps.SettleReplies = func(context.Context, string, func()) (int, error) { return 0, nil }
 			sleep := deps.Sleep
 			deps.Sleep = func(d time.Duration) {
 				sleep(d)

@@ -151,7 +151,7 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 	tick := func() string {
 		t.Helper()
 		line := keeper.Step()
-		if _, err := channelphase.Run(context.Background(), module); err != nil {
+		if _, err := channelphase.Run(context.Background(), module, nil); err != nil {
 			t.Fatalf("the lane steward's channel duty: %v", err)
 		}
 		return line

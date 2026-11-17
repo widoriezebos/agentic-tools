@@ -43,6 +43,8 @@ func LastTrimReports(stateDir string) ([]TrimReport, error) {
 
 // MachineTrim is one steward pass over the four machine caches.
 type MachineTrim struct {
+	// Item counts each cache after Trim returns, including errors.
+	Item func()
 	// UserCacheDir is the directory the caches live under; nil is
 	// os.UserCacheDir. The caches are never taken from GOCACHE.
 	UserCacheDir func() (string, error)
@@ -90,6 +92,9 @@ func TrimMachine(ctx context.Context, machine MachineTrim) ([]TrimReport, error)
 		}
 		report, err := Trim(ctx, TrimConfig{Name: cache.name, Root: cache.root, CapBytes: cache.cap, Keep: machine.Keep, MinKeep: machine.MinKeep,
 			Deadline: machine.Deadline, StateDir: machine.StateDir, Now: machine.Now, Clock: machine.Clock, Stopped: machine.Stopped})
+		if machine.Item != nil {
+			machine.Item()
+		}
 		if err != nil {
 			return reports, err
 		}

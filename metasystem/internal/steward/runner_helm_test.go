@@ -30,8 +30,8 @@ func TestRunnerRefreshOutcomePreservesPass(t *testing.T) {
 				return SeatRecord{}, nil
 			}
 			deps.Resumable = func(string) (string, bool, error) { return "prepared", true, nil }
-			deps.DeliverPending = func(string) (int, error) { delivers++; return 0, nil }
-			deps.Channel = func(context.Context, string) (int, error) { channels++; return 0, nil }
+			deps.DeliverPending = func(string, *Progress) (int, error) { delivers++; return 0, nil }
+			deps.Channel = func(context.Context, string, func()) (int, error) { channels++; return 0, nil }
 			deps.TrimCaches = func(context.Context, string, TickConfig) error { trims++; return nil }
 			cfg := TickConfig{Now: now,
 				KeepLandingLane: func() lane.AgentRun { keeps++; return lane.AgentRun{} },
@@ -91,8 +91,8 @@ func (l *helmLoop) run(t *testing.T, tick func(int) (TickResult, error), afterSl
 			return tick(l.ticks)
 		},
 		Resumable:      func(string) (string, bool, error) { l.resumable++; return "prepared", true, nil },
-		DeliverPending: func(string) (int, error) { l.delivers++; return 0, nil },
-		Channel:        func(context.Context, string) (int, error) { l.chans++; return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { l.delivers++; return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { l.chans++; return 0, nil },
 		Now:            func() time.Time { return now },
 		Sleep: func(d time.Duration) {
 			now = now.Add(d)
@@ -192,8 +192,8 @@ func TestRunnerLoopUnderHelmKeepsLaneWithoutOtherPostTickActs(t *testing.T) {
 		return SeatRecord{}, nil
 	}
 	deps.Resumable = func(string) (string, bool, error) { resumes++; return "prepared", true, nil }
-	deps.DeliverPending = func(string) (int, error) { delivers++; return 0, nil }
-	deps.Channel = func(context.Context, string) (int, error) { channels++; return 0, nil }
+	deps.DeliverPending = func(string, *Progress) (int, error) { delivers++; return 0, nil }
+	deps.Channel = func(context.Context, string, func()) (int, error) { channels++; return 0, nil }
 	deps.TrimCaches = func(context.Context, string, TickConfig) error { trims++; return nil }
 	cfg := TickConfig{Now: now, KeepLandingLane: func() lane.AgentRun { keeps++; loop.stop(t); return lane.AgentRun{Outcome: lane.AgentIdle} }, RearmAtBoundary: func(*Progress) (bool, error) { rearms++; return false, nil }}
 	// A skipped keeper still terminates deterministically on the injected clock.

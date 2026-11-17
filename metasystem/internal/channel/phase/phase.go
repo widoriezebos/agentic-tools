@@ -177,7 +177,7 @@ func Load(root string, withHuman bool) (Loaded, error) {
 // SettleReplies consumes only replies already authenticated by the receiver.
 // It needs neither channel credentials nor an agent session; it records
 // answers under the machine and lineage the channel duty uses.
-func SettleReplies(ctx context.Context, root string, resolveMachine func(string) (string, error), endpoint func(string) (goal.Endpoint, error)) (int, error) {
+func SettleReplies(ctx context.Context, root string, resolveMachine func(string) (string, error), endpoint func(string) (goal.Endpoint, error), item func()) (int, error) {
 	adapter, err := Get(root, "channel.destination.fleet.adapter", "")
 	if errors.Is(err, config.ErrNoValue) {
 		return 0, nil
@@ -189,7 +189,7 @@ func SettleReplies(ctx context.Context, root string, resolveMachine func(string)
 	if err != nil {
 		return 0, err
 	}
-	res, err := channel.SettleReplies(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: adapter, Machine: machine, Lineage: lineage}, endpoint)
+	res, err := channel.SettleReplies(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: adapter, Machine: machine, Lineage: lineage, Item: item}, endpoint)
 	return res.Dispositions, err
 }
 
@@ -207,11 +207,11 @@ func AnswerActor(root string, resolveMachine func(string) (string, error)) (stri
 }
 
 // Run performs the bounded channel duty after every other tick duty.
-func Run(ctx context.Context, root string) (int, error) {
-	return run(ctx, root, time.Now(), goal.ResolveMachine, goal.ResolveEndpoint)
+func Run(ctx context.Context, root string, item func()) (int, error) {
+	return run(ctx, root, time.Now(), goal.ResolveMachine, goal.ResolveEndpoint, item)
 }
 
-func run(ctx context.Context, root string, now time.Time, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error)) (int, error) {
+func run(ctx context.Context, root string, now time.Time, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), item func()) (int, error) {
 	if err := channel.ReconcileUnitStopQuestions(root); err != nil {
 		return 1, err
 	}
@@ -226,7 +226,7 @@ func run(ctx context.Context, root string, now time.Time, resolveMachine func(st
 	if err != nil {
 		return 1, err
 	}
-	res, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: loaded.Adapter, HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret, Machine: machine, Lineage: lineage, Provider: loaded.Provider, DestinationConfig: loaded.Destination, Now: now, MaxDispositions: 5})
+	res, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: loaded.Adapter, HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret, Machine: machine, Lineage: lineage, Provider: loaded.Provider, DestinationConfig: loaded.Destination, Now: now, MaxDispositions: 5, Item: item})
 	if err != nil {
 		return res.Undelivered + 1, err
 	}
@@ -236,13 +236,20 @@ func run(ctx context.Context, root string, now time.Time, resolveMachine func(st
 		e, err := resolveEndpoint(root)
 		if err == nil {
 			err = channel.RetrySplitApproval(ctx, e, loaded.Provider, loaded.Destination, now)
+			if item != nil {
+				item()
+			}
 		}
 		if err != nil {
 			return res.Undelivered + 1, err
 		}
 	}
-	if e := channel.RetryLanded(ctx, root, loaded.Provider, loaded.Destination); e != nil {
-		return res.Undelivered + 1, e
+	err = channel.RetryLanded(ctx, root, loaded.Provider, loaded.Destination)
+	if item != nil {
+		item()
+	}
+	if err != nil {
+		return res.Undelivered + 1, err
 	}
 	return res.Undelivered, nil
 }

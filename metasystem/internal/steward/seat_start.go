@@ -629,7 +629,7 @@ func seatDependenciesForConfig(cfg TickConfig) seatDependencies {
 	}
 	if cfg.Situation != nil {
 		dependencies.Situation = func(root string, now time.Time) (SituationRecord, error) {
-			return SituationPage(root, func(t time.Time) Situation { return cfg.Situation(root, t) }, now, SituationFresh)
+			return SituationPage(root, func(t time.Time) Situation { return cfg.Situation(root, t, cfg.Progress) }, now, SituationFresh)
 		}
 	}
 	return dependencies
@@ -1150,7 +1150,7 @@ func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork 
 	if cfg.Situation != nil && openWork.Seat != nil {
 		fresh := *openWork.Seat
 		fresh.Situation = func(root string, now time.Time) (SituationRecord, error) {
-			s := cfg.Situation(root, now)
+			s := cfg.Situation(root, now, cfg.Progress)
 			return SituationRecord{Situation: s, Composition: Compose(s)}, nil
 		}
 		openWork.Seat = &fresh

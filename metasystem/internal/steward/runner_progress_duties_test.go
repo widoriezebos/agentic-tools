@@ -58,9 +58,9 @@ func TestEachLoopDutyPublishesItsStartAndItsEnd(t *testing.T) {
 				check("tick", false)
 				return TickResult{Decision: Decision{Action: ActRevive}, Seat: &SeatSelection{}}, nil
 			}
-			deps.SweepDisk = func(string, time.Time, bool) error { check("disk-sweep", false); return nil }
+			deps.SweepDisk = func(string, time.Time, bool, func()) error { check("disk-sweep", false); return nil }
 			deps.Bridge = func(string) bridgeStepper { return progressBridge{func() { check("bridge", false) }} }
-			deps.SettleReplies = func(context.Context, string) (int, error) {
+			deps.SettleReplies = func(context.Context, string, func()) (int, error) {
 				check("question-replies", true)
 				return 0, errors.New("reply transport failed")
 			}
@@ -69,11 +69,11 @@ func TestEachLoopDutyPublishesItsStartAndItsEnd(t *testing.T) {
 				return SeatRecord{}, nil
 			}
 			deps.Resumable = func(string) (string, bool, error) { return "prepared", true, nil }
-			deps.DeliverPending = func(string) (int, error) { check("notifications-pending", false); return 0, nil }
-			deps.Channel = func(context.Context, string) (int, error) { check("channel-pending", true); return 0, nil }
+			deps.DeliverPending = func(string, *Progress) (int, error) { check("notifications-pending", false); return 0, nil }
+			deps.Channel = func(context.Context, string, func()) (int, error) { check("channel-pending", true); return 0, nil }
 			deps.TrimCaches = func(context.Context, string, TickConfig) error { check("cache-trim", false); return nil }
 			cfg := TickConfig{Now: now, ProviderHome: testprovider.Home(loop.root),
-				Situation:            func(string, time.Time) Situation { check("situation", false); return Situation{} },
+				Situation:            func(string, time.Time, ProgressItems) Situation { check("situation", false); return Situation{} },
 				FollowDeployedEngine: func() (bool, bool, error) { check("engine-follow", false); return false, false, nil },
 				CompletedBoundary:    func(string, time.Time) error { check("unit-boundary", false); return nil },
 				RearmAtBoundary:      func(*Progress) (bool, error) { check("rearm", false); return false, nil },
@@ -141,7 +141,7 @@ func progressSeatConfig(t *testing.T) (string, TickConfig) {
 		}
 	}}
 	cfg := TickConfig{Now: claimQuotaClock, Seat: launcher, ProviderHome: home, WorkStateRoot: t.TempDir(), AskHome: t.TempDir(), ClaimLaneState: claimQuotaLane(t, root, nil)}
-	cfg.Situation = func(string, time.Time) Situation { return Situation{} }
+	cfg.Situation = func(string, time.Time, ProgressItems) Situation { return Situation{} }
 	return root, cfg
 }
 
@@ -196,7 +196,7 @@ func TestAWaitForArbitrationIsPublished(t *testing.T) {
 				deps.Tick = func(string, TickConfig, WorkerCensus) (TickResult, error) {
 					return TickResult{Decision: Decision{Action: ActRevive}, Seat: &SeatSelection{Goal: "ready-r"}}, nil
 				}
-				cfg.Situation = func(string, time.Time) Situation {
+				cfg.Situation = func(string, time.Time, ProgressItems) Situation {
 					if readProgress(t, root).Operation == "seat-start" {
 						if arb, err := TryAcquireArbitration(root); err != ErrArbitrationHeld {
 							if arb != nil {

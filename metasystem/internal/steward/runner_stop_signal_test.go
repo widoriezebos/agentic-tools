@@ -157,9 +157,9 @@ func TestStewardRunSignalHelperProcess(t *testing.T) {
 			fmt.Printf("published %s outcome=%s err=%v\n", id, result.Outcome, err)
 			return TickResult{}, err
 		},
-		DeliverPending: func(string) (int, error) { return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 		Now:            time.Now, Sleep: time.Sleep,
 		StopSignals: productionStopSignals(),
 	}
@@ -279,12 +279,15 @@ func TestASignalledRunnerEndsAfterTheTickInProgress(t *testing.T) {
 			receiveWithin(t, fake.reported, "drain report")
 			return TickResult{}, nil
 		},
-		DeliverPending: func(string) (int, error) { t.Error("delivery ran after the signal"); return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { t.Error("delivery ran after the signal"); return 0, nil },
 		Resumable:      func(string) (string, bool, error) { t.Error("resume ran after the signal"); return "", false, nil },
-		Channel:        func(context.Context, string) (int, error) { t.Error("channel ran after the signal"); return 0, nil },
-		Now:            time.Now,
-		Sleep:          func(time.Duration) { t.Error("the runner waited after the signal") },
-		StopSignals:    fake.source(t),
+		Channel: func(context.Context, string, func()) (int, error) {
+			t.Error("channel ran after the signal")
+			return 0, nil
+		},
+		Now:         time.Now,
+		Sleep:       func(time.Duration) { t.Error("the runner waited after the signal") },
+		StopSignals: fake.source(t),
 	}
 	if err := runLoopWithDependencies(root, fakeCensus{}, nil, time.Hour, TickConfig{}, deps); err != nil {
 		t.Fatal(err)

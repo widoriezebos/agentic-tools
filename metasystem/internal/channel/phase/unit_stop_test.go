@@ -46,7 +46,7 @@ func TestRunReconcilesUnitStopWithoutChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if count, err := phase.Run(context.Background(), root); err != nil || count != 0 {
+		if count, err := phase.Run(context.Background(), root, nil); err != nil || count != 0 {
 			t.Fatalf("tick: undelivered=%d err=%v", count, err)
 		}
 		stored, err := channel.ReadQuestion(root, question.ID)
@@ -66,7 +66,7 @@ func TestRunReturnsUnitStopReconciliationFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "unreadable.json"), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	count, err := phase.Run(context.Background(), root)
+	count, err := phase.Run(context.Background(), root, nil)
 	if _, ok := err.(*json.SyntaxError); !ok || count != 1 {
 		t.Fatalf("reconciliation failure: undelivered=%d err=%v; want one failure and its JSON error", count, err)
 	}

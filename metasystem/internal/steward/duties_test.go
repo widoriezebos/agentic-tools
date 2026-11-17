@@ -116,17 +116,17 @@ func (b *dutyBed) run(cycles int, plan func(int) dutyCycle, after func(int)) {
 			b.verdicts[b.cycle], b.records[b.cycle], b.journal[b.cycle], b.alerts[b.cycle] = observed, record, b.journalLines(), episodes
 			return result, err
 		},
-		SettleReplies: func(context.Context, string) (int, error) { return 0, plan(b.cycle).replies },
-		Channel: func(context.Context, string) (int, error) {
+		SettleReplies: func(context.Context, string, func()) (int, error) { return 0, plan(b.cycle).replies },
+		Channel: func(context.Context, string, func()) (int, error) {
 			if err := plan(b.cycle).channel; err != nil {
 				return 2, err
 			}
 			return 0, nil
 		},
-		DeliverPending: func(string) (int, error) { return 0, plan(b.cycle).pending },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, plan(b.cycle).pending },
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
 		TrimCaches:     func(context.Context, string, TickConfig) error { return plan(b.cycle).trim },
-		SweepDisk:      func(string, time.Time, bool) error { return nil },
+		SweepDisk:      func(string, time.Time, bool, func()) error { return nil },
 		StartSeat: func(string, TickConfig, WorkerCensus, SeatSelection) (SeatRecord, error) {
 			t.Errorf("cycle %d started a seat", b.cycle)
 			return SeatRecord{}, errors.New("no seat in this bed")

@@ -84,7 +84,7 @@ func TestPersonClaimRunnerNeverGenericallyRevivesReservation(t *testing.T) {
 							t.Fatal(err)
 						}
 					},
-					DeliverPending: func(string) (int, error) { return 0, nil },
+					DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
 					Tick: func(string, TickConfig, WorkerCensus) (TickResult, error) {
 						ticks++
 						work := bed.dependencies()
@@ -122,7 +122,7 @@ func TestPersonClaimApprovedZeroEpochStartsItsSeatAndRechecksApproval(t *testing
 			before := goal.RenderFile(f)
 			delegates, ticks := 0, 0
 			deps := runnerLoopDependencies{
-				Now: func() time.Time { return bed.now }, Sleep: func(time.Duration) { _ = stopRunnerLoop(bed.root) }, DeliverPending: func(string) (int, error) { return 0, nil },
+				Now: func() time.Time { return bed.now }, Sleep: func(time.Duration) { _ = stopRunnerLoop(bed.root) }, DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
 				Tick: func(string, TickConfig, WorkerCensus) (TickResult, error) {
 					ticks++
 					r := bed.tick(deadWorkers)

@@ -21,6 +21,8 @@ import (
 )
 
 type PollConfig struct {
+	// Item counts a disposition after its work returns; nil publishes nothing.
+	Item                                                                           func()
 	RepoRoot, Destination, ProviderName, HumanUserID, TOTPSecret, Machine, Lineage string
 	Provider                                                                       Provider
 	DestinationConfig                                                              DestinationConfig
@@ -35,6 +37,12 @@ type PollConfig struct {
 	answerCodeOff bool
 	// validateInbox replaces the inbox commit validation in tests.
 	validateInbox func(goal.Endpoint, string) error
+}
+
+func (c PollConfig) item() {
+	if c.Item != nil {
+		c.Item()
+	}
 }
 
 type ReplyPublicationError struct {
@@ -122,6 +130,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 				return result, err
 			}
 			result.Dispositions++
+			c.item()
 		}
 	}
 	var publicationErrors error
@@ -136,6 +145,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 				continue
 			}
 			result.Dispositions++
+			c.item()
 		}
 	}
 	status := StatusState{}

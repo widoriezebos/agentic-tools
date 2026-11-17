@@ -68,6 +68,12 @@ func countedSituationOwners(t *testing.T, bed *workBed, clock *time.Time, projec
 	return owners
 }
 
+type situationItems struct{ count int }
+
+func (p *situationItems) Item()                    { p.count++ }
+func (*situationItems) Wait(string, time.Duration) {}
+func (*situationItems) Working()                   {}
+
 // The tick's page is written through the wired reader as the duty writes it
 // (SituationPage with no freshness); the verb a minute later prints it and
 // reads nothing.
@@ -79,18 +85,30 @@ func TestTheWiredTickWritesThePageTheVerbReads(t *testing.T) {
 	owners := countedSituationOwners(t, bed, &clock, &projections)
 	var config steward.TickConfig
 	wireStewardSeat(&config, owners)
+	items := &situationItems{}
 	if config.Situation != nil {
-		if _, err := steward.SituationPage(install, func(at time.Time) steward.Situation { return config.Situation(install, at) }, clock, 0); err != nil {
+		if _, err := steward.SituationPage(install, func(at time.Time) steward.Situation { return config.Situation(install, at, items) }, clock, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(install, "artifacts", "agents", "steward", "situation.json")); err != nil || projections != 1 {
 		t.Fatalf("the wired tick wrote no page (%v) or read the ledger %d times, want once", err, projections)
 	}
+	if items.count < 14 {
+		t.Fatalf("wired source items=%d, want at least 14", items.count)
+	}
+	// A manual read has no resident publisher.
+	config.Situation(install, clock, nil)
+	if projections != 2 {
+		t.Fatalf("manual read projections=%d want=2", projections)
+	}
+	if _, err := os.Stat(filepath.Join(install, "artifacts", "agents", "steward", "runner-progress.json")); !os.IsNotExist(err) {
+		t.Fatalf("manual situation published progress: %v", err)
+	}
 	clock = clock.Add(time.Minute)
 	command, _, _ := resolveIntentArgv([]string{"system", "situation"})
 	var stdout, stderr bytes.Buffer
-	if code := runIntentIn(command, nil, &stdout, &stderr, bed.root(), owners); code != 0 || !strings.Contains(stdout.String(), ", 1m ago") || projections != 1 {
+	if code := runIntentIn(command, nil, &stdout, &stderr, bed.root(), owners); code != 0 || !strings.Contains(stdout.String(), ", 1m ago") || projections != 2 {
 		t.Fatalf("system situation = %d, ledger read %d times, want the tick's page and no read:\n%s%s", code, projections, stdout.String(), stderr.String())
 	}
 }

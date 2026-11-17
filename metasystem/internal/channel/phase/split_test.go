@@ -123,10 +123,18 @@ func TestSplitApprovalTickReconcilesHeldChildren(t *testing.T) {
 			}
 			write(filepath.Join(dir, "base-url"), server.URL)
 			write(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\nchannel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir="+dir+"\nchannel.destination.fleet.fake.face=slack\nchannel.human.slack.user-id=test-human\nchannel.human.answer-code=off\n")
+			items := 0
 			tick := func() (int, error) {
-				return run(ctx, root, now, func(string) (string, error) { return "test-machine", nil }, func(string) (goal.Endpoint, error) { return endpoint, nil })
+				return run(ctx, root, now, func(string) (string, error) { return "test-machine", nil }, func(string) (goal.Endpoint, error) { return endpoint, nil }, func() { items++ })
 			}
 			undelivered, err := tick()
+			wantItems := 2
+			if err != nil {
+				wantItems = 1
+			}
+			if items != wantItems {
+				t.Fatalf("retry items=%d want=%d", items, wantItems)
+			}
 			if deadlines != 1 {
 				t.Fatalf("split retry used %d fixture deadlines; want 1", deadlines)
 			}
@@ -141,8 +149,12 @@ func TestSplitApprovalTickReconcilesHeldChildren(t *testing.T) {
 			if len(state.Pending) != 0 || (scenario != "unblocked" && (len(state.Failed) != 1 || !strings.Contains(state.Failed[0].Error, wantError))) {
 				t.Fatalf("retry did not settle: %+v", state)
 			}
+			beforeItems := items
 			if undelivered, err := tick(); err != nil || undelivered != 0 {
 				t.Fatalf("second tick: undelivered=%d err=%v", undelivered, err)
+			}
+			if items != beforeItems+1 {
+				t.Fatalf("landed retry item missing: %d -> %d", beforeItems, items)
 			}
 			mu.Lock()
 			defer mu.Unlock()

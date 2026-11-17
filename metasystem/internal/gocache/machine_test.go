@@ -113,3 +113,37 @@ func TestTrimMachineOnlyTheNamedCachesAndTheLastReports(t *testing.T) {
 		t.Fatalf("machine caches = %v", got)
 	}
 }
+
+func TestTrimMachineCountsEachNamedCacheAfterItReturns(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	userCache := t.TempDir()
+	for _, name := range []string{"go-build", "metasystem-delegate-go-build"} {
+		if err := os.MkdirAll(filepath.Join(userCache, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := 0
+	names := []string{"engine-go-build", "delegate-go-build"}
+	reports, err := gocache.TrimMachine(context.Background(), gocache.MachineTrim{
+		UserCacheDir: func() (string, error) { return userCache, nil }, StateDir: state, Now: trimNow, Only: names,
+		EngineGoCapBytes: 1000, DelegateGoCapBytes: 1000, Keep: 24 * time.Hour, MinKeep: trimMinKeep,
+		Clock: func() time.Time {
+			if count > 0 {
+				if _, err := os.Stat(filepath.Join(state, names[count-1]+".json")); err != nil {
+					t.Fatalf("previous trim was counted before its report: %v", err)
+				}
+			}
+			return trimNow
+		},
+		Item: func() {
+			if _, err := os.Stat(filepath.Join(state, names[count]+".json")); err != nil {
+				t.Fatalf("item before completed report: %v", err)
+			}
+			count++
+		},
+	})
+	if err != nil || len(reports) != 2 || count != 2 {
+		t.Fatalf("reports=%+v count=%d err=%v", reports, count, err)
+	}
+}

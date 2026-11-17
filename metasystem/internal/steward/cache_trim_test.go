@@ -36,7 +36,7 @@ func TestRunLoopTrimsTheCachesLastWithoutArbitration(t *testing.T) {
 			return result, err
 		},
 		DeliverPending: runnerPendingDelivery(root, "true"),
-		Channel:        func(context.Context, string) (int, error) { record("channel"); return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { record("channel"); return 0, nil },
 		TrimCaches: func(ctx context.Context, top string, cfg TickConfig) error {
 			record("trim")
 			held, err := AcquireArbitration(top)
@@ -84,7 +84,7 @@ func TestAStopFileDuringATrimEndsTheTrimAndTheRunner(t *testing.T) {
 			return result, err
 		},
 		DeliverPending: runnerPendingDelivery(root, "true"),
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 		TrimCaches:     machineCacheTrimmer(func() (string, error) { return userCache, nil }, state),
 		Now:            time.Now, Sleep: func(time.Duration) { t.Error("the runner waited after its stop file") },
 	}
@@ -146,7 +146,7 @@ func TestTheStewardPassYieldsTheKeepWindowOverTheCap(t *testing.T) {
 	clock := func() time.Time { readings++; return now.Add(time.Duration(readings) * time.Minute) }
 	questions := 0
 	stopped := func() bool { questions++; return questions >= 2 }
-	reports, err := TrimMachineCaches(context.Background(), top, func() (string, error) { return userCache, nil }, state, now, clock, stopped)
+	reports, err := TrimMachineCaches(context.Background(), top, func() (string, error) { return userCache, nil }, state, now, clock, stopped, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

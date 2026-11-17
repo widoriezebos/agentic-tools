@@ -64,7 +64,7 @@ func TestASettledReplyNamesItsMachine(t *testing.T) {
 			}
 			b.receiveOnLane(t)
 			// The steward's tick: the settlement pass, then the channel duty's poll.
-			if _, err := phase.SettleReplies(context.Background(), b.inst.root, goal.ResolveMachine, nil); err != nil {
+			if _, err := phase.SettleReplies(context.Background(), b.inst.root, goal.ResolveMachine, nil, nil); err != nil {
 				t.Fatalf("settlement pass: %v", err)
 			}
 			got := b.question(t, b.inst, q.ID)

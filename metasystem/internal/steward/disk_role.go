@@ -136,6 +136,7 @@ func (c UsageClass) Apply(ctx context.Context, pass *diskstore.Pass, _ diskstore
 
 // DiskPass selects what one SweepDiskStores call does.
 type DiskPass struct {
+	Item func()
 	Mode diskstore.Mode
 	Now  time.Time
 	// Clock reads the budget left; production passes time.Now.
@@ -245,7 +246,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 	settings, settingsErr := diskSettingsFor(top)
 	checkoutOptions := diskstore.PassOptions{Kind: "checkout", Name: top, Registry: diskstore.CheckoutRegistry(top),
 		LockPath: filepath.Join(diskstore.CheckoutRegistry(top).Dir, ".sweep.flock"), ReportPath: diskstore.CheckoutReportPath(top),
-		PlanDir: filepath.Join(home, "stores", "plans"), Mode: pass.Mode, Now: pass.Now, Clock: pass.Clock, Entropy: rand.Reader}
+		PlanDir: filepath.Join(home, "stores", "plans"), Mode: pass.Mode, Now: pass.Now, Clock: pass.Clock, Entropy: rand.Reader, Item: pass.Item}
 	if settingsErr != nil {
 		// Unknown settings: the checkout pass acts on nothing and says why.
 		checkoutOptions.HostUnknown = []string{"checkout settings unknown: " + settingsErr.Error()}
@@ -353,7 +354,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	host := diskstore.ResolveHost(participants)
 	options := diskstore.PassOptions{Kind: "machine", Name: "machine", Registry: diskstore.MachineRegistry(home),
 		LockPath: filepath.Join(diskstore.MachineRegistry(home).Dir, ".sweep.flock"), ReportPath: diskstore.MachineReportPath(home),
-		PlanDir: filepath.Join(home, "stores", "plans"), Mode: pass.Mode, Now: pass.Now, Clock: pass.Clock, Entropy: rand.Reader,
+		PlanDir: filepath.Join(home, "stores", "plans"), Mode: pass.Mode, Now: pass.Now, Clock: pass.Clock, Entropy: rand.Reader, Item: pass.Item,
 		Notes: append(append([]string(nil), host.Conflicts...), staleNotes...), HostUnknown: host.Unknown}
 	if !host.Known() {
 		options.Mode = reportOnly(pass.Mode)

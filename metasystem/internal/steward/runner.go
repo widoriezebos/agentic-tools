@@ -167,10 +167,10 @@ type runnerLoopDependencies struct {
 	Self           identity.Prober
 	ExamineLedger  func(string, time.Time, *Progress) error
 	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
-	DeliverPending func(string) (int, error)
+	DeliverPending func(string, *Progress) (int, error)
 	Resumable      func(string) (string, bool, error)
-	Channel        func(context.Context, string) (int, error)
-	SettleReplies  func(context.Context, string) (int, error)
+	Channel        func(context.Context, string, func()) (int, error)
+	SettleReplies  func(context.Context, string, func()) (int, error)
 	ReplyEndpoint  func(string) (goal.Endpoint, error)
 	// TrimCaches trims the machine caches as the cycle's last step; nil
 	// trims nothing.
@@ -181,7 +181,7 @@ type runnerLoopDependencies struct {
 	AfterRecordPublished func()
 	// SweepDisk runs the disk sweeper's passes after the tick has returned
 	// and released arbitration (Part B 3.3); helm reports without acting.
-	SweepDisk func(top string, now time.Time, helm bool) error
+	SweepDisk func(top string, now time.Time, helm bool, item func()) error
 	// Bridge makes this runner's bridge role (batch-lane design D14-r2,
 	// R25); nil runs none.
 	Bridge func(top string) bridgeStepper
@@ -202,12 +202,12 @@ type bridgeStepper interface {
 
 // runnerSweepDisk is the production sweep: both passes under the budget; a
 // failure is the disk-sweep duty's and never fatal to the loop.
-func runnerSweepDisk(top string, now time.Time, helmActive bool) error {
+func runnerSweepDisk(top string, now time.Time, helmActive bool, item func()) error {
 	mode := diskstore.ModeApply
 	if helmActive {
 		mode = diskstore.ModeReport
 	}
-	_, err := SweepDiskStores(context.Background(), top, DiskPass{Mode: mode, Now: now, Clock: time.Now})
+	_, err := SweepDiskStores(context.Background(), top, DiskPass{Mode: mode, Now: now, Clock: time.Now, Item: item})
 	return err
 }
 
@@ -223,8 +223,8 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		deps.Resumable = ResumableIntent
 	}
 	if deps.SettleReplies == nil {
-		deps.SettleReplies = func(ctx context.Context, root string) (int, error) {
-			return channelphase.SettleReplies(ctx, root, goal.ResolveMachine, deps.ReplyEndpoint)
+		deps.SettleReplies = func(ctx context.Context, root string, item func()) (int, error) {
+			return channelphase.SettleReplies(ctx, root, goal.ResolveMachine, deps.ReplyEndpoint, item)
 		}
 	}
 	if deps.Channel == nil {
@@ -330,7 +330,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		cfg.Progress.Begin("channel-pending")
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
 		cfg.Progress.Wait("external", 15*time.Second)
-		undelivered, channelErr := deps.Channel(channelContext, top)
+		undelivered, channelErr := deps.Channel(channelContext, top, cfg.Progress.Item)
 		cfg.Progress.Working()
 		cfg.Progress.Item()
 		if channelErr != nil {
@@ -388,7 +388,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		// helm it still reports (the 2026-09-29 amendment) and acts on nothing.
 		if deps.SweepDisk != nil {
 			cfg.Progress.Begin("disk-sweep")
-			recordDuty(top, "disk-sweep", deps.SweepDisk(top, deps.Now(), helm.Active(top).Active), deps.Now())
+			recordDuty(top, "disk-sweep", deps.SweepDisk(top, deps.Now(), helm.Active(top).Active, cfg.Progress.Item), deps.Now())
 			cfg.Progress.Item()
 		}
 		// The bridge role runs every cycle, at the helm too: it reports and
@@ -404,7 +404,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		cfg.Progress.Begin("question-replies")
 		settleContext, cancelSettle := context.WithTimeout(context.Background(), 15*time.Second)
 		cfg.Progress.Wait("external", 15*time.Second)
-		_, settleErr := deps.SettleReplies(settleContext, top)
+		_, settleErr := deps.SettleReplies(settleContext, top, cfg.Progress.Item)
 		cfg.Progress.Working()
 		cfg.Progress.Item()
 		recordDuty(top, "question-replies", settleErr, deps.Now())
@@ -413,7 +413,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		if cfg.Situation != nil {
 			cfg.Progress.Begin("situation")
 			at := deps.Now()
-			_, pageErr := SituationPage(top, func(t time.Time) Situation { return cfg.Situation(top, t) }, at, 0)
+			_, pageErr := SituationPage(top, func(t time.Time) Situation { return cfg.Situation(top, t, cfg.Progress) }, at, 0)
 			recordDuty(top, "situation", pageErr, deps.Now())
 			paged = deps.Now().Sub(at)
 			cfg.Progress.Item()
@@ -519,7 +519,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
 		cfg.Progress.Begin("notifications-pending")
-		_, deliverErr := deps.DeliverPending(top)
+		_, deliverErr := deps.DeliverPending(top, cfg.Progress)
 		cfg.Progress.Item()
 		recordDuty(top, "notifications-pending", deliverErr, deps.Now())
 		channelDuty()

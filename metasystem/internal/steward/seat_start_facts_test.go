@@ -150,7 +150,7 @@ func pageSeatBrief(t *testing.T, selection SeatSelection, page, blocked bool) st
 	units := func(_, id string) ([]UnitStage, error) { return []UnitStage{{Unit: id + "-unit", Stage: "built"}}, nil }
 	cfg := TickConfig{Now: situationNow, Seat: launcher, ProviderHome: testprovider.Home(root), AskHome: t.TempDir(), ClaimLaneState: claimQuotaLane(t, root, nil), Units: units}
 	if page {
-		cfg.Situation = func(root string, now time.Time) Situation {
+		cfg.Situation = func(root string, now time.Time, progress ProgressItems) Situation {
 			src := withEmptyHost(t, SituationSources{Now: func() time.Time { return now }, LaneHome: func() (string, error) { return t.TempDir(), nil },
 				ClaimLaneState: claimQuotaLane(t, root, nil), BoardHome: func() (string, error) { return t.TempDir(), nil },
 				Units: func(_, id string, _ goal.Projection, _ time.Time) ([]UnitStage, error) {

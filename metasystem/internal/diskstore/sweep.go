@@ -80,6 +80,8 @@ type Finisher interface {
 
 // PassOptions configure one pass.
 type PassOptions struct {
+	// Item counts each completed class visit and Apply call.
+	Item func()
 	// Kind is "checkout" or "machine"; Name the checkout path or "machine".
 	Kind, Name string
 	// Registry holds the pass's cursors; LockPath is its .sweep.flock.
@@ -229,6 +231,9 @@ func RunPass(ctx context.Context, options PassOptions) (Report, error) {
 			continue
 		}
 		finished := pass.visit(ctx, class, &report, state.Classes)
+		if options.Item != nil {
+			options.Item()
+		}
 		if !finished && next == "" {
 			next = order[(index+1)%len(order)].Name()
 		}
@@ -315,6 +320,9 @@ func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions
 			break
 		}
 		outcome := class.Apply(ctx, p, item)
+		if p.options.Item != nil {
+			p.options.Item()
+		}
 		if outcome.Decision == Wait {
 			continue
 		}

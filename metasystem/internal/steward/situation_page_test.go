@@ -29,7 +29,7 @@ func newPageBed(t *testing.T) *pageBed {
 		BoardHome: func() (string, error) { return bed.board, nil }, Project: countedProject(&bed.projections)})
 	load := bed.src.Load
 	bed.src.Load = func(now time.Time) hostload.Sample { bed.loads++; return load(now) }
-	bed.cfg.Situation = func(root string, now time.Time) Situation { return bed.read(root, now) }
+	bed.cfg.Situation = func(root string, now time.Time, progress ProgressItems) Situation { return bed.read(root, now) }
 	return bed
 }
 

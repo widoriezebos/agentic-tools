@@ -331,7 +331,7 @@ func (inv *intentInvocation) settleQuestionReplies() *intentResult {
 		defer cancel()
 		// The machine is named at the state root, as every other intent resolves it.
 		machine := func(string) (string, error) { return inv.owners.dependencies.machine(inv.stateRoot) }
-		_, err = phase.SettleReplies(ctx, root, machine, inv.owners.dependencies.endpoint)
+		_, err = phase.SettleReplies(ctx, root, machine, inv.owners.dependencies.endpoint, nil)
 	}
 	if err != nil {
 		inv.replySettleErr = err

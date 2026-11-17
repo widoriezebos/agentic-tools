@@ -950,8 +950,8 @@ func TestAttentionRemedyCoversAMovePromotedBeforeInstall(t *testing.T) {
 				deps := runnerLoopDependencies{Self: attentionRunnerProber{}, ExamineLedger: examine,
 					Now:            func() time.Time { return bed.now },
 					Resumable:      func(string) (string, bool, error) { return "", false, nil },
-					DeliverPending: func(string) (int, error) { return 0, nil },
-					Channel:        func(context.Context, string) (int, error) { return 0, nil },
+					DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+					Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 					Sleep:          func(time.Duration) {},
 					Tick: func(string, TickConfig, WorkerCensus) (TickResult, error) {
 						// Installation must examine before the first idle tick.

@@ -92,8 +92,8 @@ func TestRunnerProviderRecoveryStartsTheNextCycle(t *testing.T) {
 			return TickResult{}, nil
 		},
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
-		DeliverPending: func(string) (int, error) { return 0, nil },
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 		Now:            func() time.Time { return now }, Sleep: func(d time.Duration) { now = now.Add(d) },
 	}
 	config := TickConfig{Now: start, ProviderHome: testprovider.Home(loop.root), ProbeProvider: func(string) (bool, error) { return true, nil }}
@@ -118,8 +118,8 @@ func TestRunnerKeepsTheLandingLaneAcrossTheHelm(t *testing.T) {
 	deps := runnerLoopDependencies{
 		Tick:           func(string, TickConfig, WorkerCensus) (TickResult, error) { return TickResult{}, nil },
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
-		DeliverPending: func(string) (int, error) { return 0, nil },
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 		Now:            func() time.Time { return now },
 		Sleep: func(d time.Duration) {
 			now = now.Add(d)
@@ -159,8 +159,8 @@ func TestRunnerStepsAWaitingLaneBetweenCycles(t *testing.T) {
 		deps := runnerLoopDependencies{
 			Tick:           func(string, TickConfig, WorkerCensus) (TickResult, error) { return TickResult{}, nil },
 			Resumable:      func(string) (string, bool, error) { return "", false, nil },
-			DeliverPending: func(string) (int, error) { return 0, nil },
-			Channel:        func(context.Context, string) (int, error) { return 0, nil },
+			DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+			Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 			Now:            func() time.Time { return now },
 			Sleep: func(d time.Duration) {
 				now = now.Add(d)

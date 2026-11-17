@@ -113,7 +113,7 @@ type TickConfig struct {
 	ClaimLaneState func(root, goalID, main string) (string, error)
 	// Situation reads this checkout's situation for the page the runner
 	// writes each pass; nil writes no page.
-	Situation func(root string, now time.Time) Situation
+	Situation func(root string, now time.Time, progress ProgressItems) Situation
 	// AskHome is the board the claim-quota ask is published on; empty is
 	// the host's board.
 	AskHome string
@@ -609,7 +609,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		}
 		if cfg.Situation != nil {
 			seat.Situation = func(root string, now time.Time) (SituationRecord, error) {
-				return SituationPage(root, func(at time.Time) Situation { return cfg.Situation(root, at) }, now, SituationFresh)
+				return SituationPage(root, func(at time.Time) Situation { return cfg.Situation(root, at, cfg.Progress) }, now, SituationFresh)
 			}
 		}
 		dependencies.openWork.Seat = &seat

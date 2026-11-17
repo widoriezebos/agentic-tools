@@ -33,7 +33,7 @@ func machineCacheTrimmer(userCacheDir func() (string, error), stateDir string) f
 		_, err := TrimMachineCaches(ctx, top, userCacheDir, stateDir, cfg.now(), func() time.Time { return cfg.now() }, func() bool {
 			_, err := os.Stat(stop)
 			return err == nil
-		})
+		}, cfg.Progress.Item)
 		return err
 	}
 }
@@ -42,12 +42,12 @@ func machineCacheTrimmer(userCacheDir func() (string, error), stateDir string) f
 // the settings of the checkout at top: the steward's step and the manual
 // `disk clean --go-cache` alike. A nil userCacheDir is os.UserCacheDir; an
 // empty stateDir is CacheTrimStateDir.
-func TrimMachineCaches(ctx context.Context, top string, userCacheDir func() (string, error), stateDir string, now time.Time, clock func() time.Time, stopped func() bool) ([]gocache.TrimReport, error) {
+func TrimMachineCaches(ctx context.Context, top string, userCacheDir func() (string, error), stateDir string, now time.Time, clock func() time.Time, stopped func() bool, item func()) ([]gocache.TrimReport, error) {
 	settings, err := config.CacheTrimSettings(filepath.Join(top, "metasystem.conf"))
 	if err != nil {
 		return nil, err
 	}
-	run := CacheTrimRun{Top: top, UserCacheDir: userCacheDir, StateDir: stateDir, Clock: clock, Stopped: stopped}
+	run := CacheTrimRun{Top: top, UserCacheDir: userCacheDir, StateDir: stateDir, Clock: clock, Stopped: stopped, Item: item}
 	return run.productionPass(settings)(ctx, nil, now, settings.Budget)
 }
 
@@ -59,6 +59,7 @@ type CacheTrimPass func(ctx context.Context, caches []string, now time.Time, bud
 // settings apply, the trimmer's seams (nil and "" are production), and the
 // clock the person's budget is read on.
 type CacheTrimRun struct {
+	Item         func()
 	Top          string
 	UserCacheDir func() (string, error)
 	StateDir     string
@@ -83,7 +84,7 @@ func (run CacheTrimRun) productionPass(settings config.CacheTrim) CacheTrimPass 
 			UserCacheDir: run.UserCacheDir, StateDir: stateDir,
 			EngineGoCapBytes: settings.EngineGoCapBytes, DelegateGoCapBytes: settings.DelegateGoCapBytes, StaticcheckCapBytes: settings.StaticcheckCapBytes,
 			Keep: settings.Keep, MinKeep: settings.MinKeep, Now: now, Clock: run.Clock, Deadline: now.Add(budget),
-			Stopped: run.Stopped, Only: caches,
+			Stopped: run.Stopped, Only: caches, Item: run.Item,
 		})
 	}
 }

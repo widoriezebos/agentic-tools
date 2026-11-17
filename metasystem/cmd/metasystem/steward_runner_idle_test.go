@@ -27,20 +27,14 @@ func TestStewardRunPublicVerbSleepsAndLogsATick(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
-	now, calls := start, 0
+	now := start
 	stop := func() {
 		if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward", "stop"), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	clock := &steward.HandoffClock{
-		Now: func() time.Time {
-			calls++
-			if calls > 100 {
-				stop()
-			}
-			return now
-		},
+		Now: func() time.Time { return now },
 		Sleep: func(d time.Duration) {
 			now = now.Add(d)
 			if !now.Before(start.Add(time.Second)) {

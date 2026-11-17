@@ -69,6 +69,7 @@ func receiveToInbox(ctx context.Context, c PollConfig, threads []MessageRef, end
 		}
 		if won {
 			result.Dispositions++
+			c.item()
 		}
 		if err := fail(c, "inbox-committed"); err != nil {
 			return err
@@ -720,6 +721,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 				}
 				if !chosen {
 					result.Dispositions++
+					c.item()
 					continue
 				}
 			}
@@ -732,6 +734,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 					return errors.Join(publicationErrors, err)
 				}
 				result.Dispositions++
+				c.item()
 				continue
 			}
 		} else {
@@ -759,6 +762,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 			continue
 		}
 		result.Dispositions++
+		c.item()
 	}
 	return publicationErrors
 }

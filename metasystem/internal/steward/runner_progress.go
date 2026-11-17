@@ -118,6 +118,29 @@ func (p *Progress) update(change func(time.Time)) {
 	p.warned = err != nil
 }
 
+// ProgressItems publishes completed work and waits within a runner operation.
+// Only the resident loop supplies a publisher.
+type ProgressItems interface {
+	Item()
+	Wait(reason string, within time.Duration)
+	Working()
+}
+
+// itemCounter counts the previous iteration before starting the next one.
+// Defer done when the loop can return before reaching its end.
+type itemCounter struct {
+	item    func()
+	pending bool
+}
+
+func (c *itemCounter) next() { c.done(); c.pending = true }
+func (c *itemCounter) done() {
+	if c.pending && c.item != nil {
+		c.item()
+	}
+	c.pending = false
+}
+
 // RunnerActivity describes only progress belonging to this live runner.
 func RunnerActivity(root string, runner RunnerRecord) (activity string, since time.Time, ok bool) {
 	var record RunnerProgress

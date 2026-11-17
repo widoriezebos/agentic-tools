@@ -88,9 +88,9 @@ func (b *decisionTickRepository) runnerTick() func(string, TickConfig, WorkerCen
 	}
 }
 
-func runnerPendingDelivery(expectedRoot, command string) func(string) (int, error) {
+func runnerPendingDelivery(expectedRoot, command string) func(string, *Progress) (int, error) {
 	expectedRoot = canonicalPath(expectedRoot)
-	return func(root string) (int, error) {
+	return func(root string, _ *Progress) (int, error) {
 		if root != expectedRoot {
 			return 0, fmt.Errorf("delivery root %q, want %q", root, expectedRoot)
 		}

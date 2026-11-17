@@ -104,8 +104,8 @@ func idleRunnerDependencies(now *time.Time) runnerLoopDependencies {
 	return runnerLoopDependencies{
 		Now: func() time.Time { return *now }, Sleep: func(d time.Duration) { *now = now.Add(d) },
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
-		DeliverPending: func(string) (int, error) { return 0, nil },
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 	}
 }
 

@@ -36,8 +36,8 @@ func TestFleetBoundaryRunnerOrdersConsumers(t *testing.T) {
 				return SeatRecord{}, nil
 			}
 			deps.Resumable = func(string) (string, bool, error) { return "prepared", true, nil }
-			deps.DeliverPending = func(string) (int, error) { calls = append(calls, "delivery"); return 0, nil }
-			deps.Channel = func(context.Context, string) (int, error) { return 0, nil }
+			deps.DeliverPending = func(string, *Progress) (int, error) { calls = append(calls, "delivery"); return 0, nil }
+			deps.Channel = func(context.Context, string, func()) (int, error) { return 0, nil }
 			cfg := TickConfig{Now: now,
 				CompletedBoundary: func(string, time.Time) error {
 					calls = append(calls, "boundary")

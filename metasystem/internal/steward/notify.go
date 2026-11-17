@@ -266,15 +266,12 @@ func appendFixtureNotification(repoRoot, message string) error {
 // DeliverPending retries the queue: each delivered message leaves it;
 // the first failure stops the pass (the channel is down — one named
 // failure beats a burst of them). Returns how many were delivered.
-func DeliverPending(repoRoot string) (int, error) {
-	return deliverPendingWith(repoRoot, deliver)
-}
-
-func deliverPendingWith(repoRoot string, deliver func(string, string) error) (int, error) {
-	return deliverPendingWithDependencies(repoRoot, pendingDeliveryDependencies{transport: deliver})
+func DeliverPending(repoRoot string, progress *Progress) (int, error) {
+	return deliverPendingWithDependencies(repoRoot, pendingDeliveryDependencies{transport: deliver, progress: progress})
 }
 
 type pendingDeliveryDependencies struct {
+	progress      *Progress
 	transport     func(string, string) error
 	afterSnapshot func()
 	funnel        noticeFunnel
@@ -285,8 +282,17 @@ func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDepende
 	if err != nil {
 		return 0, err
 	}
+	transport := func(root, message string) error {
+		deps.progress.Wait("external", notifyTimeout)
+		err := deps.transport(root, message)
+		deps.progress.Working()
+		return err
+	}
+	items := itemCounter{item: deps.progress.Item}
+	defer items.done()
 	delivered := 0
 	for _, n := range pending {
+		items.next()
 		if n.DeliveryOwner == legacyHealthDeliveryOwner {
 			continue
 		}
@@ -303,7 +309,7 @@ func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDepende
 			if deps.afterSnapshot != nil {
 				deps.afterSnapshot()
 			}
-			wasDelivered, err := deliverPendingHandoff(repoRoot, n, deps.transport, deps.funnel)
+			wasDelivered, err := deliverPendingHandoff(repoRoot, n, transport, deps.funnel)
 			if err != nil {
 				return delivered, err
 			}
@@ -312,7 +318,7 @@ func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDepende
 			}
 			continue
 		}
-		sent, err := deliverPendingNotification(repoRoot, n, deps.transport, deps.funnel)
+		sent, err := deliverPendingNotification(repoRoot, n, transport, deps.funnel)
 		if err != nil {
 			return delivered, err
 		}

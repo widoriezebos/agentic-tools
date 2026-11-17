@@ -79,7 +79,7 @@ type seatBed struct {
 	settings goal.GateSettings
 	// questions are the open channel questions the ladder reads.
 	questions []goal.OpenQuestion
-	situation func(string, time.Time) Situation
+	situation func(string, time.Time, ProgressItems) Situation
 	page      func(string, time.Time) (SituationRecord, error)
 	busy      bool
 	boardHome string
@@ -160,7 +160,7 @@ func (b *seatBed) seatDependencies() *seatDependencies {
 	}
 	if b.situation != nil {
 		d.Situation = func(root string, now time.Time) (SituationRecord, error) {
-			return SituationPage(root, func(at time.Time) Situation { return b.situation(root, at) }, now, SituationFresh)
+			return SituationPage(root, func(at time.Time) Situation { return b.situation(root, at, nil) }, now, SituationFresh)
 		}
 	}
 	if b.page != nil {
@@ -333,7 +333,7 @@ func stewardshipBed(t *testing.T, files ...*goal.GoalFile) (*seatBed, string) {
 		ClaimLaneState: func(string, string, string) (string, error) { return "", nil }})
 	src.Machine = func(string) (string, error) { return seatBedMachine, nil }
 	src.Project = func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return b.projection(b.now), nil }
-	b.situation = func(root string, _ time.Time) Situation {
+	b.situation = func(root string, _ time.Time, _ ProgressItems) Situation {
 		s := readSituation(t, root, src)
 		// The seat bed keeps its accepted ledger in memory, without Git.
 		s.Next, _ = goal.Next(b.projection(b.now), seatBedMachine)
@@ -1482,8 +1482,8 @@ func TestRunnerStartsTheSelectedSeatInsteadOfARevival(t *testing.T) {
 			return TickResult{Decision: Decision{VerdictIdleBacklogDead, ActRevive, "ready work has no seat"}, Seat: &SeatSelection{Goal: "alpha"}}, nil
 		},
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
-		DeliverPending: func(string) (int, error) { return 0, nil },
-		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		DeliverPending: func(string, *Progress) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
 		Now:            func() time.Time { return now },
 		Sleep: func(d time.Duration) {
 			now = now.Add(d)

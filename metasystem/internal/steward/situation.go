@@ -130,6 +130,7 @@ type SituationAsk struct {
 // SituationSources are the reads the situation makes outside the steward. A
 // nil LaneStatus, ClaimLaneState or Waiting leaves its part unavailable.
 type SituationSources struct {
+	Progress       ProgressItems
 	Now            func() time.Time
 	Machine        func(string) (string, error)
 	LaneHome       func() (string, error)
@@ -162,6 +163,12 @@ type SituationSources struct {
 	Critiques func(root string) (func(goalID, designPath string) []dispatch.DesignCritiqueChain, error)
 }
 
+func (src SituationSources) item() {
+	if src.Progress != nil {
+		src.Progress.Item()
+	}
+}
+
 // ReadSituation reads every part once, in a fixed order, at one clock.
 func ReadSituation(root string, src SituationSources) Situation {
 	if src.Machine == nil {
@@ -180,8 +187,10 @@ func ReadSituation(root string, src SituationSources) Situation {
 	now := src.Now()
 	s := Situation{At: now, Unavailable: map[string]string{}}
 	machine, machineErr := src.Machine(root)
+	src.item()
 	s.Machine = machine
 	s.readLane(src, now)
+	src.item()
 	ledger := newHealthLedger(root, now)
 	ledger.laneState = src.ClaimLaneState
 	if src.Project != nil {
@@ -189,13 +198,16 @@ func ReadSituation(root string, src SituationSources) Situation {
 	}
 	if machineErr == nil {
 		s.readLedger(root, machine, ledger, now)
+		src.item()
 	}
 	if len(s.Next.TrunkRedOwned) > 0 && src.RedLine != nil {
 		s.RedLine = src.RedLine(s.Next.TrunkRedOwned[0], now)
+		src.item()
 	}
 	err := errors.New("no reader")
 	if src.Waiting != nil {
 		s.Waiting, err = src.Waiting(root)
+		src.item()
 	}
 	if err != nil {
 		s.Unavailable["waiting"] = err.Error()
@@ -207,21 +219,30 @@ func ReadSituation(root string, src SituationSources) Situation {
 		}
 	} else {
 		s.readAsks(src, now)
+		src.item()
 		s.readQuota(root, ledger)
+		src.item()
 		s.readFacts(root, src, ledger, now)
+		src.item()
 	}
 	s.readHost(root, src, now)
+	src.item()
 	err = errors.New("no reader")
 	if src.Launches != nil {
 		s.Launches, err = src.Launches()
+		src.item()
 	}
 	if err != nil {
 		s.Unavailable["launches"] = err.Error()
 	}
 	s.readDesigns(root, src.Critiques)
+	src.item()
 	s.readQuestions(root)
+	src.item()
 	s.readAuthority(root, src, now)
+	src.item()
 	s.readAlerts(root)
+	src.item()
 	return s
 }
 
@@ -294,10 +315,13 @@ func (s *Situation) readHost(root string, src SituationSources, now time.Time) {
 		s.Unavailable["engine"] = "no reader"
 		return
 	}
+	holders := itemCounter{item: src.item}
+	defer holders.done()
 	for _, checkout := range checkouts {
 		if !checkout.Armed {
 			continue
 		}
+		holders.next()
 		holder, err := src.Holder(checkout.Path)
 		if holder.Checkout = checkout.Path; err != nil {
 			holder.Unavailable = err.Error()
@@ -314,7 +338,10 @@ func (s *Situation) readProcesses(src SituationSources, checkouts []registry.Hos
 	if err != nil {
 		s.Unavailable["host"] = "the process table: " + err.Error()
 	}
+	items := itemCounter{item: src.item}
+	defer items.done()
 	for _, pid := range pids {
+		items.next()
 		argv, ok := src.Argv(pid)
 		process := HostProcess{Pid: pid, Kind: testProcessKind(argv, ok), Checkout: "elsewhere"}
 		if process.Kind == "" {
@@ -638,7 +665,10 @@ func (s *Situation) readFacts(root string, src SituationSources, ledger *healthL
 		s.Unavailable["facts"] = "goal tips: " + err.Error()
 	}
 	s.GoalFacts = map[string]string{}
+	items := itemCounter{item: src.item}
+	defer items.done()
 	for _, id := range ids {
+		items.next()
 		s.GoalFacts[id] = seatFacts(root, SeatSelection{Goal: id}, s.Machine, tips, d)
 	}
 }
