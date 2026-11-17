@@ -328,3 +328,51 @@ func TestProofStopExcludesOtherGateTreesAndOpenTrunkChecks(t *testing.T) {
 		})
 	}
 }
+
+func TestTrunkStartReadsLongRecordsBeforeLaunching(t *testing.T) {
+	t.Parallel()
+	b := newScopeBed(t)
+	long := strings.Repeat("x", 6<<20)
+	result := b.base
+	result.Reason = long
+	b.save(t, result)
+	if err := appendRawLine(gatesPath(b.install), result); err != nil {
+		t.Fatal(err)
+	}
+	// A dead attempt already has a result; startup must read the records,
+	// retire that running record, and admit the new trunk subject.
+	previous := Running{Attempt: result.Attempt, Commit: result.Commit, Tree: result.Tree,
+		Executions: []ExecutionAdmission{{Reason: long}}}
+	data, err := json.Marshal(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runningPath(b.install), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	original := b.seams.Git
+	b.seams.Git = func(dir string, args ...string) (string, error) {
+		switch strings.Join(args, " ") {
+		case "rev-parse --verify origin/main^{commit}":
+			return "new-main", nil
+		case "rev-parse --verify new-main^{tree}":
+			return "new-tree", nil
+		}
+		return original(dir, args...)
+	}
+	b.seams.Trunk = true
+	b.seams.Alive = func(Running) bool { return false }
+	b.seams.Executable = func() (string, error) { return "engine", nil }
+	launches := 0
+	b.seams.Launch = func(args []string, _, _ string) (int64, error) {
+		if !strings.Contains(strings.Join(args, " "), "--trunk") {
+			t.Fatal("launch lost trunk subject")
+		}
+		launches++
+		return int64(os.Getpid()), nil
+	}
+	running, already, err := Start(b.install, b.checkout, b.seams)
+	if err != nil || already || launches != 1 || running.Commit != "new-main" || running.Tree != "new-tree" || running.Admission == nil || running.Admission.State != "launched" {
+		t.Fatalf("trunk start: commit=%s tree=%s already=%v launches=%d err=%v", running.Commit, running.Tree, already, launches, err)
+	}
+}

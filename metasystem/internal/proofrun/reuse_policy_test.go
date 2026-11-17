@@ -422,3 +422,28 @@ func TestGoShardCeilingIsRunInvariantForCacheEligibleLaunches(t *testing.T) {
 		t.Fatalf("an executing launch with more declared shards than workers splits by %d, want 5", got)
 	}
 }
+
+func TestGoProofReadersKeepTerminalsAfterLongOutput(t *testing.T) {
+	for _, size := range []int{6 << 20, 17 << 20} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			// A terminal after output must remain visible, including at EOF.
+			stream := []byte("\n{broken}\r\n" +
+				`{"Action":"run","Package":"m/a","Test":"TestA"}` + "\r\n" +
+				`{"Action":"output","Package":"m/a","Output":"` + strings.Repeat("x", size) + `"}` + "\r\n" +
+				`{"Action":"pass","Package":"m/a","Test":"TestA"}` + "\r\n" +
+				`{"Action":"pass","Package":"m/a","Elapsed":1.25}`)
+			observed, missing, unexpected, complete := parseGoJSON(stream, []NativeTestIdentity{{Classname: "m/a", Name: "TestA"}})
+			if !complete || len(observed) != 1 || observed[0].Status != "passed" || len(missing) != 0 || len(unexpected) != 0 {
+				t.Errorf("native terminals after long output: complete=%v observed=%v missing=%v unexpected=%v", complete, observed, missing, unexpected)
+			}
+			executions := goPackageExecutions(2, GoTestCacheAllowed, stream)
+			if len(executions) != 1 {
+				t.Fatalf("package terminal after long output: %v", executions)
+			}
+			got := executions[0]
+			if got.Package != "m/a" || got.Status != "ok" || got.Mode != PackageExecuted || got.ElapsedMS == nil || *got.ElapsedMS != 1250 || got.Shard != 2 || got.Reason != GoTestCacheAllowed {
+				t.Fatalf("package terminal changed: %+v", got)
+			}
+		})
+	}
+}

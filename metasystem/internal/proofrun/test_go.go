@@ -373,14 +373,12 @@ func goPackageExecutions(shard int, reason string, output []byte) []PackageExecu
 	elapsed := map[string]*int64{}
 	statuses := map[string]string{}
 	var order []string
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
+	for line := range bytes.Lines(output) {
 		var event struct {
 			goEvent
 			Elapsed *float64 `json:"Elapsed"`
 		}
-		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Test != "" || event.Package == "" {
+		if json.Unmarshal(line, &event) != nil || event.Test != "" || event.Package == "" {
 			continue
 		}
 		switch event.Action {
@@ -988,10 +986,9 @@ func parseGoJSON(output []byte, expected []NativeTestIdentity) (observed, missin
 		}
 		expectedNames[item.Classname][item.Name] = true
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
+	for line := range bytes.Lines(output) {
 		var event goEvent
-		if json.Unmarshal(scanner.Bytes(), &event) != nil {
+		if json.Unmarshal(line, &event) != nil {
 			continue
 		}
 		if event.Test == "" {
