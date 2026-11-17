@@ -283,19 +283,12 @@ func acceptedTipWithRun(root string, run func(...string) (string, error)) (strin
 // that cannot answer must never read as "pre-migration, skip
 // validation".
 func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
-	if e.Repository != nil {
-		files, err := readCommitFiles(e, tip, goalsPrefix+"backlog.md")
-		if err != nil {
-			return false, fmt.Errorf("the tip's ledger presence cannot be proven: %w", err)
-		}
-		_, present := files[goalsPrefix+"backlog.md"]
-		return present, nil
-	}
-	out, err := gitIn(e.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix+"backlog.md")
+	files, err := readCommitFiles(e, tip, goalsPrefix+"backlog.md")
 	if err != nil {
 		return false, fmt.Errorf("the tip's ledger presence cannot be proven: %w", err)
 	}
-	return strings.TrimSpace(out) != "", nil
+	_, present := files[goalsPrefix+"backlog.md"]
+	return present, nil
 }
 
 // SyncModeGate refuses the durable/declared mode mismatch at EVERY

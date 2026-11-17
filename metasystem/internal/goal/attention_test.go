@@ -163,7 +163,7 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 				transcript.capture(advanced.Tip)
 				switch stage {
 				case "acceptance gates":
-					transcript.cancel("cat-file", "-p", cursor+":./"+goalsPrefix+"backlog.md")
+					transcript.cancel("ls-tree", "-r", "--name-only", cursor, "--", goalsPrefix+"backlog.md")
 				case "commit validation":
 					transcript.acceptance(cursor, advanced.Tip)
 					transcript.cancel("ls-tree", "-r", "--name-only", advanced.Tip, "--", goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
@@ -372,9 +372,9 @@ func TestWaitGoalObservationUsesBoundedBatchReads(t *testing.T) {
 				t.Fatalf("%s observation used one process per file: %v", name, calls)
 			}
 		}
-		wantMaximum := 1
+		wantMaximum := 3 // Two root identity reads and the combined ledger read.
 		if name == "incremental" {
-			wantMaximum = newChanges + 1
+			wantMaximum = newChanges + 3
 		}
 		if batch < 1 || batch > wantMaximum {
 			t.Fatalf("%s observation batch calls=%d, maximum=%d, all calls=%v", name, batch, wantMaximum, calls)
@@ -589,8 +589,8 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			dependencies := tr.dependencies()
 			runner := dependencies.run
 			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-				if len(args) >= 4 && args[0] == "ls-tree" {
-					projectedTips = append(projectedTips, args[3])
+				if waitLedgerListing(args) {
+					projectedTips = append(projectedTips, waitContentArgs(args)[3])
 				}
 				return runner(gitCtx, root, stdin, args...)
 			}
@@ -623,7 +623,7 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			contextReads := 0
 			dependencies := tr.dependencies()
 			dependencies.withTimeout = func(parent context.Context, budget time.Duration, args []string) (context.Context, context.CancelFunc) {
-				if len(args) > 0 && args[0] == "ls-tree" {
+				if waitLedgerListing(args) {
 					contextReads++
 					if contextReads == 3 {
 						return newSpentDeadlineContext(parent), func() {}
@@ -635,7 +635,7 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			runnerReads := 0
 			runner := dependencies.run
 			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-				if len(args) > 0 && args[0] == "ls-tree" {
+				if waitLedgerListing(args) {
 					runnerReads++
 				}
 				return runner(gitCtx, root, stdin, args...)
@@ -658,7 +658,7 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			dependencies.withFetchTimeout = withoutGitOperationDeadline
 			runner := dependencies.run
 			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-				if len(args) > 0 && args[0] == "ls-tree" {
+				if waitLedgerListing(args) {
 					runnerReads++
 					if runnerReads == 3 {
 						close(reached)
@@ -715,7 +715,7 @@ func TestWaitGoalCancellationCleansPrivateFetchRef(t *testing.T) {
 	realRunner := attentionGitRun(runAttentionGit)
 	cancelled := false
 	dependencies := waitGitDependencies{run: func(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
-		if !cancelled && len(args) >= 2 && args[0] == "cat-file" && args[1] == "-p" {
+		if !cancelled && len(args) >= 2 && args[0] == "merge-base" && args[1] == "--is-ancestor" {
 			cancelled = true
 			return "", context.Canceled
 		}

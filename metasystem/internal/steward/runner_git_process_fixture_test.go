@@ -134,7 +134,7 @@ func newProcessGitFixtureEnvironment(t *testing.T) (string, []string) {
 	// resolves the installation of the pinned engine under the runner's
 	// folder.
 	config.Replies = append(config.Replies, engineInstallationReads(runnerDir(root), root)...)
-	add(root, []string{"ls-tree", "-r", "--name-only", "HEAD", "--", "plans/goals/", "records/goals/"}, "", 0)
+	add(root, []string{"--no-replace-objects", "ls-tree", "-r", "--name-only", "HEAD", "--", "plans/goals/", "records/goals/"}, "", 0)
 	pins := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 	for _, reply := range []struct {
 		args   []string

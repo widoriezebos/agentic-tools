@@ -131,40 +131,14 @@ func ValidateChannelTree(root, commit string) []Problem {
 }
 
 func validateChannelTreeFor(e Endpoint, commit string) []Problem {
-	if e.Repository != nil {
-		files, err := readCommitFiles(e, commit, ChannelPrefix)
-		if err != nil {
-			return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed channel tree: %v", err))}
-		}
-		if len(files) == 0 {
-			return nil
-		}
-		goalFiles, err := readCommitGoals(e, commit)
-		if err != nil {
-			return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed goal tree: %v", err))}
-		}
-		return validateChannelFiles(files, goalFiles)
-	}
-	root := e.Root
-	out, err := gitIn(root, "ls-tree", "-r", "--name-only", commit, "--", ChannelPrefix)
-	if err != nil {
-		return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot list the committed channel tree: %v", err))}
-	}
-	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if p := strings.TrimSpace(line); p != "" {
-			paths = append(paths, p)
-		}
-	}
-	if len(paths) == 0 {
-		return nil
-	}
-
-	files, err := readCommitGoalBlobs(root, commit, paths, nil)
+	files, err := readCommitFiles(e, commit, ChannelPrefix)
 	if err != nil {
 		return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed channel tree: %v", err))}
 	}
-	goalFiles, err := ReadCommitGoals(root, commit)
+	if len(files) == 0 {
+		return nil
+	}
+	goalFiles, err := readCommitGoals(e, commit)
 	if err != nil {
 		return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed goal tree: %v", err))}
 	}
