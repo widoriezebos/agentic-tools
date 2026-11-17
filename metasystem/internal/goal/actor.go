@@ -67,11 +67,11 @@ func ExistingLedgerIdentity(root string) string {
 	if err != nil {
 		return ""
 	}
-	files, err := readCommitFiles(Endpoint{Root: root}, strings.TrimSpace(out), goalsPrefix+"backlog.md")
+	content, err := gitIn(root, "cat-file", "-p", strings.TrimSpace(out)+":./"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return ""
 	}
-	record, _ := ParseRoot(files[goalsPrefix+"backlog.md"])
+	record, _ := ParseRoot([]byte(content))
 	if record == nil {
 		return ""
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -444,18 +443,6 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 // publishing a goal history line moves remote main independently of the branch.
 func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	t.Parallel()
-	const marker = "METASYSTEM_REBASE_LEDGER_TRACE_TEST"
-	if os.Getenv(marker) != "1" {
-		trace := filepath.Join(t.TempDir(), "rebase.trace.jsonl")
-		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestWorkRebaseGitAdapterHoldsAfterHistory$", "-test.count=1", "-test.timeout=10m")
-		cmd.Env = append(os.Environ(), marker+"=1", "GIT_TRACE2_EVENT="+trace)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("isolated rebase witness: %v\n%s", err, out)
-		}
-		return
-	}
-	// The child owns its trace environment and process cache.
-
 	f := newWholeOwnerLanding(t, true)
 	goalSyncMutationGit(t, f.mainRoot, "switch", "--detach", f.base)
 	writeTestingFixtureFile(t, filepath.Join(f.mainRoot, "main-extra.md"), []byte("main advanced\n"), 0o644)
@@ -546,13 +533,7 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 
 		return result
 	}
-	trace := os.Getenv("GIT_TRACE2_EVENT")
-	beforeTrace, err := os.ReadFile(trace)
-	if err != nil {
-		t.Fatal(err)
-	}
 	first := run("rebase")
-	assertRebaseLedgerTreesReadOnce(t, trace, len(beforeTrace))
 	if data := first.Data.(map[string]any); first.Outcome != intentConfirmed || data["state"] != "rebased" || data["mainTip"] != mainTip {
 		t.Fatalf("first rebase: %+v", first)
 	}
@@ -600,56 +581,5 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	entries, err := plain.Entries(filepath.Join(laneRoot, "metasystem"))
 	if lines != 1 || err != nil || len(entries) != 1 || entries[0].SHA != branchTip {
 		t.Fatalf("history lines=%d, queue=%+v %v", lines, entries, err)
-	}
-}
-
-// The real command reaches projection, fresh claim checks, validation and the
-// linked goal worktree. Each immutable ledger prefix set gets one listing.
-func assertRebaseLedgerTreesReadOnce(t *testing.T, trace string, offset int) {
-	t.Helper()
-	data, err := os.ReadFile(trace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := make(map[string]int)
-	for _, line := range strings.Split(strings.TrimSpace(string(data[offset:])), "\n") {
-		var event struct {
-			Event string   `json:"event"`
-			Argv  []string `json:"argv"`
-		}
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			t.Fatal(err)
-		}
-		if event.Event != "start" {
-			continue
-		}
-		for i, arg := range event.Argv {
-			if arg != "ls-tree" || i+5 >= len(event.Argv) || event.Argv[i+1] != "-r" || event.Argv[i+2] != "--name-only" {
-				continue
-			}
-			commit := event.Argv[i+3]
-			if len(commit) != 40 && len(commit) != 64 {
-				continue
-			}
-			prefixes := slices.Clone(event.Argv[i+5:])
-			ledger := false
-			for _, prefix := range prefixes {
-				if strings.HasPrefix(prefix, "plans/goals/") || prefix == "records/goals/" || prefix == goal.ChannelPrefix {
-					ledger = true
-				}
-			}
-			if !ledger {
-				continue
-			}
-			slices.Sort(prefixes)
-			key := commit + " " + strings.Join(prefixes, " ")
-			seen[key]++
-			if seen[key] > 1 {
-				t.Errorf("work rebase read committed ledger tree twice: %s", key)
-			}
-		}
-	}
-	if len(seen) == 0 {
-		t.Fatal("work rebase trace contained no committed ledger listing")
 	}
 }

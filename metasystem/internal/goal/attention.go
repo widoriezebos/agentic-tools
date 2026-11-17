@@ -1,13 +1,16 @@
 package goal
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -293,11 +296,11 @@ func cleanupWaitTip(parent context.Context, e Endpoint, opid string) {
 }
 
 func waitTreeIdentity(ctx context.Context, root, commit string) (string, error) {
-	files, err := readWaitFiles(ctx, root, commit, goalsPrefix+"backlog.md")
+	out, err := waitGit(ctx, root, nil, "cat-file", "-p", commit+":./"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return "", fmt.Errorf("no root record at %s: %w", short(commit), err)
 	}
-	record, problems := ParseRoot(files[goalsPrefix+"backlog.md"])
+	record, problems := ParseRoot([]byte(out))
 	if len(problems) > 0 || record.Identity == "" {
 		return "", fmt.Errorf("the root record at %s does not parse to an identity", short(commit))
 	}
@@ -346,9 +349,56 @@ func waitAcceptanceGates(ctx context.Context, root, accepted, fetched string) er
 }
 
 func readWaitFiles(ctx context.Context, root, commit string, prefixes ...string) (map[string][]byte, error) {
-	return readCommittedFiles(ctx, root, commit, prefixes, func(input []byte, args ...string) (string, error) {
-		return waitGit(ctx, root, input, args...)
-	})
+	args := []string{"ls-tree", "-r", "--name-only", commit, "--"}
+	args = append(args, prefixes...)
+	out, err := waitGit(ctx, root, nil, args...)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		path := strings.TrimSpace(line)
+		if path == "" {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	files := make(map[string][]byte, len(paths))
+	if len(paths) == 0 {
+		return files, nil
+	}
+	var input strings.Builder
+	for _, path := range paths {
+		input.WriteString(commit + ":./" + path + "\n")
+	}
+	out, err = waitGit(ctx, root, []byte(input.String()), "cat-file", "--batch")
+	if err != nil {
+		return nil, fmt.Errorf("read ledger blobs at %s: %w", commit, err)
+	}
+	reader := bufio.NewReader(strings.NewReader(out))
+	for _, path := range paths {
+		header, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			return nil, fmt.Errorf("cannot read %s at %s: malformed git cat-file header: %w", path, commit, readErr)
+		}
+		fields := strings.Fields(header)
+		if len(fields) != 3 || fields[1] != "blob" {
+			return nil, fmt.Errorf("cannot read %s at %s: unexpected git cat-file header %q", path, commit, strings.TrimSpace(header))
+		}
+		size, parseErr := strconv.ParseInt(fields[2], 10, 64)
+		if parseErr != nil || size < 0 {
+			return nil, fmt.Errorf("cannot read %s at %s: invalid git cat-file size %q", path, commit, fields[2])
+		}
+		content := make([]byte, size)
+		if _, readErr := io.ReadFull(reader, content); readErr != nil {
+			return nil, fmt.Errorf("cannot read %s at %s: truncated git cat-file content: %w", path, commit, readErr)
+		}
+		if separator, readErr := reader.ReadByte(); readErr != nil || separator != '\n' {
+			return nil, fmt.Errorf("cannot read %s at %s: malformed git cat-file separator", path, commit)
+		}
+		files[path] = content
+	}
+	return files, nil
 }
 
 func validateWaitChannelFiles(files, goalFiles map[string][]byte) []Problem {

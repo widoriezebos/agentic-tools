@@ -1,11 +1,8 @@
 package goal
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -53,23 +50,22 @@ func (g gitRepository) Accepted() (string, bool, error) {
 	return acceptedTipForGates(g.endpoint.Root)
 }
 func (g gitRepository) Files(commit string, prefixes ...string) (map[string][]byte, error) {
-	return readCommittedFiles(g.ctx, g.endpoint.Root, commit, prefixes, func(input []byte, args ...string) (string, error) {
-		cmd := commandWithEnvironment(g.endpoint.commandEnv, "git", args...)
-		cmd.Dir = g.endpoint.Root
-		cmd.Stdin = bytes.NewReader(input)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		if err := g.run(cmd); err != nil {
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				return "", &gitError{ExitError: exit, stderr: strings.TrimSpace(stderr.String()), args: args}
-			}
-			return "", fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	args := append([]string{"ls-tree", "-r", "--name-only", commit, "--"}, prefixes...)
+	out, err := g.git(args...)
+	if err != nil {
+		return nil, fmt.Errorf("cannot list committed files at %s: %w", commit, err)
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if path := strings.TrimSpace(line); path != "" {
+			paths = append(paths, path)
 		}
-		return stdout.String(), nil
-	})
+	}
+	if g.ctx != nil {
+		return readCommitGoalBlobsWithRun(g.endpoint.Root, commit, paths, g.endpoint.commandEnv, g.run)
+	}
+	return readCommitGoalBlobs(g.endpoint.Root, commit, paths, nil)
 }
-
 func (g gitRepository) Build(opid, parent string, changes []Change, message string) (string, error) {
 	return BuildCommit(g.endpoint, opid, parent, changes, message)
 }
