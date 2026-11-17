@@ -253,6 +253,7 @@ func (r appRun) resolveCommitFor(ref string) (string, string, error) {
 
 // gitIn runs one git command in a directory and returns its combined output.
 func gitIn(dir string, args ...string) (string, error) {
+	args = gittree.ParallelCheckoutArgs(args)
 	command := exec.Command("git", args...)
 	command.Dir = dir
 	out, err := command.CombinedOutput()

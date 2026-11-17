@@ -202,3 +202,22 @@ func mergeDriverGit(t *testing.T, repo string, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+func TestGoalBranchMaterializationSetsCheckoutWorkers(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{{"worktree", "add", "--detach", "scratch", "HEAD"}, {"-c", "core.hooksPath=none", "worktree", "add", "scratch"}, {"read-tree", "-m", "-u", "before", "after"}} {
+		command, err := branchGitCommand("repo", args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, arg := range command {
+			if strings.HasPrefix(arg, "checkout.workers=") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("checkout has no worker setting: %q", command)
+		}
+	}
+}

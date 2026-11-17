@@ -22,6 +22,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
@@ -167,6 +170,7 @@ var anchorPins = []string{"-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", 
 // streams, runs it with boundedexec.Run, and maps errors into its own
 // package's errors.
 func PinnedGit(repo string, extraEnv []string, args ...string) (*exec.Cmd, boundedexec.Bound) {
+	args = ParallelCheckoutArgs(args)
 	full := append(append([]string{"-C", repo}, anchorPins...), args...)
 	cmd := exec.Command("git", full...)
 	cmd.Env = ScrubbedEnviron(extraEnv...)
@@ -239,7 +243,7 @@ func (w Workspace) rawRequest(dir string, env []string, stdin []byte, operation 
 		}
 		inherit = w.Materialize.InheritFiles
 	}
-	full = append(full, args...)
+	full = append(full, ParallelCheckoutArgs(args)...)
 	return RawRequest{
 		Args: full, Dir: dir, Env: ScrubbedEnviron(env...), Stdin: stdin,
 		Timeout:   boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local),
@@ -934,4 +938,21 @@ func (w Workspace) DropAnchors(mission string) error {
 		}
 	}
 	return nil
+}
+
+// ParallelCheckoutArgs makes materialization use the host's cores, bounded
+// to eight concurrent writers so simultaneous checkouts do not swamp the disk.
+// The setting is command-local and does not change repository configuration.
+func ParallelCheckoutArgs(args []string) []string {
+	command := args
+	for len(command) >= 2 && (command[0] == "-c" || command[0] == "-C") {
+		command = command[2:]
+	}
+	if len(command) < 2 {
+		return args
+	}
+	if command[0] == "worktree" && command[1] == "add" || command[0] == "read-tree" && slices.Contains(command[1:], "-u") {
+		return append([]string{"-c", "checkout.workers=" + strconv.Itoa(min(8, max(1, runtime.NumCPU())))}, args...)
+	}
+	return args
 }

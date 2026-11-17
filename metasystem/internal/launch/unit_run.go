@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
@@ -188,6 +189,7 @@ type GitRunner interface {
 type OSGitRunner struct{}
 
 func (OSGitRunner) Run(directory string, environment []string, args ...string) ([]byte, error) {
+	args = gittree.ParallelCheckoutArgs(args)
 	command := exec.Command("git", args...)
 	command.Dir, command.Env = directory, childEnvironment(os.Environ(), environment)
 	var stdout, stderr bytes.Buffer

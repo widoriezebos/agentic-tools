@@ -1202,6 +1202,7 @@ func Short(id string) string {
 
 // Git runs git in dir and returns its trimmed output.
 func Git(dir string, args ...string) (string, error) {
+	args = gittree.ParallelCheckoutArgs(args)
 	if len(args) > 0 && args[0] == "fetch" {
 		return boundedFetch(dir, 60*time.Second, nil, nil, args...)
 	}

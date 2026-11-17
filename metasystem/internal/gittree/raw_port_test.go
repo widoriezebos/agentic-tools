@@ -278,6 +278,10 @@ func TestDetachedWorkspaceRetainsRawSource(t *testing.T) {
 		{dir: repo, args: []string{"rev-parse", "--git-common-dir"}, operation: "git rev-parse --git-common-dir", result: RawResult{Stdout: []byte(common + "\n")}},
 		{dir: repo, check: func(r RawRequest) {
 			args := r.Args[2+len(configPins):]
+			if len(args) < 2 || !reflect.DeepEqual(args[:2], ParallelCheckoutArgs([]string{"worktree", "add"})[:2]) {
+				t.Fatalf("checkout workers missing: %q", args)
+			}
+			args = args[2:]
 			if len(args) != 5 || args[0] != "worktree" || args[1] != "add" || args[2] != "--detach" || args[4] != "HEAD" {
 				t.Fatalf("worktree add argv = %q", args)
 			}
@@ -286,7 +290,7 @@ func TestDetachedWorkspaceRetainsRawSource(t *testing.T) {
 				t.Fatalf("worktree add operation = %q", r.Operation)
 			}
 		}},
-		{args: []string{"read-tree", "--reset", "-u", tree}, operation: "git read-tree --reset -u " + tree, check: checkDetached},
+		{args: ParallelCheckoutArgs([]string{"read-tree", "--reset", "-u", tree}), operation: "git read-tree --reset -u " + tree, check: checkDetached},
 		{args: []string{"rev-parse", "--verify", "HEAD^{commit}"}, operation: "git rev-parse --verify HEAD^{commit}", check: checkDetached, result: RawResult{Stdout: []byte(base + "\n")}},
 		{args: []string{"-c", "user.name=MetaSystem", "-c", "user.email=metasystem@invalid", "commit-tree", tree, "-p", base, "-m", "temporary candidate snapshot"}, operation: "git -c user.name=MetaSystem -c user.email=metasystem@invalid commit-tree " + tree + " -p " + base + " -m temporary candidate snapshot", check: checkDetached, result: RawResult{Stdout: []byte(commit + "\n")}},
 		{args: []string{"update-ref", "--no-deref", "HEAD", commit, base}, operation: "git update-ref --no-deref HEAD " + commit + " " + base, check: checkDetached},

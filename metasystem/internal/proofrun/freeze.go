@@ -309,6 +309,7 @@ func runFreezeGit(directory, configurationPath string, args ...string) (string, 
 }
 
 func runFreezeGitRaw(directory, configurationPath string, args ...string) ([]byte, error) {
+	args = gittree.ParallelCheckoutArgs(args)
 	command := exec.Command("git", append([]string{"-C", directory, "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)...)
 	command.Env = gittree.ScrubbedEnviron()
 	var stdout, stderr bytes.Buffer

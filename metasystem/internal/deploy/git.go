@@ -55,6 +55,7 @@ func CheckoutGit(root string) Git {
 }
 
 func git(root string, args ...string) (string, error) {
+	args = gittree.ParallelCheckoutArgs(args)
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
 	command.Env = gittree.ScrubbedEnviron()
 	var stdout, stderr bytes.Buffer

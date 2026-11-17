@@ -257,7 +257,7 @@ func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.J
 		return landpath.Judge{}, nil, err
 	}
 	worktree := filepath.Join(scratch, "base")
-	add := exec.Command("git", "-C", toplevel, "worktree", "add", "--detach", worktree, "HEAD")
+	add := exec.Command("git", gittree.ParallelCheckoutArgs([]string{"-C", toplevel, "worktree", "add", "--detach", worktree, "HEAD"})...)
 	add.Stdout, add.Stderr = stderr, stderr
 	if err := add.Run(); err != nil {
 		cleanup()

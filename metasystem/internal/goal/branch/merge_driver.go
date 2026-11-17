@@ -1,6 +1,7 @@
 package branch
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"os"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
@@ -15,5 +16,5 @@ func branchGitCommand(repo string, args ...string) ([]string, error) {
 	}
 	full := []string{"-C", repo}
 	full = append(full, driver...)
-	return append(full, args...), nil
+	return append(full, gittree.ParallelCheckoutArgs(args)...), nil
 }
