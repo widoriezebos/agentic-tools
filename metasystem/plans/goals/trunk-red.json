@@ -23019,7 +23019,15 @@
       },
       "holds": [],
       "opened": "2026-11-16T20:49:22Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-17T12:41:54Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "PH44HK2KA7DQ6D330Z9RRP02A6-m1e-b31c18eb",
+        "by": "Wido",
+        "why": "Not a flake: no space left on device on the tests memory volume (16 Nov); bounded on main by 6126c668d1. Goal abandoned 17 Nov; evidence panes/flakefix-20261117/table.md."
+      },
       "class": "flake"
     },
     {
