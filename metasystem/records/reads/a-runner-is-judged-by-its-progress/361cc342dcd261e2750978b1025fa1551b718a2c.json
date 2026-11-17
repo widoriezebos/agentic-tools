@@ -1,0 +1,160 @@
+{
+  "canonicalRead": {
+    "engine": "a91fdfe47994670a7581b61402e3290861b51824",
+    "findings": [
+      {
+        "change": "Optional, when it hurts: a testrun test that runs RearmStewardAtBoundary, or stewardRearmDependencies built by it, with a recording admission callback and a stubbed host-resource admission, and checks that the callback reports [true, false] before the build.",
+        "claim": "No test covers the production link that carries the re-arm admission callback into the rebuild (internal/testrun/steward_rearm.go:54). If that line were deleted, the rebuild would get no callback, the runner would publish nothing between admission and build, and every test would stay green. This is the boundary the round-3 Astra fold added.",
+        "class": "weakened-test",
+        "evidence": "TestRearmAdmissionStartsANewQuietPeriodBeforeBuild (cmd/metasystem/steward_injected_test.go) injects RearmBoundary and calls admission itself, so testrun.RearmStewardAtBoundary never runs. TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody (internal/testrun/rearm_test.go) calls landedRearmRebuild directly. A search finds only one test caller of RearmStewardAtBoundary (steward_rearm_test.go:64), and it passes nil admission on a non-source checkout. The brief's Tb-rearm allows injecting both admission and build, so this does not break the brief. The code is correct as written, so nothing defective ships, and the U1 publications decide nothing until U3 and U4. Not material under R-124.",
+        "id": "code-critic-c565bd3e6a955380808271de:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/testrun/steward_rearm.go"
+      },
+      {
+        "change": "None required. If wanted, keep the activity in its own Activity field and add it to the line only in the Status report, rather than in Item.StatusLine.",
+        "claim": "The steward runner's StatusLine now carries its activity. The generic stop-failure lines in internal/stoptransition/transition.go (:478, :509, :533) build 'NOT STOPPED ' + item.StatusLine, so a failed stop of the runner would print the operation text too, for example 'steward-runner pid P started S, doing tick (working, 0 done): running: \u003cerror\u003e'.",
+        "class": "other",
+        "evidence": "families.go:701-706 puts ', doing ACTIVITY' into StatusLine. transition.go:478 concatenates item.StatusLine. The steward family's own Stop (families.go:709-737) builds its outcome line without the activity, so this shows up only on the generic error path. It is cosmetic and changes no decision, and the brief scopes the change to the status line.",
+        "id": "code-critic-c565bd3e6a955380808271de:2",
+        "material": false,
+        "relation": "R-124-m1u",
+        "severity": "low",
+        "where": "metasystem/internal/stoptransition/families.go"
+      }
+    ],
+    "id": "code-critic-c565bd3e6a955380808271de",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-c565bd3e6a955380808271de/rounds/1/return.md",
+    "subject": {
+      "commit": "361cc342dcd261e2750978b1025fa1551b718a2c",
+      "diffDigest": "6cd3bb04d277b15b23037f20448e8b8536a18c046cdd17d4875508e4e6f66c31",
+      "kind": "commit",
+      "parent": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "tree": "8299439283f3b45914c283b1090cd305a5c996b1"
+    }
+  },
+  "readDigest": "6aa366d45a4c15a89274ca26571fd0a0302437fdc609d546810186cd805b9806",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U1b",
+  "subject": {
+    "commit": "361cc342dcd261e2750978b1025fa1551b718a2c",
+    "parent": "37d87e67181787d6e3c29b0beb368284a7284908",
+    "tree": "8299439283f3b45914c283b1090cd305a5c996b1",
+    "patchDigest": "6cd3bb04d277b15b23037f20448e8b8536a18c046cdd17d4875508e4e6f66c31",
+    "unitDigest": "2dd7e169456e47b6195e053740e0b300db794a5f382e89d0ac42ae8c4bcb460f"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c565bd3e6a955380808271de",
+    "round": 1,
+    "closureSha256": "94676be9af01123bb61dd6a20d9fcdeb790f2809926dabf8f9a3365654661ddb"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "8299439283f3b45914c283b1090cd305a5c996b1",
+    "runId": "goal-read-gate-20261117t131236z-55923b6e00f10ecd"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/fleet_boundary_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/fleet_revival_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_helm_release_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/provider_recovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/seat_engine_follow_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_injected_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_probe_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_retire_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/deployed_engine_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/fleet_boundary_runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/health_alert_clear_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/ledgerattention_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/person_claims_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/rearm_checkout_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_helm_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_progress_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_replies_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/steward/seat_ladder_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/stoptransition/transition_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/testrun/rearm_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    },
+    {
+      "path": "metasystem/internal/testrun/steward_rearm_test.go",
+      "readerWord": "reviewed by critic root code-critic-c565bd3e6a955380808271de"
+    }
+  ],
+  "sha256": "0a43f38a830d23839b9c11745fa60fea7c98d7f66facc3e6a734f28a66c5ada6"
+}
