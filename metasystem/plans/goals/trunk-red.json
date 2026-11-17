@@ -7430,7 +7430,15 @@
       },
       "holds": [],
       "opened": "2026-10-28T23:47:09Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-17T12:35:02Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "ES5J3VFACXQ3PX4F1J5YMASS8K-m1e-b31c18eb",
+        "by": "Wido",
+        "why": "Not a flake any more: October timeouts fixed by a3118b1819, the 4 s ledger sightings by 31be05a1e, the 16 Nov kill was disk floor mode, removed by ceaa5f899f. Goal abandoned 17 Nov; evidence panes/flakefix-20261117/table.md."
+      },
       "class": "flake"
     },
     {
