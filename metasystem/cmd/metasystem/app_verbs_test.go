@@ -664,7 +664,7 @@ func TestAppStartPreflightsDeclaredTools(t *testing.T) {
 		!strings.HasPrefix(record.Tools[0].Version, "git version") {
 		t.Fatalf("the record carries the executable found and its version line: %+v", record.Tools)
 	}
-	if _, status := bed.run("app", "status"); !appSays(status, "tool", "git: "+record.Tools[0].Executable+" (git version") {
+	if _, status := bed.run("app", "status"); !strings.Contains(flatPage(status), flatPage("tool git: "+record.Tools[0].Executable+" (git version")) {
 		t.Fatalf("status says which tool the run was started with:\n%s", status)
 	}
 }
