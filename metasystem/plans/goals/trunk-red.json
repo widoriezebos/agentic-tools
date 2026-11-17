@@ -28689,6 +28689,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-17T10:12:17Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestDiskStraysGroupTheirOutcomes",
       "id": "flake:d90eb4a98e1abf3c3c24a101704bd09934dc2563193c97f48ad92864669e919c",
@@ -28771,7 +28772,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testdiskstraysgrouptheiroutcomes",
       "fixBranch": {
         "name": "",
         "commit": "",
