@@ -167,7 +167,7 @@ func TestTheRunnerCountsWhatTheTickReturns(t *testing.T) {
 			if !errors.Is(err, ErrArbitrationHeld) {
 				t.Fatalf("tick report does not hold arbitration: %v", err)
 			}
-			if got := readProgress(t, root); got.Operation != "tick" || got.State != "working" || got.Done != 0 {
+			if got := readProgress(t, root); got.Operation != "tick:reports" || got.State != "working" || got.Done != 0 {
 				t.Fatalf("progress under arbitration=%+v", got)
 			}
 			loop.stop(t)

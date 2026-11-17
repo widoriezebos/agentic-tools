@@ -111,13 +111,13 @@ func TestTickFailedProbeWithPartialSnapshotStaysRed(t *testing.T) {
 	if err := completeTickHealthWithDependencies(b.root, &result, b.generation, b.runner, b.base, deps); err != nil {
 		t.Fatal(err)
 	}
-	role, _ := capabilitySnapshotStatus(b.root, b.root, b.base, b.lookPath)
+	role, _ := capabilitySnapshotStatus(b.root, b.root, b.base, b.lookPath, nil)
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "fixture snapshot durability unknown") {
 		t.Fatalf("a partial snapshot hid the failed probe: %+v", role)
 	}
 	b.writeJSON("artifacts/agents/capabilities/claude-partial.json", map[string]any{
 		"runtime": "claude", "capturedAt": b.base.Add(time.Second).Format(time.RFC3339Nano)})
-	if role, _ := capabilitySnapshotStatus(b.root, b.root, b.base.Add(time.Second), b.lookPath); role.Status != HealthAlive {
+	if role, _ := capabilitySnapshotStatus(b.root, b.root, b.base.Add(time.Second), b.lookPath, nil); role.Status != HealthAlive {
 		t.Fatalf("a later snapshot did not recover the role: %+v", role)
 	}
 }

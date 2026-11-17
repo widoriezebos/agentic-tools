@@ -44,12 +44,14 @@ func refreshGovernedObligations(repoRoot string, now time.Time) []string {
 	return failures
 }
 
-func checkGovernedObligations(repoRoot string) RoleVerdict {
+func checkGovernedObligations(repoRoot string, item func()) RoleVerdict {
 	store := &run.Store{Root: repoRoot}
 	var failures []string
 	failures = append(failures, directValidationWindowFailures(repoRoot)...)
 	seen := 0
+	counter := itemCounter{item: item}
 	for _, path := range run.RecordFiles(repoRoot) {
+		counter.next()
 		id := strings.TrimSuffix(filepath.Base(path), ".json")
 		record, err := store.Read(id)
 		if err != nil || record == nil {
@@ -76,6 +78,7 @@ func checkGovernedObligations(repoRoot string) RoleVerdict {
 			failures = append(failures, id+" exhausted without its terminalization-owned retro debt")
 		}
 	}
+	counter.done()
 	if len(failures) > 0 {
 		sort.Strings(failures)
 		role := roleDead(RoleGovernedObligations, strings.Join(failures, "; "),

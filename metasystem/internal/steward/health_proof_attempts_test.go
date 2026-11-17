@@ -39,7 +39,7 @@ func TestCheckProofAttemptsNamesADeadLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No attempts at all: alive.
-	if role := checkProofAttempts(repoRoot, attemptProbe{}); role.Role != RoleProofAttempts || role.Status != HealthAlive {
+	if role := checkProofAttempts(repoRoot, attemptProbe{}, nil); role.Role != RoleProofAttempts || role.Status != HealthAlive {
 		t.Fatalf("empty checkout = %+v", role)
 	}
 	// A terminal attempt is skipped whatever its launcher reads; a live one
@@ -49,12 +49,12 @@ func TestCheckProofAttemptsNamesADeadLauncher(t *testing.T) {
 	writeAttemptRecord(t, attempts, "proof-done-1", `{"attemptId":"proof-done-1","launcher":{"pid":501,"pidStartedAt":100},"terminal":{"result":"success"}}`)
 	writeAttemptRecord(t, attempts, "proof-live-1", `{"attemptId":"proof-live-1","launcher":{"pid":502,"pidStartedAt":100}}`)
 	probe := attemptProbe{501: identity.Dead, 502: identity.Alive}
-	if role := checkProofAttempts(repoRoot, probe); role.Status != HealthAlive {
+	if role := checkProofAttempts(repoRoot, probe, nil); role.Status != HealthAlive {
 		t.Fatalf("live launcher = %+v", role)
 	}
 	writeAttemptRecord(t, attempts, "proof-hung-1", `{"attemptId":"proof-hung-1","launcher":{"pid":503,"pidStartedAt":100}}`)
 	probe[503] = identity.Dead
-	role := checkProofAttempts(repoRoot, probe)
+	role := checkProofAttempts(repoRoot, probe, nil)
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "proof-hung-1 (launcher pid 503)") || !strings.Contains(role.Remedy, "reaper") {
 		t.Fatalf("dead launcher = %+v", role)
 	}
@@ -65,7 +65,7 @@ func TestCheckProofAttemptsNamesADeadLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeAttemptRecord(t, attempts, "proof-blind-1", `{"attemptId":"proof-blind-1"}`)
-	if role := checkProofAttempts(repoRoot, probe); role.Status != HealthUnknown || !strings.Contains(role.Reason, "proof-blind-1") {
+	if role := checkProofAttempts(repoRoot, probe, nil); role.Status != HealthUnknown || !strings.Contains(role.Reason, "proof-blind-1") {
 		t.Fatalf("missing launcher evidence = %+v", role)
 	}
 }
@@ -85,11 +85,11 @@ func TestCheckProofAttemptsNeverParsesATerminalAttemptsPayload(t *testing.T) {
 	writeAttemptRecord(t, attempts, "proof-heavy-1", `{"attemptId":"proof-heavy-1","launcher":{"pid":601,"pidStartedAt":100},"terminal":{"result":"success"},"deliveryReceiptBytes":"`+strings.Repeat("x", 1<<16))
 	writeAttemptRecord(t, attempts, "proof-live-2", `{"attemptId":"proof-live-2","launcher":{"pid":602,"pidStartedAt":100},"terminal":null}`)
 	probe := attemptProbe{601: identity.Dead, 602: identity.Alive}
-	if role := checkProofAttempts(repoRoot, probe); role.Status != HealthAlive || strings.Contains(role.Reason, "proof-heavy-1") {
+	if role := checkProofAttempts(repoRoot, probe, nil); role.Status != HealthAlive || strings.Contains(role.Reason, "proof-heavy-1") {
 		t.Fatalf("a terminal attempt's payload was parsed or judged: %+v", role)
 	}
 	writeAttemptRecord(t, attempts, "proof-live-2", `{"attemptId":"proof-live-2","launcher":{"pid":602,"pidStartedAt":100}} {}`)
-	if role := checkProofAttempts(repoRoot, probe); role.Status != HealthUnknown || !strings.Contains(role.Reason, "proof-live-2") {
+	if role := checkProofAttempts(repoRoot, probe, nil); role.Status != HealthUnknown || !strings.Contains(role.Reason, "proof-live-2") {
 		t.Fatalf("a live attempt that is not exactly one JSON object was accepted: %+v", role)
 	}
 }

@@ -61,7 +61,9 @@ func checkClaimQuotaWith(repoRoot, runRoot string, ledger *healthLedger) RoleVer
 	}
 	var parts, pairs []string
 	var facts []RemedyFact
+	counter := itemCounter{item: ledger.item}
 	for _, id := range next.Ready {
+		counter.next()
 		if tree.Live[id].Priority != 1 {
 			continue
 		}
@@ -74,6 +76,7 @@ func checkClaimQuotaWith(repoRoot, runRoot string, ledger *healthLedger) RoleVer
 			claimActivity(runRoot, block.Held)+"; next: "+block.Command+", then metasystem goal claim "+id)
 		pairs = append(pairs, id+">"+block.Held)
 	}
+	counter.done()
 	if laneErr != nil {
 		return unreadable(laneErr)
 	}

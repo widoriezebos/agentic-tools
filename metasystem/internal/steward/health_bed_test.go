@@ -209,16 +209,16 @@ func (b *healthBed) evaluate(repoRoot, metasystemRoot string, now time.Time, _ i
 		RoleRepoWatcher:       func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, b.probe) },
 		RoleCensusFreshness:   func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) },
 		RoleNarratorFreshness: func() RoleVerdict { return checkNarratorFreshnessWithCadence(repoRoot, now, cadence) },
-		RoleSessionMain:       func() RoleVerdict { return checkSessionMain(repoRoot, b.probe) },
+		RoleSessionMain:       func() RoleVerdict { return checkSessionMain(repoRoot, b.probe, nil) },
 		RoleHookFreshness:     func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHook) },
 		RoleStopHookDuration:  func() RoleVerdict { return checkStopHookDuration(repoRoot) },
-		RoleNonterminalJobs:   func() RoleVerdict { return checkNonterminalJobs(repoRoot, b.probe) },
+		RoleNonterminalJobs:   func() RoleVerdict { return checkNonterminalJobs(repoRoot, b.probe, nil) },
 		RoleCapabilitySnapshots: func() RoleVerdict {
 			if b.lookPath != nil {
-				role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, b.lookPath)
+				role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, b.lookPath, nil)
 				return role
 			}
-			return checkCapabilitySnapshots(repoRoot, metasystemRoot, now)
+			return checkCapabilitySnapshots(repoRoot, metasystemRoot, now, nil)
 		},
 	}
 	roles := make([]RoleVerdict, 0, len(healthRoleOrder))

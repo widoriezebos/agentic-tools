@@ -191,7 +191,7 @@ func TestRunnerSecondTickDoesNotScanUnchangedRecords(t *testing.T) {
 		if err != nil || len(alerts) != 211 {
 			t.Fatalf("alerts=%d err=%v", len(alerts), err)
 		}
-		if role := checkProofAttempts(root, attemptProbe{}); role.Status != HealthAlive {
+		if role := checkProofAttempts(root, attemptProbe{}, nil); role.Status != HealthAlive {
 			t.Fatal(role)
 		}
 		_, _ = census.Workers(root)

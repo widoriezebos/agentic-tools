@@ -152,7 +152,7 @@ func TestHealthRemedyTableOwnsEveryRole(t *testing.T) {
 		evaluate := func(_, _ string, _ time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
 			roles, spend := b.evaluate(b.root, b.root, now, b.probe, false)
 			var filtered []RoleVerdict
-			filtered = append(filtered, checkLedgerAttention(b.root, now), checkProofAttempts(b.root, b.probe))
+			filtered = append(filtered, checkLedgerAttention(b.root, now), checkProofAttempts(b.root, b.probe, nil))
 			projection, projectionErr := goal.Projection{}, errors.New("fixture unreadable ledger")
 			if status == HealthDead {
 				epoch := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
@@ -165,9 +165,9 @@ func TestHealthRemedyTableOwnsEveryRole(t *testing.T) {
 				file.Budget = nil
 				root, budgetProjection, budgetErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file})
 				trunk := newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{healthTrunkRedEntry("incident", "", b.base)}, nil)
-				filtered = append(filtered, checkClaimedGoalBudgetsFromProjection(root, now, budgetProjection, true, budgetErr, nil), trunk.trunkRedWithoutBatch())
+				filtered = append(filtered, checkClaimedGoalBudgetsFromProjection(root, now, budgetProjection, true, budgetErr, nil, nil), trunk.trunkRedWithoutBatch())
 			} else {
-				filtered = append(filtered, checkClaimedGoalBudgetsFromProjection(b.root, now, projection, true, projectionErr, nil), checkTrunkRedFromProjection(b.root, now, projection, projectionErr))
+				filtered = append(filtered, checkClaimedGoalBudgetsFromProjection(b.root, now, projection, true, projectionErr, nil, nil), checkTrunkRedFromProjection(b.root, now, projection, projectionErr))
 			}
 			filtered = append(filtered, checkProofAdmission(b.root, now, func(string) ([]proofrun.HostLeaseReport, error) {
 				if status == HealthUnknown {
@@ -249,7 +249,7 @@ func TestHealthRemedyTableOwnsEveryRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.writeFile("metasystem.conf", []byte("metasystem.runtimes=invalid-runtime\n"))
-	settings, _ := capabilitySnapshotStatus(b.root, b.root, b.base, b.lookPath)
+	settings, _ := capabilitySnapshotStatus(b.root, b.root, b.base, b.lookPath, nil)
 	spendRole, _ := checkSpendFenceWithMeasureAndMachine(b.root, b.base,
 		func(string, string, time.Time) (spend.Ledger, error) {
 			return spend.Ledger{}, errors.New("fixture spend evidence unreadable")

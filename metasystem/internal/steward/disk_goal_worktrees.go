@@ -110,7 +110,7 @@ func sessionMainLiveness(prober identity.Prober) func(path string) (diskstore.Ma
 		if !announced {
 			return diskstore.MainNone, "no main has announced itself in " + root
 		}
-		verdict := checkSessionMain(root, prober)
+		verdict := checkSessionMain(root, prober, nil)
 		switch verdict.Status {
 		case HealthAlive:
 			return diskstore.MainAlive, verdict.Reason

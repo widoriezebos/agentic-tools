@@ -229,7 +229,7 @@ func (a afterApply) Apply(ctx context.Context, pass *diskstore.Pass, item diskst
 func TestDiskRoleFollowsTheLastReport(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthAlive || !strings.Contains(role.Reason, "no disk pass") {
+	if role := checkDiskAt(root, filepath.Join(root, "home"), nil); role.Status != HealthAlive || !strings.Contains(role.Reason, "no disk pass") {
 		t.Fatalf("no report = %+v", role)
 	}
 	path := diskstore.CheckoutReportPath(root)
@@ -245,17 +245,17 @@ func TestDiskRoleFollowsTheLastReport(t *testing.T) {
 		}
 	}
 	write(diskstore.Health{Status: diskstore.HealthOK, Reason: "above"})
-	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthAlive {
+	if role := checkDiskAt(root, filepath.Join(root, "home"), nil); role.Status != HealthAlive {
 		t.Fatalf("an ok report = %+v", role)
 	}
 	write(diskstore.Health{Status: diskstore.HealthAttention, Reason: "free space is below the floor", Remedy: "metasystem disk clean --preview"})
-	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthDead || role.Remedy != "a person frees space or corrects the disk setting the reason above names; the next disk pass records the result" {
+	if role := checkDiskAt(root, filepath.Join(root, "home"), nil); role.Status != HealthDead || role.Remedy != "a person frees space or corrects the disk setting the reason above names; the next disk pass records the result" {
 		t.Fatalf("a floor breach = %+v", role)
 	}
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthUnknown || role.Remedy != "a person repairs the unreadable evidence the reason above names, then runs metasystem system check" {
+	if role := checkDiskAt(root, filepath.Join(root, "home"), nil); role.Status != HealthUnknown || role.Remedy != "a person repairs the unreadable evidence the reason above names, then runs metasystem system check" {
 		t.Fatalf("an unreadable report = %+v", role)
 	}
 }

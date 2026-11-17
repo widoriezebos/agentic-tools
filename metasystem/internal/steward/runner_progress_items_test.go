@@ -135,7 +135,7 @@ func populatedItemSources(t *testing.T, root string, p *Progress) SituationSourc
 	src.Processes = identity.FixedProcessTable{{Pid: 21}, {Pid: 22}, {Pid: 23}}
 	pids := 0
 	src.Argv = func(int64) ([]string, bool) {
-		if r := readProgress(t, root); r.Done != 8+pids {
+		if r := readProgress(t, root); r.Done != 11+pids {
 			t.Fatalf("pid in progress: %+v, previous pids=%d", r, pids)
 		}
 		pids++
@@ -146,7 +146,7 @@ func populatedItemSources(t *testing.T, root string, p *Progress) SituationSourc
 	}
 	holders := 0
 	src.Holder = func(string) (SeatHolder, error) {
-		if r := readProgress(t, root); r.Done != 11+holders {
+		if r := readProgress(t, root); r.Done != 14+holders {
 			t.Fatalf("holder in progress: %+v, previous holders=%d", r, holders)
 		}
 		holders++
@@ -169,8 +169,8 @@ func TestTheSituationCountsEachSourceAndItem(t *testing.T) {
 	src := populatedItemSources(t, root, p)
 	s := readSituation(t, root, src)
 	// Thirteen sources run without a red line, plus one held goal's facts,
-	// three pids (including skipped processes), and two armed holders.
-	if r := readProgress(t, root); r.Done != 19 || len(s.Holders) != 2 || len(s.GoalFacts) != 1 {
+	// three pids (including skipped processes), two armed holders and three ledger stages.
+	if r := readProgress(t, root); r.Done != 22 || len(s.Holders) != 2 || len(s.GoalFacts) != 1 {
 		t.Fatalf("sources and items: %+v holders=%d facts=%v unavailable=%v", r, len(s.Holders), s.GoalFacts, s.Unavailable)
 	}
 }

@@ -889,18 +889,21 @@ func existing(paths []string) []string {
 // checkDisk folds the last checkout and machine reports into the disk role:
 // free space below the floor or an unknown host policy raises it with the
 // report's remedy; an unreadable report is unknown; no report yet is alive.
-func checkDisk(repoRoot string) RoleVerdict {
+func checkDisk(repoRoot string, item func()) RoleVerdict {
 	home, _ := HomeStateRoot()
-	return checkDiskAt(repoRoot, home)
+	return checkDiskAt(repoRoot, home, item)
 }
 
-func checkDiskAt(repoRoot, home string) RoleVerdict {
+func checkDiskAt(repoRoot, home string, item func()) RoleVerdict {
 	paths := []string{diskstore.CheckoutReportPath(repoRoot)}
 	if home != "" {
 		paths = append(paths, diskstore.MachineReportPath(home))
 	}
 	read := 0
+	counter := itemCounter{item: item}
+	defer counter.done()
 	for _, path := range paths {
+		counter.next()
 		report, err := diskstore.ReadReport(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue

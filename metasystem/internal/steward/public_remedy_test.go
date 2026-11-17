@@ -18,7 +18,7 @@ func TestCapabilitySnapshotRemediesNameNoInternalEntrypoint(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		role := checkCapabilitySnapshots(root, root, now)
+		role := checkCapabilitySnapshots(root, root, now, nil)
 		if role.Status == HealthAlive {
 			continue
 		}

@@ -647,6 +647,7 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 	spendStarted := time.Now()
 	spendRole, spendObservation := checkSpendFenceWithMeasure(repoRoot, now, measure)
 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
+	ledger.item()
 	timed := func(name HealthRole, check func() RoleVerdict) RoleVerdict {
 		if !roleApplies(name, runRoot) {
 			return RoleVerdict{}
@@ -654,6 +655,7 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		started := time.Now()
 		role := check()
 		role.DurationMillis = elapsedRoleMillis(started)
+		ledger.item()
 		return role
 	}
 	roles := []RoleVerdict{
@@ -676,16 +678,16 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		timed(RoleClaimQuota, func() RoleVerdict { return checkClaimQuotaWith(repoRoot, runRoot, ledger) }),
 		timed(RoleTrunkRed, func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
 		spendRole,
-		timed(RoleGovernedObligations, func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
-		timed(RoleNonterminalJobs, func() RoleVerdict { return checkNonterminalJobs(runRoot, prober) }),
-		timed(RoleProofAttempts, func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
+		timed(RoleGovernedObligations, func() RoleVerdict { return checkGovernedObligations(repoRoot, ledger.item) }),
+		timed(RoleNonterminalJobs, func() RoleVerdict { return checkNonterminalJobs(runRoot, prober, ledger.item) }),
+		timed(RoleProofAttempts, func() RoleVerdict { return checkProofAttempts(runRoot, prober, ledger.item) }),
 		timed(RoleProofAdmission, func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
-		timed(RoleCapabilitySnapshots, func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
+		timed(RoleCapabilitySnapshots, func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now, ledger.item) }),
 		timed(RoleDisk, func() RoleVerdict {
 			if ledger.stateHome != "" {
-				return checkDiskAt(runRoot, ledger.stateHome)
+				return checkDiskAt(runRoot, ledger.stateHome, ledger.item)
 			}
-			return checkDisk(runRoot)
+			return checkDisk(runRoot, ledger.item)
 		}),
 	}
 	duties := checkDuties(runRoot)
@@ -1432,13 +1434,13 @@ func checkSessionMainWithLedger(repoRoot, runRoot string, now time.Time, prober 
 			return decision, nil, errors.New(decision.Reason)
 		}
 		return decision, selection, nil
-	})
+	}, ledger.item)
 }
 
 // checkSessionMainForSeat judges the need for a successor through the seat
 // ladder. The announcement reader also serves cleanup's process proof.
-func checkSessionMainForSeat(runRoot string, prober identity.Prober, decide func([]SeatRecord) (Decision, *SeatSelection, error)) RoleVerdict {
-	role := checkSessionMain(runRoot, prober)
+func checkSessionMainForSeat(runRoot string, prober identity.Prober, decide func([]SeatRecord) (Decision, *SeatSelection, error), item func()) RoleVerdict {
+	role := checkSessionMain(runRoot, prober, item)
 	if role.Status != HealthDead {
 		return role
 	}
@@ -1456,7 +1458,7 @@ func checkSessionMainForSeat(runRoot string, prober identity.Prober, decide func
 	return roleDead(RoleSessionMain, decision.Reason, "", RemedyFact{Cause: CauseUnavailable})
 }
 
-func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
+func checkSessionMain(repoRoot string, prober identity.Prober, item func()) RoleVerdict {
 	directory := filepath.Join(repoRoot, "artifacts", "agents", "mains")
 	entries, err := os.ReadDir(directory)
 	if err != nil {
@@ -1467,7 +1469,10 @@ func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
 	}
 	unknown := false
 	dead := false
+	counter := itemCounter{item: item}
+	defer counter.done()
 	for _, entry := range entries {
+		counter.next()
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
@@ -1514,10 +1519,10 @@ func checkClaimedGoalBudgetsWith(repoRoot string, now time.Time, ledger *healthL
 	if ledger.endpointErr != nil {
 		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger endpoint is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
-	return checkClaimedGoalBudgetsFromProjection(repoRoot, now, ledger.projection, ledger.endpoint.LocalMode(), ledger.projectionErr, nil)
+	return checkClaimedGoalBudgetsFromProjection(repoRoot, now, ledger.projection, ledger.endpoint.LocalMode(), ledger.projectionErr, nil, ledger.item)
 }
 
-func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, projection goal.Projection, localMode bool, projectionErr error, carryRepository goal.Repository) RoleVerdict {
+func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, projection goal.Projection, localMode bool, projectionErr error, carryRepository goal.Repository, item func()) RoleVerdict {
 	if projectionErr != nil {
 		if unknown, ok := dispatch.GoalRecordBudgetUnknown(projectionErr); ok {
 			role := roleDead(RoleClaimedGoalBudget,
@@ -1546,11 +1551,13 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	counter := itemCounter{item: item}
 	for _, id := range ids {
 		file := projection.Tree.Live[id]
 		if file.State != goal.StateClaimed {
 			continue
 		}
+		counter.next()
 		if file.Risk == nil {
 			riskUnanswered++
 		}
@@ -1642,6 +1649,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			budget.CodeCritiques, budget.Limits.ReviewRoundLimit,
 			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit, exceptionEvidence))
 	}
+	counter.done()
 	codeTip := "refs/remotes/origin/main"
 	if localMode {
 		codeTip = "refs/heads/main"
@@ -1800,12 +1808,14 @@ func malformedBudgetGoal(err error) (string, bool) {
 	return "", false
 }
 
-func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
+func checkNonterminalJobs(repoRoot string, prober identity.Prober, item func()) RoleVerdict {
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "jobs", "*.json"))
 	sort.Strings(paths)
 	var dead []string
 	var unknown []string
+	counter := itemCounter{item: item}
 	for _, path := range paths {
+		counter.next()
 		value, err := readHealthObject(path)
 		if err != nil {
 			unknown = append(unknown, strings.TrimSuffix(filepath.Base(path), ".json"))
@@ -1842,6 +1852,7 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, jobID)
 		}
 	}
+	counter.done()
 	if len(dead) > 0 {
 		verdict := roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), "", RemedyFact{Cause: CauseJobProcessDead, Job: dead[0]})
 		return verdict
@@ -1852,12 +1863,12 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 	return roleAlive(RoleNonterminalJobs, "no non-terminal job has a provably dead recorded process")
 }
 
-func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) RoleVerdict {
-	role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, exec.LookPath)
+func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time, item func()) RoleVerdict {
+	role, _ := capabilitySnapshotStatus(repoRoot, metasystemRoot, now, exec.LookPath, item)
 	return role
 }
 
-func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lookPath func(string) (string, error)) (RoleVerdict, []string) {
+func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lookPath func(string) (string, error), item func()) (RoleVerdict, []string) {
 	runtimeValue, _, err := config.Get(config.GetParams{
 		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
@@ -1876,7 +1887,9 @@ func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lo
 	var dead []string
 	var unknown []string
 	seen := make(map[string]bool)
+	counter := itemCounter{item: item}
 	for _, runtimeName := range runtimes {
+		counter.next()
 		runtimeName = strings.TrimSpace(runtimeName)
 		if seen[runtimeName] {
 			continue
@@ -1943,6 +1956,7 @@ func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lo
 			dead = append(dead, runtimeName)
 		}
 	}
+	counter.done()
 	if len(dead) > 0 {
 		reason := "missing or stale capability snapshots: " + strings.Join(dead, ",")
 		for _, runtime := range dead {
@@ -2041,17 +2055,22 @@ func installedEnrollment(repoRoot string) (InstallIdentity, bool, error) {
 // attempt whose launcher is provably dead, or whose every recorded process
 // has ended, holds a reservation nobody can release but the reaper's next
 // reconciliation pass. The role reads what the reconciler reads.
-func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
+func checkProofAttempts(repoRoot string, prober identity.Prober, item func()) RoleVerdict {
 	root := filepath.Join(repoRoot, "metasystem")
 	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "proof-runs")); err != nil {
 		root = repoRoot
 	}
 	paths, _ := readRunnerRecords(repoRoot, filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts"), func(path string) (proofAttemptHead, error) {
 		value, terminal, err := readProofAttemptHead(path)
+		if item != nil {
+			item()
+		}
 		return proofAttemptHead{value, terminal}, err
 	})
 	var dead, unknown []string
+	counter := itemCounter{item: item}
 	for _, path := range paths {
+		counter.next()
 		if path.err != nil {
 			unknown = append(unknown, strings.TrimSuffix(path.name, ".json"))
 			continue
@@ -2081,6 +2100,7 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, attemptID)
 		}
 	}
+	counter.done()
 	if len(dead) > 0 {
 		return roleDead(RoleProofAttempts, "live proof attempts whose launcher is dead: "+strings.Join(dead, ","), "", RemedyFact{Cause: CauseUnavailable})
 	}

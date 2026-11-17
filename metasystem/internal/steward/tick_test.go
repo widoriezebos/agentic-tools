@@ -184,7 +184,7 @@ func TestCorruptGraceTickEscalatesWithoutCancellingLawfulWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role := checkClaimedGoalBudgetsFromProjection(bed.root, now, projection, true, nil, nil)
+	role := checkClaimedGoalBudgetsFromProjection(bed.root, now, projection, true, nil, nil, nil)
 	verdict := applyHealthObservation(bed.root, HealthObservationState{}, []RoleVerdict{role}, now)
 	if role.Status != HealthDead || !role.NoAutomaticRemedy || !verdict.ShouldAlert ||
 		verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
@@ -433,7 +433,7 @@ func TestTickProbesAStaleSnapshotOncePerRuntime(t *testing.T) {
 	var probes []string
 	deps := tickHealthDependencies{now: func() time.Time { return bed.base }, lookPath: path,
 		evaluate: func(root, install string, now time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
-			role, _ := capabilitySnapshotStatus(root, install, now, path)
+			role, _ := capabilitySnapshotStatus(root, install, now, path, nil)
 			return []RoleVerdict{role}, SpendObservation{}
 		},
 		probeRuntime: func(root, runtime string) error {
@@ -470,7 +470,7 @@ func TestTickEndsCapabilityProbesAtTheFifthObservation(t *testing.T) {
 	probes := 0
 	deps := tickHealthDependencies{lookPath: path, now: func() time.Time { return bed.base },
 		evaluate: func(root, install string, now time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
-			role, _ := capabilitySnapshotStatus(root, install, now, path)
+			role, _ := capabilitySnapshotStatus(root, install, now, path, nil)
 			return []RoleVerdict{role}, SpendObservation{}
 		},
 		probeRuntime: func(string, string) error { probes++; return errors.New("fixture login unavailable") },

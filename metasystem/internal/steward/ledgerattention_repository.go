@@ -10,6 +10,7 @@ import (
 // ledgerAttentionRepository is the set of goal repository operations used by
 // one attention pass. State files and attention policy remain owned here.
 type ledgerAttentionRepository struct {
+	progress          *Progress
 	ResolveEndpoint   func(string) (goal.Endpoint, error)
 	AcceptedLedgerTip func(string) (string, bool, error)
 	ResolveMachine    func(string) (string, error)

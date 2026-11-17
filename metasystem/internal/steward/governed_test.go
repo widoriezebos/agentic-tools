@@ -35,7 +35,7 @@ func TestStewardTickFailsClosedWhenAssumptionObservationIsUnavailable(t *testing
 	if failures := refreshGovernedObligations(root, now.Add(time.Minute)); len(failures) != 0 {
 		t.Fatalf("steward could not record the unavailable observation: %v", failures)
 	}
-	verdict := checkGovernedObligations(root)
+	verdict := checkGovernedObligations(root, nil)
 	if verdict.Status != HealthDead || !verdict.NoAutomaticRemedy || !strings.Contains(verdict.Reason, "observation unavailable") {
 		t.Fatalf("unavailable evidence did not fail closed: %+v", verdict)
 	}
@@ -49,14 +49,14 @@ func TestStandingWatchFlagsOnlyTheNamedUngovernedProblemClass(t *testing.T) {
 		Display: "ordinary goal validation", Log: "artifacts/ordinary.log", GoalId: "ordinary"}); err != nil {
 		t.Fatal(err)
 	}
-	if verdict := checkGovernedObligations(root); verdict.Status != HealthAlive {
+	if verdict := checkGovernedObligations(root, nil); verdict.Status != HealthAlive {
 		t.Fatalf("ordinary goal work was mistaken for a governing mechanism: %+v", verdict)
 	}
 	if _, err := store.Launch(caller, run.LaunchParams{Id: "ungoverned-direct-validator", Kind: "suite",
 		Display: "weight-triggered direct validation", Log: "artifacts/direct.log", GoalId: "validator"}); err != nil {
 		t.Fatal(err)
 	}
-	verdict := checkGovernedObligations(root)
+	verdict := checkGovernedObligations(root, nil)
 	if verdict.Status != HealthDead || !strings.Contains(verdict.Reason, "recurring ungoverned execution") {
 		t.Fatalf("the named ungoverned problem class was not flagged: %+v", verdict)
 	}

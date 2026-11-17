@@ -637,7 +637,10 @@ func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, r
 		}
 	}
 
+	repository.progress.Wait("external", ledgerAttentionFetchBudget)
 	capture, err := repository.CaptureTipBounded(endpoint, ledgerAttentionFetchBudget)
+	repository.progress.Working()
+	repository.progress.Item()
 	if err != nil {
 		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
@@ -660,7 +663,9 @@ func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, r
 			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 	}
-	if err := repository.ValidateCommit(repoRoot, capture.Tip); err != nil {
+	err = repository.ValidateCommit(repoRoot, capture.Tip)
+	repository.progress.Item()
+	if err != nil {
 		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
 	advanced := accepted != capture.Tip
@@ -673,10 +678,14 @@ func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, r
 		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
-		if err := repository.AdvanceAccepted(repoRoot, capture.Tip); err != nil {
+		err = repository.AdvanceAccepted(repoRoot, capture.Tip)
+		repository.progress.Item()
+		if err != nil {
 			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
-		if err := promoteLedgerAttentionStage(repoRoot, &state, now, repository); err != nil {
+		err = promoteLedgerAttentionStage(repoRoot, &state, now, repository)
+		repository.progress.Item()
+		if err != nil {
 			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 	}

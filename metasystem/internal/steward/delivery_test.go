@@ -86,7 +86,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "failed-delegate", fmt.Sprintf(`{"jobId":"failed-delegate","goalId":"delivery-goal","status":"failed","startedAt":%q,"endedAt":%q,"error":"delegate process died"}`,
 			claimAt.Add(time.Minute).Format(time.RFC3339), now.Add(-30*time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "delivery-goal") ||
 			!strings.Contains(role.Reason, "failed-delegate") || !strings.Contains(role.Reason, "delegate process died") ||
 			!strings.Contains(role.Reason, "30m0s ago") {
@@ -102,7 +102,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "recovered-delegate", fmt.Sprintf(`{"jobId":"recovered-delegate","goalId":"delivery-goal","status":"failed","createdAt":%q,"endedAt":%q,"error":"temporary failure"}`,
 			claimAt.Add(time.Minute).Format(time.RFC3339), failedAt.Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "delivery-goal") || !strings.Contains(role.Reason, "30m0s old") {
 			t.Fatalf("newer delivery evidence did not recover the failed job: %+v", role)
 		}
@@ -116,7 +116,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "small-cap-delegate", fmt.Sprintf(`{"jobId":"small-cap-delegate","goalId":"delivery-goal","status":"running","createdAt":%q,"capMin":30,"capDeadline":%q}`,
 			createdAt.Format(time.RFC3339), createdAt.Add(30*time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "delivery-goal") ||
 			!strings.Contains(role.Reason, "small-cap-delegate") || !strings.Contains(role.Reason, "30-minute budget") ||
 			!strings.Contains(role.Reason, "53.3%") {
@@ -132,7 +132,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "large-cap-delegate", fmt.Sprintf(`{"jobId":"large-cap-delegate","goalId":"delivery-goal","status":"running","createdAt":%q,"capMin":200,"capDeadline":%q}`,
 			createdAt.Format(time.RFC3339), createdAt.Add(200*time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "delivery-goal") {
 			t.Fatalf("a slice at its own 200-minute deadline was not kept alive: %+v", role)
 		}
@@ -146,7 +146,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "delivered-slice", fmt.Sprintf(`{"jobId":"delivered-slice","goalId":"delivery-goal","status":"running","createdAt":%q,"capMin":30,"capDeadline":%q}`,
 			createdAt.Format(time.RFC3339), createdAt.Add(30*time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "delivery-goal") {
 			t.Fatalf("a landing receipt newer than the slice creation did not keep the goal alive: %+v", role)
 		}
@@ -159,7 +159,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "delivered-delegate", fmt.Sprintf(`{"jobId":"delivered-delegate","goalId":"delivery-goal","status":"completed","startedAt":%q}`,
 			claimAt.Add(time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "delivery-goal") || !strings.Contains(role.Reason, "1h0m0s old") {
 			t.Fatalf("newer delivery evidence did not keep an old claim alive: %+v", role)
 		}
@@ -173,7 +173,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "young-delegate", fmt.Sprintf(`{"jobId":"young-delegate","goalId":"delivery-goal","status":"running","createdAt":%q,"capMin":120,"capDeadline":%q}`,
 			createdAt.Format(time.RFC3339), createdAt.Add(120*time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "delivery-goal") || !strings.Contains(role.Reason, "no landing receipt yet") {
 			t.Fatalf("a young claim was not kept alive: %+v", role)
 		}
@@ -183,7 +183,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		claimAt := now.Add(-time.Hour)
 		root, read := fileOnlyDeliveryBed(t, now, deliveryGoal(claimAt))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "receipts.log") || !strings.Contains(role.Reason, "unreadable") {
 			t.Fatalf("a missing receipt log did not fail safely: %+v", role)
 		}
@@ -196,7 +196,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		root, read := fileOnlyDeliveryBed(t, now, file)
 		writeDeliveryReceipts(t, root, "1|1970-01-01T00:00:01Z|RECEIPT|goal=unrelated")
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "delivery-goal") ||
 			!strings.Contains(role.Reason, "150%") || !strings.Contains(role.Reason, "2h elapsed limit") {
 			t.Fatalf("a claim beyond 150 percent of its tighter goal budget was not reported: %+v", role)
@@ -208,7 +208,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		root, read := fileOnlyDeliveryBed(t, now, deliveryGoal(claimAt))
 		writeDeliveryReceipts(t, root, "1|1970-01-01T00:00:01Z|RECEIPT|goal=unrelated")
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "no landing receipt yet") {
 			t.Fatalf("the flat slice-norm claim clock still triggered for a longer goal budget: %+v", role)
 		}
@@ -221,7 +221,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeHealthJob(t, root, "missing-cap-deadline", fmt.Sprintf(`{"jobId":"missing-cap-deadline","goalId":"delivery-goal","status":"running","createdAt":%q,"capMin":30}`,
 			claimAt.Add(time.Minute).Format(time.RFC3339)))
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "delivery-goal") ||
 			!strings.Contains(role.Reason, "missing-cap-deadline.json") || !strings.Contains(role.Reason, "capDeadline is missing") {
 			t.Fatalf("a non-terminal record without capDeadline did not fail safely: %+v", role)
@@ -234,7 +234,7 @@ func TestClaimedGoalDeliveryVerdicts(t *testing.T) {
 		writeDeliveryReceipts(t, root, "1|1970-01-01T00:00:01Z|RECEIPT|goal=unrelated")
 		writeHealthJob(t, root, "broken-job", `{not-json`)
 
-		role := checkClaimedGoalDeliveryWithReader(root, now, read)
+		role := checkClaimedGoalDeliveryWithReader(root, now, read, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "delivery-goal") || !strings.Contains(role.Reason, "broken-job.json") {
 			t.Fatalf("an unreadable job record did not fail safely: %+v", role)
 		}

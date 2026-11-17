@@ -192,6 +192,7 @@ func ReadSituation(root string, src SituationSources) Situation {
 	s.readLane(src, now)
 	src.item()
 	ledger := newHealthLedger(root, now)
+	ledger.progress = src.Progress
 	ledger.laneState = src.ClaimLaneState
 	if src.Project != nil {
 		ledger.project = src.Project

@@ -44,7 +44,7 @@ type claimedDeliverySnapshot struct {
 func checkClaimedGoalDeliveryWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
 	return checkClaimedGoalDeliveryWithReader(repoRoot, now, func(repoRoot string, _ time.Time) (claimedDeliverySnapshot, error) {
 		return readClaimedDeliverySnapshot(repoRoot, ledger)
-	})
+	}, ledger.item)
 }
 
 func readClaimedDeliverySnapshot(repoRoot string, ledger *healthLedger) (claimedDeliverySnapshot, error) {
@@ -64,7 +64,7 @@ func readClaimedDeliverySnapshot(repoRoot string, ledger *healthLedger) (claimed
 	return claimedDeliverySnapshot{converted: true, machine: machine, projection: ledger.projection}, nil
 }
 
-func checkClaimedGoalDeliveryWithReader(repoRoot string, now time.Time, read func(string, time.Time) (claimedDeliverySnapshot, error)) RoleVerdict {
+func checkClaimedGoalDeliveryWithReader(repoRoot string, now time.Time, read func(string, time.Time) (claimedDeliverySnapshot, error), item func()) RoleVerdict {
 	snapshot, err := read(repoRoot, now)
 	if err != nil {
 		return deliveryDead(err.Error())
@@ -107,7 +107,7 @@ func checkClaimedGoalDeliveryWithReader(repoRoot string, now time.Time, read fun
 	if err := readLandingReceipts(filepath.Join(repoRoot, "memory", "receipts.log"), claimed); err != nil {
 		return deliveryDead(err.Error())
 	}
-	readDeliveryJobs(repoRoot, claimed)
+	readDeliveryJobs(repoRoot, claimed, item)
 
 	normHours, err := config.SliceNormHours(filepath.Join(repoRoot, "metasystem.conf"))
 	if err != nil {
@@ -190,10 +190,12 @@ func readLandingReceipts(path string, claimed map[string]*claimedDeliveryGoal) e
 	return nil
 }
 
-func readDeliveryJobs(repoRoot string, claimed map[string]*claimedDeliveryGoal) {
+func readDeliveryJobs(repoRoot string, claimed map[string]*claimedDeliveryGoal, item func()) {
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "jobs", "*.json"))
 	sort.Strings(paths)
+	counter := itemCounter{item: item}
 	for _, path := range paths {
+		counter.next()
 		value, err := readHealthObject(path)
 		if err != nil {
 			for _, entry := range claimed {
@@ -247,6 +249,7 @@ func readDeliveryJobs(repoRoot string, claimed map[string]*claimedDeliveryGoal) 
 		}
 		entry.jobs = append(entry.jobs, job)
 	}
+	counter.done()
 }
 
 func deliveryTerminalStatus(status string) bool {

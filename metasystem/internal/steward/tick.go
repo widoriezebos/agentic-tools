@@ -294,7 +294,9 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// One tick at a time per repository: the CLI seam and the
 	// resident runner share the evidence store and the pending
 	// queue, and neither may age or drain it under the other.
+	cfg.Progress.Wait("arbitration", 0)
 	tickLock, err := AcquireArbitration(repoRoot)
+	cfg.Progress.Working()
 	if err != nil {
 		return TickResult{}, err
 	}
@@ -320,11 +322,13 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// health or narration runs; helmTick runs report passes instead:
 	// the patterns, the spent-box question, the claim quota, and the helm duties.
 	if state := helm.Active(repoRoot); state.Active {
+		cfg.Progress.Begin("tick:helm")
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
 
 	tickCompleted := false
 	defer func() {
+		cfg.Progress.Begin("tick:reports")
 		reportErr := runTickReports(repoRoot, cfg, func() error {
 			if result.Health.Schema == 0 {
 				return completeTickHealthWithConfig(repoRoot, &result, generation, selfExact.Ref(), cfg)
@@ -347,6 +351,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		}
 	}()
 
+	cfg.Progress.Begin("tick:provider-expiry")
 	if err := outage.ExpireAndNotify(cfg.ProviderHome, repoRoot, cfg.now(), func(provider string, interval outage.Interval) error {
 		outcome := deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Owner: "provider-stale", Ref: "provider-stale-" + provider + "-" + interval.Since,
 			Message: fmt.Sprintf("provider %s: the stale outage mark expired without a provider answer", provider)}, deliver, noticeFunnel{clock: cfg.now})
@@ -360,18 +365,30 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
+	cfg.Progress.Begin("tick:breach-stops")
 	goalStops := custodialBreachStops(repoRoot, cfg, dispatch.FindBreachStops)
+	cfg.Progress.Begin("tick:spent-box-question")
 	recordDuty(repoRoot, "spent-box-question", askSpentBoxes(repoRoot, cfg, dispatch.FindAdmissionClosed), cfg.now())
+	cfg.Progress.Begin("tick:governed-obligations")
 	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
 		return degradedTick(repoRoot, degradedGovernedObligations, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
 	}
-	if err := observeDirectValidationWindow(repoRoot, cfg.now()); err != nil {
+	cfg.Progress.Begin("tick:direct-validation")
+	if err := observeDirectValidationWindowWithLinker(repoRoot, cfg.now(), func(root string, observation validationWindowObservation, now time.Time) error {
+		cfg.Progress.Wait("external", 0)
+		err := linkCadenceFailure(root, observation, now)
+		cfg.Progress.Working()
+		cfg.Progress.Item()
+		return err
+	}); err != nil {
 		return degradedTick(repoRoot, degradedDirectValidation, "direct-validation observation failed: "+err.Error())
 	}
+	cfg.Progress.Begin("tick:ruling-reviews")
 	if err := sweepRulingReviews(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, degradedRulingReviews, "ruling review sweep failed: "+err.Error())
 	}
+	cfg.Progress.Begin("tick:counselor-brief")
 	if err := sweepCounselorBrief(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, degradedCounselorBrief, "counselor brief carriage failed: "+err.Error())
 	}
@@ -555,6 +572,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	if cfg.GoalProjection != nil {
 		dependencies.openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
 	}
+	dependencies.ledgerRepository.progress = cfg.Progress
 	dependencies.health.prober = cfg.withDefaults().Prober
 	dependencies.health.probeRuntime = cfg.ProbeRuntime
 	dependencies.health.examineLedger = func(root string, now time.Time) error {
@@ -562,11 +580,13 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	}
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.
+	cfg.Progress.Begin("tick:reap")
 	reaped, err := ReapContinuations(repoRoot)
 	if err != nil {
 		result, degradedErr := degradedTick(repoRoot, degradedContinuationReap, "reaping failed: "+err.Error())
 		return result, false, degradedErr
 	}
+	cfg.Progress.Begin("tick:ledger-attention")
 	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, process, cfg.now())
 	if err != nil {
 		return TickResult{}, false, fmt.Errorf("record ledger-attention attempt: %w", err)
@@ -585,11 +605,13 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	// before the evidence-store reads whose failure ends the tick degraded,
 	// so a torn evidence store on this machine does not make it read dead to
 	// its peers. The component owns both its fetch and its publish.
+	cfg.Progress.Begin("tick:seat-presence")
 	seatReport, err := seatPresenceComponent(repoRoot, cfg, generation, process)
 	if err != nil {
 		return TickResult{}, false, err
 	}
 
+	cfg.Progress.Begin("tick:evidence")
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
 	if err != nil {
@@ -619,6 +641,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		machine = enrolled
 	}
 	dependencies.openWork.Machine = machine
+	cfg.Progress.Begin("tick:decide")
 	result, err := decideTickWithDependencies(repoRoot, cfg, census, prev, marks, dependencies.openWork)
 	if err != nil {
 		return TickResult{}, false, err
@@ -627,9 +650,11 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	result.GoalStops = goalStops
 	result.LedgerAttention = ledgerReport
 	result.SeatPresence = seatReport
+	cfg.Progress.Begin("tick:narrator-digest")
 	if err := narrateDigestWithReaders(repoRoot, prev, result, cfg.now(), dependencies.resolveMachine, dependencies.resolveLayout); err != nil {
 		return result, false, fmt.Errorf("the narrator summary could not be written: %w", err)
 	}
+	cfg.Progress.Begin("tick:ledger-notices")
 	var surfaced []string
 	for _, event := range ledgerReport.Pending {
 		if err := QueueNotification(repoRoot, ledgerAttentionNotification(event, machine)); err != nil {
@@ -640,6 +665,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	if err := PersistLedgerAttentionMark(repoRoot, surfaced); err != nil {
 		return result, false, fmt.Errorf("mark ledger-attention events surfaced: %w", err)
 	}
+	cfg.Progress.Begin("tick:save-evidence")
 	if err := SaveEvidence(repoRoot, evPath, result.Evidence); err != nil {
 		return result, false, err
 	}
@@ -647,11 +673,14 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	// best-effort: the storyteller never fails the shift. What the
 	// narration notices also reaches the operator, one gated message
 	// per building condition.
+	cfg.Progress.Begin("tick:narrate")
 	narrateWithMachineReader(repoRoot, result, cfg, dependencies.resolveMachine)
 	ReachTheHuman(repoRoot, noticingsAt(repoRoot, result, cfg, cfg.now()))
+	cfg.Progress.Begin("tick:health")
 	if err := completeTickHealthWithDependencies(repoRoot, &result, generation, process, cfg.Now, dependencies.health); err != nil {
 		return result, false, err
 	}
+	cfg.Progress.Begin("tick:complete")
 	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttemptSeq,
 		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, nil, cfg.now()); err != nil {
 		return result, false, fmt.Errorf("record tick completion: %w", err)
@@ -674,7 +703,10 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 			if readWork == nil {
 				workErr = errors.New("the work reader is missing")
 			} else {
+				cfg.Progress.Wait("external", 0)
 				work, workErr = readWork(root, now)
+				cfg.Progress.Working()
+				cfg.Progress.Item()
 			}
 			read = true
 		}
@@ -806,6 +838,7 @@ func tickHealthConfigDependencies(cfg TickConfig) tickHealthDependencies {
 func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
 	return func(repo, install string, at time.Time, probe identity.Prober, hook bool) ([]RoleVerdict, SpendObservation) {
 		ledger := newHealthLedger(repo, at)
+		ledger.progress = cfg.Progress
 		ledger.laneState, ledger.stateHome = cfg.ClaimLaneState, cfg.WorkStateRoot
 		return evaluateHealthRolesWithLedger(repo, repo, install, at, probe, hook, measureSpend, ledger)
 	}
@@ -923,7 +956,7 @@ func remedyHealthRoles(repoRoot string, health HealthVerdict, generation int, pr
 			if lookPath == nil {
 				lookPath = exec.LookPath
 			}
-			_, stale := capabilitySnapshotStatus(repoRoot, repoRoot, now(), lookPath)
+			_, stale := capabilitySnapshotStatus(repoRoot, repoRoot, now(), lookPath, nil)
 			for _, runtime := range stale {
 				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "capability-probe-"+runtime, role, generation, process, now,
 					func() error { return dependencies.probeRuntime(repoRoot, runtime) }))
