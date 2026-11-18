@@ -594,6 +594,8 @@ func TestAnArmWaitsForALaunchInProgress(t *testing.T) {
 		{name: "e_unreadable"},
 		{name: "e_unknown"},
 		{name: "f_arbitration", sleeps: 1},
+		{name: "g_stop_during_wait", sleeps: 1},
+		{name: "h_already_stopped"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -639,6 +641,12 @@ func TestAnArmWaitsForALaunchInProgress(t *testing.T) {
 			}
 			before, beforeErr := os.ReadFile(runnerReplacementPath(b.root))
 			deps := b.deps
+			if test.name == "h_already_stopped" {
+				deps.notifyAvailable = func(string) bool {
+					closeProcessFence(t, b.root, 148)
+					return true
+				}
+			}
 			sleeps, launches, stops := 0, 0, 0
 			stopSleep := make(chan struct{})
 			deps.sleep = func(d time.Duration) {
@@ -661,7 +669,10 @@ func TestAnArmWaitsForALaunchInProgress(t *testing.T) {
 					}
 				}
 				b.sleep(d)
-				if test.name == "c_child_exits" {
+				if test.name == "g_stop_during_wait" {
+					closeProcessFence(t, b.root, 148)
+					delete(b.processes, 42)
+				} else if test.name == "c_child_exits" {
 					delete(b.processes, 42)
 				} else if sleeps == test.sleeps {
 					b.record(t, b.replacement)
@@ -714,6 +725,16 @@ func TestAnArmWaitsForALaunchInProgress(t *testing.T) {
 				wantPid, wantGeneration, wantLaunches = 42, 148, 0
 			}
 			installed, err := VerifyIdentity(RepoIdentityPath(b.root), b.root)
+			if test.name == "g_stop_during_wait" || test.name == "h_already_stopped" {
+				var stopped *StoppedError
+				if !errors.As(armErr, &stopped) || got.Stage != StageBeforeMint || err != nil || installed.Generation != 148 || launches != 0 || sleeps != test.sleeps {
+					t.Fatalf("stopped arm: %+v %v installed=%+v %v launches=%d sleeps=%d", got, armErr, installed, err, launches, sleeps)
+				}
+				if !bytes.Equal(before, replacementBytes(t, b.root)) {
+					t.Fatal("stopped arm changed the replacement record")
+				}
+				return
+			}
 			if armErr != nil || got.RunnerPid != wantPid || err != nil || installed.Generation != wantGeneration || launches != wantLaunches || sleeps != test.sleeps {
 				t.Fatalf("arm: %+v %v installed=%+v %v launches=%d sleeps=%d", got, armErr, installed, err, launches, sleeps)
 			}

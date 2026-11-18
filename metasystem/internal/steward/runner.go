@@ -1231,6 +1231,9 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		return outcome, err
 	}
 	awaitReplacementLaunch(top, deps)
+	if _, err := readOpenFence(top, "the steward runner"); err != nil {
+		return outcome, err
+	}
 	// Enrollment publication and continuation launch share arbitration.
 	// Arm always takes its own lock first.
 	arbitration, err := AcquireArbitration(top)
