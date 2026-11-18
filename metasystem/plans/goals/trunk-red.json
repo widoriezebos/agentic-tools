@@ -29825,11 +29825,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T021716.254297000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T03:24:33Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T04:42:04Z",
+        "attempt": "20261118T034219.115454000Z",
+        "baseCommit": "0bfa7132ebaf436deb3353ec615af4e69b33ffc3",
+        "how": "green",
+        "opid": "WJ6WEER5GDTF1X2X7RTABMZXHJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
