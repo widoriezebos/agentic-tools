@@ -43,7 +43,7 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	controlRoot := t.TempDir()
 	want := &coldBuildBudgetRefusal{detail: "fixture exhausted"}
 	called := 0
-	environment := approvedTestingEnvironment(t, os.Environ())
+	environment := testrun.Environment(os.Environ())
 	// Outside a proof run's scratch nothing is prepared and the legacy
 	// namespace gains nothing (engine-owns-disk-lifetimes 3.5, DL2-11).
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)

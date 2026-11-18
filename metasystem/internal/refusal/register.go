@@ -417,6 +417,8 @@ var Exclusions = []Exclusion{
 	{Pattern: "COMP_*", Reason: "bash's programmable-completion variables, read by the shell completion glue (cmd/metasystem/completion.go), not a refusal"},
 	{Pattern: "CGO_ENABLED", Reason: "a Go toolchain environment name"},
 	{Pattern: "STATICCHECK_CACHE", Reason: "a Go toolchain environment name"},
+	{Pattern: "JAVA_HOME", Reason: "a Java toolchain environment name"},
+	{Pattern: "XDG_CONFIG_HOME", Reason: "an XDG base-directory environment name that proof scratch declares or isolates"},
 	{Pattern: "STEWARD_MESSAGE", Reason: "an environment name"},
 	{Pattern: "HUMAN_AUTHORITY_PROVEN", Reason: "an authority outcome that admits rather than refuses"},
 	{Pattern: "TEMPORARY_HUMAN_WORD", Reason: "an authority outcome that admits rather than refuses"},

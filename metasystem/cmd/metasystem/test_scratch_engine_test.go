@@ -89,7 +89,7 @@ func TestVerifyIdentityProjectionUsesTheVerificationScratchRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	prepared := testrun.Preparation{ControlRoot: root, ProjectRoot: root, ConfPath: conf, CandidateTree: strings.Repeat("a", 40),
-		Environment: approvedTestingEnvironment(t, os.Environ())}
+		Environment: testrun.Environment(os.Environ())}
 	interrupted := errors.New("interrupted verification")
 	observe := func(scratch *proofrun.ScratchRun) (string, *exec.Cmd) {
 		t.Helper()

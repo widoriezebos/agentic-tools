@@ -155,7 +155,7 @@ func TestNamedUnitChangedInputRefusesWithThePriorRun(t *testing.T) {
 			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Proof[0].Argv = []string{"false"} })
 		}},
 		{"proof-env", func(t *testing.T, fixture unitFixture) {
-			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Proof[0].Input = nil; plan.Proof[0].DeclaredEnv = []string{"A=C"} })
+			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Proof[0].Env = []string{"A=C"} })
 		}},
 		{"base", func(t *testing.T, fixture unitFixture) {
 			rewriteUnitPlan(t, fixture.plan, func(plan *UnitPlan) { plan.Base = "other" })

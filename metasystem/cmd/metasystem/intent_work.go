@@ -21,7 +21,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -1285,13 +1284,9 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		}
 		binding := unitBinding{goal: id, unit: unit, worktree: worktree, base: base, brief: briefPath, designs: designs, check: check,
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
-		input, err := checkenv.Admit(os.Environ(), nil, true)
-		if err != nil {
-			return "", err
-		}
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
-			Proof: []launch.ProofCommand{{Name: "check", Dir: proofDirectory, Argv: append([]string{}, check...), Input: input}}}
+			Proof: []launch.ProofCommand{{Name: "check", Dir: proofDirectory, Argv: append([]string{}, check...), Env: os.Environ()}}}
 		if readEachRound {
 			plan.Read = launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel}
 			if _, err := atomicfile.WriteText(readBrief, binding.readBrief(template, buildBrief), directory); err != nil {

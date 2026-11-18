@@ -434,9 +434,8 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		if code, result := checkActBuild(t, b, owners, remedy...); code != 0 {
 			t.Fatalf("damaged carry resume: %d %+v", code, result)
 		}
-		// A damaged frozen subject can be repaired without archiving its payload.
 		snapshot := filepath.Join(b.root(), "artifacts", "unit-checks", "carry", subject.Commit, "subject.json")
-		if err := os.WriteFile(snapshot, []byte("damaged"), 0600); err != nil {
+		if err := os.WriteFile(snapshot, []byte("damaged snapshot"), 0600); err != nil {
 			t.Fatal(err)
 		}
 		unavailable = true
@@ -456,12 +455,12 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		}) {
 			t.Fatal("repair invented a classification")
 		}
+		preserved, _ := filepath.Glob(snapshot + ".damaged-*")
+		if len(preserved) != 1 {
+			t.Fatalf("damaged snapshot not preserved: %v", preserved)
+		}
 		if code, result := checkActBuild(t, b, owners, withoutOption(repair, "by")...); code != 0 {
 			t.Fatalf("carry repair without a typed name: %d %+v", code, result)
-		}
-		archives, err := filepath.Glob(snapshot + ".damaged-*")
-		if err != nil || len(archives) != 0 {
-			t.Fatal("carry repair archived the damaged payload")
 		}
 		data, err := os.ReadFile(snapshot)
 		var repaired launch.UnitCheck

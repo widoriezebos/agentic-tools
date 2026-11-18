@@ -61,7 +61,7 @@ func assertCarrySelectionEvidence(t *testing.T, result string, complete, audited
 	if evidence.Strength.Complete != complete || evidence.Strength.Audited != audited {
 		t.Fatalf("carry evidence strength: %+v", evidence)
 	}
-	if complete && (evidence.Selection.Base != execution.Check.Base || evidence.Selection.EnvironmentSHA256 != launch.CheckEnvironmentDigest(execution.Check.EnvironmentValues(), execution.Check.Base)) {
+	if complete && (evidence.Selection.Base != execution.Check.Base || evidence.Selection.EnvironmentSHA256 != launch.CheckEnvironmentDigest(execution.Check.Environment, execution.Check.Base)) {
 		t.Fatalf("carry selection lost its base or environment: %+v", evidence.Selection)
 	}
 }

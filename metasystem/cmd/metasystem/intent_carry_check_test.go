@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -227,13 +226,10 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 			if err != nil || json.Unmarshal(evidence, &execution) != nil || len(execution.Exits) != 2 {
 				t.Fatalf("evidence=%s err=%v", evidence, err)
 			}
-			// The snapshot keeps approved input; execution adds the installed engine to PATH.
-			wantInput, inputErr := checkenv.Admit(os.Environ(), nil, true)
-			if inputErr != nil {
-				t.Fatal(inputErr)
-			}
-			wantEnvironment := wantInput.Environment()
-			if execution.Exits[0].Exit != cheap || execution.Exits[1].Exit != audit || !strings.Contains(execution.Exits[0].Output, execution.Check.Directory) || !slices.Equal(execution.Check.EnvironmentValues(), wantEnvironment) {
+			// The carried check is frozen with the installed engine first on PATH (unit 3), the rest of the environment unchanged.
+			wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
+			wantEnvironment = append(wantEnvironment, "PATH="+filepath.Join(b.root(), "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
+			if execution.Exits[0].Exit != cheap || execution.Exits[1].Exit != audit || !strings.Contains(execution.Exits[0].Output, execution.Check.Directory) || !slices.Equal(execution.Check.Environment, wantEnvironment) {
 				t.Fatalf("execution=%+v", execution)
 			}
 			if code != 0 {

@@ -55,11 +55,7 @@ func WriteWorkerCapabilities(writer io.Writer) error {
 // advertise more (scratch environment policies) without being refused.
 func RequireWorkerCapabilities(ctx context.Context, engine string, environment []string) (WorkerCapabilities, error) {
 	command := exec.CommandContext(ctx, engine, "test", "worker-capabilities")
-	approved, err := Environment(environment)
-	if err != nil {
-		return WorkerCapabilities{}, err
-	}
-	command.Env = approved
+	command.Env = Environment(environment)
 	// Stdout only: the handshake is a JSON answer, and a note on stderr is
 	// for a person.
 	data, err := command.Output()

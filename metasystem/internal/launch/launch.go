@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -19,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"runtime/debug"
 )
 
 const DefaultWaitTimeout = 240 * time.Second
@@ -35,7 +35,6 @@ const StateEnv = "METASYSTEM_LAUNCH_STATE"
 var errLaunchCancelledBeforeChild = errors.New("launch cancelled before child start")
 
 type Command struct {
-	ReplaceEnvironment                             bool
 	Program, Directory, Stdin, LogPath, StdoutPath string
 	Args, Environment                              []string
 }

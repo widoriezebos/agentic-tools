@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 )
 
 type UnitPlan struct {
@@ -71,12 +69,10 @@ type UnitReadPlan struct {
 }
 
 type ProofCommand struct {
-	Input       *checkenv.Input `json:"approvedEnvironment,omitempty"`
-	DeclaredEnv []string        `json:"declaredEnv,omitempty"`
-	Name        string          `json:"name"`
-	Dir         string          `json:"dir"`
-	Argv        []string        `json:"argv"`
-	Env         []string        `json:"env"`
+	Name string   `json:"name"`
+	Dir  string   `json:"dir"`
+	Argv []string `json:"argv"`
+	Env  []string `json:"env"`
 }
 
 type rawUnitPlan struct {
@@ -104,12 +100,10 @@ type rawReadPlan struct {
 	Model   *string   `json:"model"`
 }
 type rawProof struct {
-	Input       *checkenv.Input `json:"approvedEnvironment,omitempty"`
-	DeclaredEnv []string        `json:"declaredEnv,omitempty"`
-	Name        *string         `json:"name"`
-	Dir         *string         `json:"dir"`
-	Argv        *[]string       `json:"argv"`
-	Env         *[]string       `json:"env"`
+	Name *string   `json:"name"`
+	Dir  *string   `json:"dir"`
+	Argv *[]string `json:"argv"`
+	Env  *[]string `json:"env"`
 }
 
 var unknownPlanField = regexp.MustCompile(`unknown field "([^"]+)"`)
@@ -212,27 +206,15 @@ func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, erro
 		for _, item := range []struct {
 			name    string
 			missing bool
-		}{{prefix + ".name", proof.Name == nil}, {prefix + ".dir", proof.Dir == nil}, {prefix + ".argv", proof.Argv == nil}, {prefix + ".env", proof.Env == nil && proof.Input == nil && proof.DeclaredEnv == nil}} {
+		}{{prefix + ".name", proof.Name == nil}, {prefix + ".dir", proof.Dir == nil}, {prefix + ".argv", proof.Argv == nil}, {prefix + ".env", proof.Env == nil}} {
 			if item.missing {
 				return UnitPlan{}, planInvalid(item.name, nil)
 			}
 		}
-		command := ProofCommand{Name: *proof.Name, Dir: *proof.Dir, Argv: *proof.Argv, Input: proof.Input, DeclaredEnv: proof.DeclaredEnv}
-		if proof.Env != nil {
-			command.Env = *proof.Env
-		}
-		if err := command.admit(); err != nil {
-			return UnitPlan{}, err
-		}
-		plan.Proof = append(plan.Proof, command)
+		plan.Proof = append(plan.Proof, ProofCommand{*proof.Name, *proof.Dir, *proof.Argv, *proof.Env})
 	}
 	if err := plan.resolveAndValidate(relativeRoot); err != nil {
 		return UnitPlan{}, err
-	}
-	if plan.Check != nil {
-		if err := plan.Check.admit(); err != nil {
-			return UnitPlan{}, err
-		}
 	}
 	return plan, nil
 }
@@ -328,34 +310,3 @@ func planInvalid(field string, cause error) error {
 }
 
 func proofCommands(plan UnitPlan) []ProofCommand { return append([]ProofCommand(nil), plan.Proof...) }
-
-func (command *ProofCommand) admit() error {
-	var err error
-	if command.Input == nil {
-		command.Input, err = checkenv.Admit(command.Env, command.DeclaredEnv, false)
-	} else {
-		if len(command.Env) > 0 || len(command.DeclaredEnv) > 0 {
-			return fmt.Errorf("environment input has conflicting representations")
-		}
-		err = command.Input.Validate()
-	}
-	if err == nil {
-		command.Input = command.Input.Canonical()
-		command.Env = nil
-		command.DeclaredEnv = nil
-	}
-	return err
-}
-func (command ProofCommand) Environment() []string {
-	if command.Input != nil {
-		return command.Input.Environment()
-	}
-	return command.Env
-}
-func proofIdentityCommands(plan UnitPlan) []ProofCommand {
-	commands := proofCommands(plan)
-	for i := range commands {
-		commands[i].Input = commands[i].Input.Stable()
-	}
-	return commands
-}

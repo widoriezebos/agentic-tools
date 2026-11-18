@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 )
@@ -27,17 +26,15 @@ type UnitDeclaration struct {
 }
 
 type UnitCheck struct {
-	Input       *checkenv.Input `json:"approvedEnvironment,omitempty"`
-	DeclaredEnv []string        `json:"declaredEnv,omitempty"`
-	FullArgv    []string        `json:"fullArgv,omitempty"`
-	ProcessAct  string          `json:"processAct,omitempty"`
-	SelectedBy  string          `json:"selectedBy,omitempty"`
-	Reason      string          `json:"reason,omitempty"`
-	Base        string          `json:"base,omitempty"`
-	SourceTree  string          `json:"sourceTree"`
-	Cheap       string          `json:"cheap"`
-	Audits      string          `json:"audits"`
-	Minutes     int             `json:"minutes"`
+	FullArgv   []string `json:"fullArgv,omitempty"`
+	ProcessAct string   `json:"processAct,omitempty"`
+	SelectedBy string   `json:"selectedBy,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Base       string   `json:"base,omitempty"`
+	SourceTree string   `json:"sourceTree"`
+	Cheap      string   `json:"cheap"`
+	Audits     string   `json:"audits"`
+	Minutes    int      `json:"minutes"`
 	// Directory is the engine's installation folder in the goal worktree.
 	Directory string `json:"directory"`
 	// ManualDirectory applies only to the caller's explicit cheap command.
@@ -134,11 +131,8 @@ func (output *outputProgress) Write(data []byte) (int, error) {
 }
 
 func (check UnitCheck) Run(directory, records string, context CheckContext) (string, []CheckExit, error) {
-	if check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Directory == "" || check.Environment == nil && check.Input == nil && check.DeclaredEnv == nil {
+	if check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Directory == "" || check.Environment == nil {
 		return "", nil, errors.New("the frozen unit check is incomplete")
-	}
-	if err := check.admit(); err != nil {
-		return "", nil, err
 	}
 	manualDirectory, err := check.cheapDirectory(directory)
 	if err != nil {
@@ -185,11 +179,11 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	}
 	var exits []CheckExit
 	var failures []error
-	environmentSHA256 := CheckEnvironmentDigest(check.EnvironmentValues(), check.Base)
-	environment := commandenv.EngineEnvironmentInDirectory(check.EnvironmentValues(), context.EngineDirectory)
+	environmentSHA256 := CheckEnvironmentDigest(check.Environment, check.Base)
+	check.Environment = commandenv.EngineEnvironmentInDirectory(check.Environment, context.EngineDirectory)
 	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
 		process := exec.Command("/bin/sh", "-c", command.text)
-		process.Dir, process.Env = directory, slices.Clone(environment)
+		process.Dir, process.Env = directory, slices.Clone(check.Environment)
 		if command.name == "cheap" {
 			process.Dir = manualDirectory
 			process.Env = append(process.Env, "METASYSTEM_CHECK_SELECTION="+filepath.Join(execution, "selection.json"),
@@ -264,22 +258,4 @@ func (check UnitCheck) cheapDirectory(directory string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(directory, relative), nil
-}
-
-func (check *UnitCheck) admit() error { return check.AdmitEnvironment() }
-
-// AdmitEnvironment normalizes caller input before a new check record is written.
-func (check *UnitCheck) AdmitEnvironment() error {
-	command := ProofCommand{Env: check.Environment, DeclaredEnv: check.DeclaredEnv, Input: check.Input}
-	if err := command.admit(); err != nil {
-		return err
-	}
-	check.Input, check.Environment, check.DeclaredEnv = command.Input, nil, nil
-	return nil
-}
-func (check UnitCheck) EnvironmentValues() []string {
-	if check.Input != nil {
-		return check.Input.Environment()
-	}
-	return check.Environment
 }

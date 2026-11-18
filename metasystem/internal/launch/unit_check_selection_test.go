@@ -22,8 +22,8 @@ func TestUnitCheckPassesTheSelectionPath(t *testing.T) {
 func testUnitCheckSelectionEnvironment(t *testing.T, row string) {
 	t.Helper()
 	check := UnitCheck{Directory: t.TempDir(), Cheap: `printf '%s' "$METASYSTEM_CHECK_SELECTION"`, Audits: `printf '%s' "$METASYSTEM_CHECK_SELECTION"`, Minutes: 1,
-		DeclaredEnv: []string{"Z=last", "METASYSTEM_CHECK_SELECTION=inherited", CheckEnvironmentVariable + "=inherited", "A=first"}}
-	frozen := slices.Clone(check.DeclaredEnv)
+		Environment: []string{"Z=last", "METASYSTEM_CHECK_SELECTION=inherited", CheckEnvironmentVariable + "=inherited", "A=first"}}
+	frozen := slices.Clone(check.Environment)
 	if row != "selection" {
 		check.Cheap = `printf '%s' "$METASYSTEM_CHECK_ENVIRONMENT_SHA256"`
 		check.Audits = check.Cheap
@@ -42,12 +42,12 @@ func testUnitCheckSelectionEnvironment(t *testing.T, row string) {
 	})
 	want := filepath.Join(execution, "selection.json")
 	if row != "selection" {
-		want = CheckEnvironmentDigest(check.DeclaredEnv, check.Base)
+		want = CheckEnvironmentDigest(check.Environment, check.Base)
 	}
 	if err != nil || len(exits) != 2 || exits[0].Exit != 0 || exits[0].Output != want || exits[1].Output != "inherited" {
 		t.Fatalf("selection path beside result.json: execution=%s exits=%+v error=%v", execution, exits, err)
 	}
-	if len(attached) != 2 || !strings.Contains(attached[0], "METASYSTEM_CHECK_SELECTION="+filepath.Join(execution, "selection.json")) || !slices.Equal(check.DeclaredEnv, frozen) {
-		t.Fatalf("attached environments=%v frozen environment=%v", attached, check.DeclaredEnv)
+	if len(attached) != 2 || !strings.Contains(attached[0], "METASYSTEM_CHECK_SELECTION="+filepath.Join(execution, "selection.json")) || !slices.Equal(check.Environment, frozen) {
+		t.Fatalf("attached environments=%v frozen environment=%v", attached, check.Environment)
 	}
 }

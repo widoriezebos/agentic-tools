@@ -24,7 +24,7 @@ func TestUnitCheckFindsRunningEngineWithoutCallerPath(t *testing.T) {
 		if err != nil || json.Unmarshal(data, &check) != nil {
 			t.Fatalf("frozen check record: %s, %v", data, err)
 		}
-		environment := slices.Clone(check.DeclaredEnv)
+		environment := slices.Clone(check.Environment)
 		_, exits, err := check.Run(check.Directory, t.TempDir(), CheckContext{})
 		if err != nil || len(exits) != 2 {
 			t.Fatalf("declared engine checks: %+v, %v", exits, err)
@@ -34,7 +34,7 @@ func TestUnitCheckFindsRunningEngineWithoutCallerPath(t *testing.T) {
 				t.Fatalf("declared %s command: %+v", exit.Name, exit)
 			}
 		}
-		if !slices.Equal(check.DeclaredEnv, environment) {
+		if !slices.Equal(check.Environment, environment) {
 			t.Fatal("the frozen record's environment changed")
 		}
 		return
@@ -53,7 +53,7 @@ func TestUnitCheckFindsRunningEngineWithoutCallerPath(t *testing.T) {
 	}
 	directory := t.TempDir()
 	check := UnitCheck{Directory: directory, Minutes: 1, Base: "fixture-parent",
-		DeclaredEnv: commandenv.EngineEnvironmentInDirectory([]string{"PATH=" + directory, "CHECK_VALUE=kept"}, filepath.Dir(engine)),
+		Environment: commandenv.EngineEnvironmentInDirectory([]string{"PATH=" + directory, "CHECK_VALUE=kept"}, filepath.Dir(engine)),
 		Cheap:       `metasystem`,
 		Audits:      `metasystem`}
 	record := filepath.Join(t.TempDir(), "check.json")

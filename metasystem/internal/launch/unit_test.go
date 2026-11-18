@@ -231,7 +231,7 @@ func baseUnitFixture(t *testing.T) unitFixture {
 	data, _ := json.Marshal(UnitPlan{Unit: "U", Goal: "goal", Worktree: worktree, Base: "base",
 		Build: UnitBuildPlan{Brief: brief, Inputs: []string{}, Outputs: []string{}, UnitsPage: page, Units: []string{"U"}},
 		Read:  UnitReadPlan{Brief: read, Inputs: []string{}, Outputs: []string{}, Model: "read-model"},
-		Proof: []ProofCommand{{Name: "check", Dir: worktree, Argv: []string{"true"}, DeclaredEnv: []string{"A=B"}}}})
+		Proof: []ProofCommand{{Name: "check", Dir: worktree, Argv: []string{"true"}, Env: []string{"A=B"}}}})
 	os.WriteFile(plan, data, 0o600)
 	m, _, _, _ := manager(t)
 	m.Adapters["claude-headless"], m.Adapters["plain-exec"] = fakeAdapter{}, fakeAdapter{}
@@ -496,10 +496,7 @@ func TestUnitPlanRetainsDeclaredCheckAndEstimate(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan.Check = &UnitCheck{SourceTree: "declaration-tree", Cheap: "true", Audits: "true", Minutes: 15,
-		Directory: fixture.worktree, DeclaredEnv: []string{"A=B"}}
-	if err := plan.Check.AdmitEnvironment(); err != nil {
-		t.Fatal(err)
-	}
+		Directory: fixture.worktree, Environment: []string{"A=B"}}
 	checkMinutes := 2.0
 	plan.Estimate = &UnitEstimate{DesignID: "design", SourceSHA256: strings.Repeat("a", 64), BodySHA256: strings.Repeat("b", 64),
 		Unit: plan.Unit, ElapsedMinutes: 10, CheckMinutes: &checkMinutes}

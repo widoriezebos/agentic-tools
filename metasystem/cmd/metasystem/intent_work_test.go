@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -656,7 +656,7 @@ func TestAdapterStepsComeBeforeTheCheck(t *testing.T) {
 						t.Fatalf("round %d: check=%+v proof=%+v adapter calls=%d/%v err=%v", round, plan.Check, plan.Proof, calls, *fake.Calls, err)
 					}
 					executable, err := os.Executable()
-					want := []launch.ProofCommand{{Name: "unit-check", Dir: bed.worktree, Argv: []string{executable, "test", "run", "--unit-run", data["run"].(string), "--repo", bed.root()}, Input: plan.Check.Input}}
+					want := []launch.ProofCommand{{Name: "unit-check", Dir: bed.worktree, Argv: []string{executable, "test", "run", "--unit-run", data["run"].(string), "--repo", bed.root()}, Env: plan.Check.Environment}}
 					if err != nil || !reflect.DeepEqual(plan.Proof, want) {
 						t.Fatalf("round %d: executor=%+v want=%+v err=%v", round, plan.Proof, want, err)
 					}

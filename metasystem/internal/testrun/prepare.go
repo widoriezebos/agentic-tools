@@ -378,15 +378,11 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 	if err != nil {
 		return Preparation{}, err
 	}
-	selectionEnvironment, err := Environment(os.Environ())
-	if err != nil {
-		return Preparation{}, err
-	}
 	workerCapabilitiesChecked, workerCapabilities := false, WorkerCapabilities{}
 	if request.RequireWorkerCapabilities {
 		capabilityContext, cancelCapabilities := context.WithCancel(context.Background())
 		var capabilityErr error
-		workerCapabilities, capabilityErr = RequireWorkerCapabilities(capabilityContext, policyEngine, selectionEnvironment)
+		workerCapabilities, capabilityErr = RequireWorkerCapabilities(capabilityContext, policyEngine, Environment(os.Environ()))
 		cancelCapabilities()
 		if capabilityErr != nil {
 			return Preparation{}, capabilityErr
@@ -416,6 +412,7 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 	}
 	// Expand protected Go package selectors against the exact trees before
 	// policy selection. Each affected package becomes its own reusable group.
+	selectionEnvironment := Environment(os.Environ())
 	effective, err = proofrun.ExpandGoPackageGroupsWithEnvironment(effective, projectRoot, changeBaseTree, candidateTree, selectionEnvironment)
 	if err != nil {
 		return Preparation{}, err
@@ -758,11 +755,7 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	command := exec.CommandContext(ctx, engine, args...)
-	environment, err := Environment(os.Environ())
-	if err != nil {
-		return PlanOutput{}, err
-	}
-	command.Env = environment
+	command.Env = Environment(os.Environ())
 	if os.Getenv(PolicyProbeWorkerEnvironment) == "1" {
 		command.Env = append(command.Env, PolicyProbeWorkerEnvironment+"=1")
 	}

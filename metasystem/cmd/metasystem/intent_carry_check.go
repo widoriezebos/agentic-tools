@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -43,23 +43,18 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	repair := shellCommand(inv.publicArgv("work", "review", "--commit", subject.Commit, "--goal", goalID, "--repo", inv.layout.InstallationRoot.Path(), "--check-only", "--reason", "Repair unavailable declarations", "--by", "NAME", "--check", "COMMAND"))
 	records := inv.layout.InstallationRoot.Path("artifacts", "unit-checks", "carry", subject.Commit)
 	path := filepath.Join(records, "subject.json")
-	var check launch.UnitCheck
+	check := launch.UnitCheck{Base: subject.Parent, SourceTree: subject.Tree, Directory: directory, Environment: commandenv.EngineEnvironmentInDirectory(os.Environ(), filepath.Join(inv.layout.InstallationRoot.Path(), "bin"))}
 	data, readErr := os.ReadFile(path)
-	unusable := readErr == nil && (json.Unmarshal(data, &check) != nil || check.SourceTree != subject.Tree || check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Input == nil || check.AdmitEnvironment() != nil || check.Declaration != nil && (check.Cheap != check.Declaration.Values[0] || check.Audits != check.Declaration.Values[1]))
-	if unusable && !inv.input.has("check") {
-		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: fmt.Errorf("the carry snapshot is unavailable\nrun: %s", repair)}
-	}
-	if unusable || os.IsNotExist(readErr) {
-		input, err := checkenv.Admit(os.Environ(), nil, true)
-		if err != nil {
+	if readErr == nil && (json.Unmarshal(data, &check) != nil || check.SourceTree != subject.Tree || check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Environment == nil || check.Declaration != nil && (check.Cheap != check.Declaration.Values[0] || check.Audits != check.Declaration.Values[1])) {
+		if !inv.input.has("check") {
+			return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: fmt.Errorf("the carry snapshot is unavailable\nrun: %s", repair)}
+		}
+		if _, err := atomicfile.WriteFile(path+fmt.Sprintf(".damaged-%x", sha256.Sum256(data)), data, 0600, ""); err != nil {
 			return branch.GateObservation{}, err
 		}
-		check = launch.UnitCheck{Base: subject.Parent, SourceTree: subject.Tree, Directory: directory, Input: input}
-	} else if readErr != nil {
+		check = launch.UnitCheck{Base: subject.Parent, SourceTree: subject.Tree, Directory: directory, Environment: commandenv.EngineEnvironmentInDirectory(os.Environ(), filepath.Join(inv.layout.InstallationRoot.Path(), "bin"))}
+	} else if readErr != nil && !os.IsNotExist(readErr) {
 		return branch.GateObservation{}, readErr
-	}
-	if err := check.AdmitEnvironment(); err != nil {
-		return branch.GateObservation{}, err
 	}
 	check.Directory, check.Base = directory, subject.Parent
 	plan := launch.UnitPlan{Goal: goalID, Unit: subject.Commit, Worktree: directory, Check: &check}
@@ -161,7 +156,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 	}
 	if execution == "" {
-		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now, EngineDirectory: filepath.Join(inv.layout.InstallationRoot.Path(), "bin"),
+		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now,
 			Worktree: directory, Tree: func() (string, error) {
 				tree, err := inv.work().git(directory, "rev-parse", "HEAD^{tree}")
 				return strings.TrimSpace(string(tree)), err
@@ -197,8 +192,6 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	// The execution retains the environment locally; a committed read carries
 	// only the declared commands and their observed exits.
 	retained.Check.Environment = []string{}
-	retained.Check.Input = nil
-	retained.Check.DeclaredEnv = nil
 	evidence, err = json.Marshal(retained)
 	if err != nil {
 		return branch.GateObservation{}, err

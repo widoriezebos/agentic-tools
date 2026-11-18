@@ -19,7 +19,7 @@ func TestUnitCheckAttachesBothCommandsAfterSettingTheirEnvironment(t *testing.T)
 				guard += ` && [ "$UNIT_CHECK_ATTACHED" = 1 ]`
 			}
 			check := UnitCheck{Cheap: guard + ` && printf cheap`, Audits: guard + ` && printf audits`,
-				Minutes: 1, Directory: t.TempDir(), DeclaredEnv: []string{"UNIT_CHECK_FROZEN=frozen"}}
+				Minutes: 1, Directory: t.TempDir(), Environment: []string{"UNIT_CHECK_FROZEN=frozen"}}
 			var calls []string
 			context := CheckContext{}
 			if row.attach {

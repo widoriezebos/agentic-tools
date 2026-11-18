@@ -874,13 +874,6 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestAnExcludedFileTheBuilderTouchedIsPutBack",
       "reason": "uses the connected review bed, which sets process-wide Git environment variables with t.Setenv"
-    },
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestDeclaredEnvironmentPublicWritersAndAttribution","reason":"Changes process environment to prove admission through public verbs; testing.T.Setenv forbids parallel execution."},
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestDeclaredEnvironmentGeneratedUnsupported","reason":"Changes process environment to prove admission through public verbs; testing.T.Setenv forbids parallel execution."},
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestDeclaredEnvironmentPreservesHostSelection","reason":"Changes process environment to prove admission through public verbs; testing.T.Setenv forbids parallel execution."},
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestDeclaredEnvironmentPublicRerunSeesDeclaredInput","reason":"Changes process environment to prove admission through public verbs; testing.T.Setenv forbids parallel execution."},
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestDeclaredEnvironmentPublicCarryWriters","reason":"Changes process environment to prove admission through public verbs; testing.T.Setenv forbids parallel execution."},
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestIntentDeclaredCheckPublicationRunsInCommitWorktree","reason":"Changes process environment to prove admission through public verbs; testing.T.Setenv forbids parallel execution."},
-    {"package":"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv","test":"TestApprovedExecutableResolution","reason":"Changes process PATH to prove executable lookup never falls back to the live parent; testing.T.Setenv forbids parallel execution."}
+    }
   ]
 }
