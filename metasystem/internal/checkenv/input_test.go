@@ -11,6 +11,7 @@ import (
 )
 
 func TestAdmission(t *testing.T) {
+	t.Parallel()
 	for _, ambient := range []bool{true, false} {
 		input, err := Admit([]string{"PATH=/first", "PATH=/last", "GOENV=", "GOWORK=/work", "XDG_CONFIG_HOME=/config"}, []string{"CUSTOM="}, ambient)
 		if err != nil {
@@ -46,6 +47,7 @@ func TestAdmission(t *testing.T) {
 	}
 }
 func TestUnsupportedInputs(t *testing.T) {
+	t.Parallel()
 	for _, assignment := range []string{"GOPROXY=https://user:synthetic@host", "GOFLAGS=-proxy=https://user:synthetic@host", "GONOSUMDB=https://user:synthetic@host", "HTTPS_PROXY=https://user:synthetic@host", "GOAUTH=synthetic-command"} {
 		for _, declared := range []bool{false, true} {
 			var err error
@@ -87,6 +89,7 @@ func TestApprovedExecutableResolution(t *testing.T) {
 }
 
 func TestRetainedInputIsValidated(t *testing.T) {
+	t.Parallel()
 	for _, input := range []*Input{
 		{Version: Version + 1},
 		{Version: Version, Entries: []Entry{{Name: "CUSTOM", Value: "synthetic", Source: "host"}}},
@@ -102,6 +105,7 @@ func TestRetainedInputIsValidated(t *testing.T) {
 }
 
 func TestEmptyStableInputDoesNotDependOnEncoding(t *testing.T) {
+	t.Parallel()
 	a := (&Input{Version: Version}).Stable()
 	b := (&Input{Version: Version, Entries: []Entry{}, Dropped: []string{"IGNORED"}}).Stable()
 	if !reflect.DeepEqual(a, b) || a.Environment() == nil {

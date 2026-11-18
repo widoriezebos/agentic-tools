@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -39,8 +40,11 @@ func ContractReady(root string, discovery bool) (string, int, error) {
 		if leaseErr != nil {
 			err = leaseErr
 		} else {
-			err = proofrun.CheckNativeDiscovery(proofrun.WithHostResourceLease(ctx, lease), projectRoot, installation, contract,
-				Environment(os.Environ()))
+			environment, problem := Environment(os.Environ())
+			err = problem
+			if err == nil {
+				err = proofrun.CheckNativeDiscovery(proofrun.WithHostResourceLease(ctx, lease), projectRoot, installation, contract, environment)
+			}
 			err = errors.Join(err, lease.Close())
 		}
 	}
@@ -69,6 +73,10 @@ func LoadContract(root string) (string, testpolicy.Contract, string, error) {
 }
 
 func checkTools(projectRoot string, contract testpolicy.Contract) error {
+	approved, err := Environment(os.Environ())
+	if err != nil {
+		return err
+	}
 	var unavailable []string
 	for _, group := range contract.Groups {
 		cwd := filepath.Join(projectRoot, filepath.FromSlash(group.CWD))
@@ -76,7 +84,7 @@ func checkTools(projectRoot string, contract testpolicy.Contract) error {
 			unavailable = append(unavailable, group.ID+":cwd")
 			continue
 		}
-		environment := proofrun.GroupTestingEnvironment(Environment(os.Environ()), group)
+		environment := proofrun.GroupTestingEnvironment(approved, group)
 		for _, tool := range group.Tools {
 			if _, err := proofrun.ResolveTestingExecutable(context.Background(), cwd, environment, []string{tool.Executable}); err != nil {
 				unavailable = append(unavailable, group.ID+":"+tool.ID)
@@ -200,22 +208,20 @@ func landingRef(projectRoot, scope string) ([]byte, error) {
 	return command.Output()
 }
 
-func Environment(environment []string) []string {
-	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true,
-		"GOCACHE": true, "GOMODCACHE": true, "GOTMPDIR": true, "STATICCHECK_CACHE": true, "GOPATH": true, "GOROOT": true, "GOFLAGS": true, "GOWORK": true,
-		"CGO_ENABLED": true, "GOTOOLCHAIN": true, "GOEXPERIMENT": true, "JAVA_HOME": true, "LANG": true,
-		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true, identity.RunOwnerEnv: true,
-		// Go env file selection, snapshotted by PrepareScratchEnvironment.
-		"GOENV": true, "XDG_CONFIG_HOME": true}
-	var result []string
+// Environment applies the shared admission policy without transporting outer
+// declarations. Ownership is supplied by the existing runner boundary.
+func Environment(environment []string) ([]string, error) {
+	var ownership []string
 	for _, entry := range environment {
-		name, _, ok := strings.Cut(entry, "=")
-		if ok && allowed[name] {
-			result = append(result, entry)
+		if name, _, ok := strings.Cut(entry, "="); ok && name == identity.RunOwnerEnv {
+			ownership = append(ownership, entry)
 		}
 	}
-	sort.Strings(result)
-	return result
+	input, err := checkenv.Admit(environment, ownership, true)
+	if err != nil {
+		return nil, err
+	}
+	return input.Environment(), nil
 }
 
 func InheritedEnvironment(prepared, inherited []string) []string {
