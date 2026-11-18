@@ -428,6 +428,10 @@ func TestWatcherRepairStopsWhenTheStewardBreakerEndsHealing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trueBinary, err = filepath.EvalSymlinks(trueBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -474,6 +478,10 @@ func TestWatcherRepairAbortsWhenEnrollmentChangesBeforeItsLock(t *testing.T) {
 	}
 	writeIdentity := func(generation int, binary string) {
 		t.Helper()
+		binary, err := filepath.EvalSymlinks(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
 		digest, err := installDigest(binary)
 		if err != nil {
 			t.Fatal(err)
@@ -499,7 +507,11 @@ func TestWatcherRepairAbortsWhenEnrollmentChangesBeforeItsLock(t *testing.T) {
 		})
 		result <- repairResult{outcome: outcome, err: err}
 	}()
-	<-validated
+	select {
+	case <-validated:
+	case got := <-result:
+		t.Fatalf("repair returned before validating enrollment: %+v %v", got.outcome, got.err)
+	}
 	writeIdentity(2, falseBinary)
 	close(reenrolled)
 	got := <-result
