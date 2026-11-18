@@ -174,13 +174,18 @@ func TestRunLoopAttemptsRevivalBeforeNotifyingItsFailure(t *testing.T) {
 		if data, err := os.ReadFile(sink); err == nil && strings.Contains(string(data), "stalled-dead") {
 			alertedBeforeRepair = true
 		}
-		if err := stopRunnerLoop(root); err != nil {
-			return err
-		}
 		return os.ErrInvalid
 	}
+	deliver := runnerPendingDelivery(root, command)
 	deps := runnerLoopDependencies{
-		Tick: repository.runnerTick(), DeliverPending: runnerPendingDelivery(root, command),
+		Tick: repository.runnerTick(),
+		DeliverPending: func(root string, progress *Progress) (int, error) {
+			delivered, err := deliver(root, progress)
+			if err := stopRunnerLoop(root); err != nil {
+				t.Fatal(err)
+			}
+			return delivered, err
+		},
 		Now: time.Now, Sleep: func(interval time.Duration) { sleeps++; _ = stopRunnerLoop(root) },
 		AfterRecordPublished: func() { published++ },
 	}

@@ -36,13 +36,13 @@ func TestRunnerRefreshOutcomePreservesPass(t *testing.T) {
 			cfg := TickConfig{Now: now,
 				KeepLandingLane: func() lane.AgentRun { keeps++; return lane.AgentRun{} },
 				RearmAtBoundary: func(*Progress) (bool, error) {
-					loop.stop(t)
 					if outcome == "refused" {
 						return false, errors.New("engine source has local edits")
 					}
 					return outcome == "replaced", nil
 				},
 			}
+			deps.Sleep = func(d time.Duration) { now = now.Add(d); loop.stop(t) }
 			if err := runLoopWithDependencies(loop.root, fakeCensus{}, func(*Progress) error { revives++; return nil }, time.Second, cfg, deps); err != nil {
 				t.Fatal(err)
 			}

@@ -49,6 +49,9 @@ func ReconcileRecoveryRequests(self string, cfg TickConfig, census WorkerCensus)
 		if err != nil {
 			obligations = errors.Join(obligations, fmt.Errorf("seat %s: %w", seat.Path, err))
 		}
+		if cfg.Progress.Stopping() {
+			break
+		}
 	}
 	return obligations
 }

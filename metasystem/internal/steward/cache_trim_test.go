@@ -76,17 +76,16 @@ func TestAStopFileDuringATrimEndsTheTrimAndTheRunner(t *testing.T) {
 	}
 	tick := repository.runnerTick()
 	deps := runnerLoopDependencies{
-		Tick: func(top string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
-			result, err := tick(top, cfg, census)
-			if stopErr := stopRunnerLoop(top); stopErr != nil {
-				t.Error(stopErr)
-			}
-			return result, err
-		},
+		Tick:           tick,
 		DeliverPending: runnerPendingDelivery(root, "true"),
 		Channel:        func(context.Context, string, func()) (int, error) { return 0, nil },
-		TrimCaches:     machineCacheTrimmer(func() (string, error) { return userCache, nil }, state),
-		Now:            time.Now, Sleep: func(time.Duration) { t.Error("the runner waited after its stop file") },
+		TrimCaches: machineCacheTrimmer(func() (string, error) {
+			if err := stopRunnerLoop(root); err != nil {
+				t.Fatal(err)
+			}
+			return userCache, nil
+		}, state),
+		Now: time.Now, Sleep: func(time.Duration) { t.Error("the runner waited after its stop file") },
 	}
 	// The runner's Sleep seam fails the test, so a runner that waited after
 	// the stop file instead of ending is red without timing it.
@@ -100,6 +99,34 @@ func TestAStopFileDuringATrimEndsTheTrimAndTheRunner(t *testing.T) {
 	}
 	if report.EndedBy != "cancelled" || report.Checkpoint.Shard != "7f" || report.Checkpoint.BytesSoFar != 256 {
 		t.Fatalf("the stop file did not end the trim at its first batch: %+v", report)
+	}
+}
+
+func TestTheCacheTrimEndsOnTheStopSignal(t *testing.T) {
+	t.Parallel()
+	root, userCache, state := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shard := filepath.Join(userCache, "go-build", "7f")
+	if err := os.MkdirAll(shard, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 512; i++ {
+		if err := os.WriteFile(filepath.Join(shard, fmt.Sprintf("%06d-a", i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := claimQuotaClock
+	p := itemsProgress(t, root, &now)
+	p.stopping = func() bool { return true }
+	err := machineCacheTrimmer(func() (string, error) { return userCache, nil }, state)(context.Background(), root, TickConfig{Now: now, Progress: p})
+	var report gocache.TrimReport
+	if readErr := readJSON(filepath.Join(state, "engine-go-build.json"), &report); err != nil || readErr != nil || report.EndedBy != "cancelled" || report.Checkpoint.Shard != "7f" || report.Checkpoint.BytesSoFar != 256 {
+		t.Fatalf("trim=%+v errors=%v %v", report, err, readErr)
+	}
+	if _, err := os.Stat(runnerStopPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("signal test has a stop file: %v", err)
 	}
 }
 

@@ -44,8 +44,12 @@ type Progress struct {
 	path            string
 	now             func() time.Time
 	write           func(string, string) error
+	stopping        func() bool
 	written, warned bool
 }
+
+// Stopping lets the current item finish before the runner accepts more work.
+func (p *Progress) Stopping() bool { return p != nil && p.stopping != nil && p.stopping() }
 
 func newProgress(root string, self identity.Exact, generation int, now func() time.Time, write func(string, string) error) *Progress {
 	return &Progress{path: runnerProgressPath(root), now: now, write: write, record: RunnerProgress{

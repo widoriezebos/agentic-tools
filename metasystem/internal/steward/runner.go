@@ -263,6 +263,10 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 	stopWatching := deps.StopSignals.watch(drain)
 	defer stopWatching()
 	cfg.Stopping = drain.Requested
+	stopping := func() bool {
+		_, err := os.Stat(runnerStopPath(top))
+		return err == nil || drain.Requested()
+	}
 
 	prober := deps.Self
 	if prober == nil {
@@ -312,6 +316,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		progressWrite = atomicfile.WriteVolatile
 	}
 	cfg.Progress = newProgress(top, self, cfg.Runner.Generation, deps.Now, progressWrite)
+	cfg.Progress.stopping = stopping
 	if deps.ExamineLedger != nil {
 		cfg.Progress.Begin("examine-ledger")
 		if err := deps.ExamineLedger(top, cfg.now(), cfg.Progress); err != nil {
@@ -348,6 +353,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 			float64(work-result.healthElapsed-timed.elapsed-paged)/float64(time.Millisecond), float64(paged)/float64(time.Millisecond), slept.Seconds())
 		recordDuty(top, "tick-timing", logErr, deps.Now())
 	}
+	halt := func() bool {
+		if !stopping() {
+			return false
+		}
+		logTick(deps.Now().Sub(started), 0)
+		return true
+	}
 	wait := func(keeper *laneKeeping) bool {
 		work := deps.Now().Sub(started)
 		var slept time.Duration
@@ -364,7 +376,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 	}
 
 	for {
-		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
+		if stopping() {
 			return nil
 		}
 		reads.Lock()
@@ -377,10 +389,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
-		// A stop signal during the tick: its work in progress has finished,
-		// and nothing after it starts.
-		if drain.Requested() {
-			logTick(deps.Now().Sub(started), 0)
+		if halt() {
 			return nil
 		}
 		// The disk sweep runs after the tick released arbitration and before
@@ -390,6 +399,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 			cfg.Progress.Begin("disk-sweep")
 			recordDuty(top, "disk-sweep", deps.SweepDisk(top, deps.Now(), helm.Active(top).Active, cfg.Progress.Item), deps.Now())
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		// The bridge role runs every cycle, at the helm too: it reports and
 		// decides nothing (R25). Its line is printed when it changes.
@@ -400,6 +412,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 				bridgeLine = line
 			}
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		cfg.Progress.Begin("question-replies")
 		settleContext, cancelSettle := context.WithTimeout(context.Background(), 15*time.Second)
@@ -409,6 +424,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		cfg.Progress.Item()
 		recordDuty(top, "question-replies", settleErr, deps.Now())
 		cancelSettle()
+		if halt() {
+			return nil
+		}
 		// The shared situation page, read fresh each pass, at the helm too.
 		if cfg.Situation != nil {
 			cfg.Progress.Begin("situation")
@@ -417,6 +435,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 			recordDuty(top, "situation", pageErr, deps.Now())
 			paged = deps.Now().Sub(at)
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
@@ -432,8 +453,15 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 				_ = NoteRearmFailure(top, followErr, deps.Now())
 			} else if replaced {
 				return nil
-			} else if refused && helm.Active(top).Active {
+			}
+			if halt() {
+				return nil
+			}
+			if followErr == nil && refused && helm.Active(top).Active {
 				channelDuty()
+				if halt() {
+					return nil
+				}
 			}
 		}
 		if helm.Active(top).Active {
@@ -449,6 +477,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 			cfg.Progress.Begin("unit-boundary")
 			recordDuty(top, "unit-boundary", cfg.CompletedBoundary(top, cfg.now()), deps.Now())
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		if cfg.RearmAtBoundary != nil {
 			cfg.Progress.Begin("rearm")
@@ -460,12 +491,18 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 				return nil
 			}
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		// The landing lane's keeper wakes the lane's landing agent when the
 		// lane has work; at the helm it observes and continues only recorded scope.
 		cfg.Progress.Begin("landing-keeper")
 		keeping.run()
 		cfg.Progress.Item()
+		if halt() {
+			return nil
+		}
 		// A revive decision that selected a seat starts the seat main in this
 		// same pass (g1-s77), instead of a delegate revival.
 		if err == nil && result.Decision.Action == ActRevive && result.Seat != nil {
@@ -484,6 +521,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 				}
 			}
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		resume := err == nil && result.Decision.Action == ActRevive && result.Seat == nil
 		if !resume {
@@ -511,10 +551,16 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 				}
 			}
 			cfg.Progress.Item()
+			if halt() {
+				return nil
+			}
 		}
 		cfg.Progress.Begin("seat-recovery-requests")
 		recordDuty(top, "seat-recovery-requests", ReconcileRecoveryRequests(top, cfg, timed), deps.Now())
 		cfg.Progress.Item()
+		if halt() {
+			return nil
+		}
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
@@ -522,10 +568,16 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func(*
 		_, deliverErr := deps.DeliverPending(top, cfg.Progress)
 		cfg.Progress.Item()
 		recordDuty(top, "notifications-pending", deliverErr, deps.Now())
+		if halt() {
+			return nil
+		}
 		channelDuty()
+		if halt() {
+			return nil
+		}
 		// The machine caches are trimmed last, after the tick released
 		// arbitration; the trim holds only its own per-cache flock, runs
-		// under its budget and ends at the stop file.
+		// under its budget and ends when the runner accepts a stop.
 		if deps.TrimCaches != nil {
 			cfg.Progress.Begin("cache-trim")
 			recordDuty(top, "cache-trim", deps.TrimCaches(context.Background(), top, cfg), deps.Now())

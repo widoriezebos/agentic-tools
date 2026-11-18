@@ -24,15 +24,15 @@ func CacheTrimStateDir() (string, error) {
 // machineCacheTrimmer is the runner's cycle step that trims the machine Go
 // and staticcheck caches to their caps (disk-lifetimes A12). It reads the
 // disk settings from the checkout's metasystem.conf, runs under the
-// trim budget, and ends at the next batch once the runner's stop file
-// appears, so stopping the system never waits on a trim. It takes and
+// trim budget, and ends at the next batch once the runner accepts a stop,
+// so stopping the system never waits on a trim. It takes and
 // holds no arbitration: only each cache's own nonblocking flock.
 func machineCacheTrimmer(userCacheDir func() (string, error), stateDir string) func(context.Context, string, TickConfig) error {
 	return func(ctx context.Context, top string, cfg TickConfig) error {
 		stop := runnerStopPath(top)
 		_, err := TrimMachineCaches(ctx, top, userCacheDir, stateDir, cfg.now(), func() time.Time { return cfg.now() }, func() bool {
 			_, err := os.Stat(stop)
-			return err == nil
+			return err == nil || cfg.Progress.Stopping()
 		}, cfg.Progress.Item)
 		return err
 	}

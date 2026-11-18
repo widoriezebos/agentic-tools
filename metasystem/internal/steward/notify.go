@@ -292,6 +292,9 @@ func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDepende
 	defer items.done()
 	delivered := 0
 	for _, n := range pending {
+		if deps.progress.Stopping() {
+			return delivered, nil
+		}
 		items.next()
 		if n.DeliveryOwner == legacyHealthDeliveryOwner {
 			continue

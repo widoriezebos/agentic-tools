@@ -1043,6 +1043,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if tipsError != nil {
 		facts += "Goal tips unavailable; metasystem work status " + selection.Goal + "\n"
 	}
+	if dependencies.Progress.Stopping() {
+		return SeatRecord{}, nil
+	}
 	if err := writeExclusiveBrief(briefPath, seatBrief(selection, automaticHandoff, facts)); err != nil {
 		return SeatRecord{}, err
 	}
