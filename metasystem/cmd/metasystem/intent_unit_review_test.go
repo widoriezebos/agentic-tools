@@ -79,7 +79,7 @@ type connectionBed struct {
 func connectionGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	command.Env = gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	command.Env = gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1")
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()

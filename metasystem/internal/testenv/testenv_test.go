@@ -750,7 +750,7 @@ func TestMainIsolatesMachineGitConfiguration(t *testing.T) {
 		t.Fatalf("global Git config is outside this test process's namespace: %q", global)
 	}
 	data, err := os.ReadFile(global)
-	if err != nil || len(data) != 0 {
-		t.Fatalf("global Git config is not an empty readable file: %q %v", data, err)
+	if err != nil || string(data) != fixtureGitConfig {
+		t.Fatalf("global Git config does not contain fixture defaults: %q %v", data, err)
 	}
 }

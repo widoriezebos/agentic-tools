@@ -11,12 +11,6 @@ import (
 // nested installation's gate finds its go.mod (an amended unit's publication
 // ran it at the candidate's top and failed with "go.mod file not found").
 func TestCandidateInstallationKeepsTheInstallationPrefix(t *testing.T) {
-	empty := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(empty, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", empty)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	repo := t.TempDir()
 	connectionGit(t, repo, "init", "-q", "-b", "main")
 	nested := filepath.Join(repo, "metasystem")

@@ -33,7 +33,7 @@ func newQuarantineBed(t *testing.T) quarantineBed {
 	must := func(env []string, dir string, args ...string) string {
 		t.Helper()
 		command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-		command.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		command.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1",
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com"), env...)
 		out, err := command.CombinedOutput()
 		if err != nil {
@@ -80,7 +80,7 @@ func (bed quarantineBed) request(stage string) AbsorbRequest {
 func (bed quarantineBed) commonHolds(t *testing.T, commit string) bool {
 	t.Helper()
 	command := exec.Command("git", "-C", bed.repo, "rev-list", "--objects", commit)
-	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1")
 	return command.Run() == nil
 }
 

@@ -27,7 +27,7 @@ var delegateNow = time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 
 func delegateGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	command.Env = gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+	command.Env = gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
 	var stderr strings.Builder
 	command.Stderr = &stderr
@@ -75,7 +75,7 @@ func newDelegateBed(t *testing.T, closed bool) delegateBed {
 	must := func(env []string, dir string, args ...string) string {
 		t.Helper()
 		command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-		command.Env = append(gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		command.Env = append(gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1",
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com"), env...)
 		out, err := command.CombinedOutput()
 		if err != nil {

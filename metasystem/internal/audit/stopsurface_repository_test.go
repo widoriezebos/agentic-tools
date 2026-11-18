@@ -298,7 +298,7 @@ func (f *gitStopSurfaceFixture) write(path, content string) {
 func (f *gitStopSurfaceFixture) git(args ...string) string {
 	f.t.Helper()
 	command := exec.Command("git", append([]string{"-C", f.root}, args...)...)
-	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		f.t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)

@@ -32,7 +32,7 @@ func seatVerbCheckout(t *testing.T, machine string) string {
 func seatVerbGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"))
 	out, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -173,7 +173,7 @@ func publishSeatFixture(t *testing.T, root, machine string, at time.Time) {
 func seatVerbMktree(t *testing.T, root, blob string) string {
 	t.Helper()
 	command := exec.Command("git", "-C", root, "mktree")
-	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"))
 	command.Stdin = strings.NewReader("100644 blob " + blob + "\tpresence.json\n")
 	out, err := command.Output()
 	if err != nil {

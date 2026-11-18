@@ -169,7 +169,7 @@ func TestTheExcludedDifferencesAreNamed(t *testing.T) {
 				t.Fatal(err)
 			}
 			gitRun := func(args ...string) string {
-				out, err := (launch.OSGitRunner{}).Run(b.worktree, []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}, args...)
+				out, err := (launch.OSGitRunner{}).Run(b.worktree, []string{"GIT_CONFIG_GLOBAL=" + os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1"}, args...)
 				if err != nil {
 					t.Fatal(err)
 				}

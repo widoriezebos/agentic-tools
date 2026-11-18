@@ -20,7 +20,7 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	command := exec.Command("git", args...)
 	command.Dir = dir
 	command.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null", "GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_SYSTEM=/dev/null", "GIT_TERMINAL_PROMPT=0",
 		"GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
 		"GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
 	out, err := command.CombinedOutput()
@@ -324,7 +324,7 @@ func writeTree(t *testing.T, root, blob string) string {
 	command := exec.Command("git", "mktree")
 	command.Dir = root
 	command.Stdin = strings.NewReader("100644 blob " + blob + "\tpresence.json\n")
-	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := command.Output()
 	if err != nil {
 		t.Fatalf("git mktree: %v", err)

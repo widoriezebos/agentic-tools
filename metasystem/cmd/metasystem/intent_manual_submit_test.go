@@ -263,7 +263,7 @@ func TestManualCaptureFromNestedCheckout(t *testing.T) {
 	git := func(args ...string) string {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
-		command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"))
 		out, err := command.CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
@@ -413,7 +413,7 @@ func TestManualUnknownGoalWritesNothing(t *testing.T) {
 	// A real checkout with a change, so only the goal check can stop it.
 	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=f", "-c", "user.email=f@example.invalid", "commit", "-qm", "base"}} {
 		command := exec.Command("git", append([]string{"-C", bed.root()}, args...)...)
-		command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"))
 		if out, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}

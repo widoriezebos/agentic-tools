@@ -662,7 +662,7 @@ func realOutcomeBed(t *testing.T) *workBed {
 	git := func(args ...string) string {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-C", b.worktree, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
-		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.Getenv("GIT_CONFIG_GLOBAL"), "GIT_CONFIG_NOSYSTEM=1")
 		out, err := command.CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %s %v", args, out, err)

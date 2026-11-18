@@ -655,8 +655,13 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 		}
 	}
 	gitConfig := filepath.Join(root, "gitconfig")
-	if err := os.WriteFile(gitConfig, nil, 0o600); err != nil {
+	if err := writeFixtureGitConfig(gitConfig); err != nil {
 		return fail(fmt.Errorf("isolate git configuration: %w", err))
+	}
+	// Product runners scrub GIT_CONFIG_* steering variables. Keep the same
+	// policy in HOME so their Git subprocesses still inherit fixture defaults.
+	if err := writeFixtureGitConfig(filepath.Join(directories["HOME"], ".gitconfig")); err != nil {
+		return fail(fmt.Errorf("isolate home git configuration: %w", err))
 	}
 	values := map[string]string{
 		"GIT_CONFIG_NOSYSTEM": "1",

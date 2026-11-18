@@ -102,6 +102,7 @@ func TestNamespaceGitMatchesAppleWrapper(t *testing.T) {
 	}
 	t.Logf("selected git: %s; DEVELOPER_DIR=%s", git, os.Getenv("DEVELOPER_DIR"))
 	root := t.TempDir()
+	checkTestenv(t, writeFixtureGitConfig(filepath.Join(root, ".gitconfig")))
 	environment := gitProbeEnvironment(os.Environ(), root)
 	// Compare the real system-config lookup too; the namespace normally
 	// disables it for fixtures, but that must not conceal a prefix difference.
@@ -384,7 +385,7 @@ func TestGitProbeEnvironment(t *testing.T) {
 		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=init.templateDir", "GIT_CONFIG_VALUE_0=/override",
 	}, "/probe")
 	want := []string{"PATH=/usr/bin", "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
-		"HOME=/probe", "XDG_CONFIG_HOME=/probe", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}
+		"HOME=/probe", "XDG_CONFIG_HOME=/probe", "GIT_CONFIG_GLOBAL=" + filepath.Join("/probe", ".gitconfig"), "GIT_CONFIG_NOSYSTEM=1"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("probe environment = %v, want %v", got, want)
 	}

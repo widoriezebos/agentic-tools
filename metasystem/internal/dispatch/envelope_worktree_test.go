@@ -114,6 +114,7 @@ func TestWorktreeEnvelopeGrantsGitRoots(t *testing.T) {
 	// REPOSITORY config demanding gc at every object, the quarantine
 	// env's maintenance.auto/gc.auto override wins and packed-refs
 	// never appears from a delegate commit.
+	git(repo, nil, "config", "maintenance.auto", "true")
 	git(repo, nil, "config", "gc.auto", "1")
 	os.WriteFile(filepath.Join(worktree, "h.txt"), []byte("more\n"), 0o644)
 	git(worktree, quarantineEnv, "add", "h.txt")

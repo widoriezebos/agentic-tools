@@ -11,6 +11,22 @@ import (
 	"sync"
 )
 
+// Fixture repositories must have no writers after a Git command returns.
+// gc.auto does not disable non-GC maintenance tasks. gc.autoDetach also
+// supplies maintenance.autoDetach's fallback on supported Git versions.
+const fixtureGitConfig = `[maintenance]
+ auto = false
+[gc]
+ auto = 0
+ autoDetach = false
+[fetch]
+ writeCommitGraph = false
+`
+
+func writeFixtureGitConfig(path string) error {
+	return os.WriteFile(path, []byte(fixtureGitConfig), 0o600)
+}
+
 // xcrun selects Apple's developer-tool git once per test binary. Calling that
 // git directly avoids the wrapper's per-command tool lookup. Unlike the wrapper,
 // it does not add SDKROOT, CPATH or LIBRARY_PATH to git's environment.
@@ -110,6 +126,9 @@ func probeGitResources(git, root string) (gitResources, error) {
 		return gitResources{}, err
 	}
 	defer os.RemoveAll(directory)
+	if err := writeFixtureGitConfig(filepath.Join(directory, ".gitconfig")); err != nil {
+		return gitResources{}, err
+	}
 	environment := gitProbeEnvironment(os.Environ(), directory)
 	return inspectGitResources(directory, func(args ...string) ([]byte, error) {
 		command := exec.Command(git, args...)
@@ -129,7 +148,7 @@ func gitProbeEnvironment(environment []string, home string) []string {
 			clean = append(clean, entry)
 		}
 	}
-	return append(clean, "HOME="+home, "XDG_CONFIG_HOME="+home, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	return append(clean, "HOME="+home, "XDG_CONFIG_HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"), "GIT_CONFIG_NOSYSTEM=1")
 }
 
 func inspectGitResources(directory string, run func(...string) ([]byte, error)) (gitResources, error) {

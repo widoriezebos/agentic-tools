@@ -24,7 +24,6 @@ func TestGitAdapterHealRevParseReadsRepositoryHEAD(t *testing.T) {
 		})
 	}
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(root, "missing-global-config"))
 	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
