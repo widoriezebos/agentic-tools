@@ -1,0 +1,79 @@
+{
+  "canonicalRead": {
+    "engine": "48f29d6f7067b7993163d4a123aa867e92f45551",
+    "findings": [],
+    "id": "code-critic-aa85978faec15c9b914c1e3b",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-aa85978faec15c9b914c1e3b/rounds/1/return.md",
+    "subject": {
+      "commit": "c15d4c2044bded8bdaa5f8dca5e6d219aac61327",
+      "diffDigest": "9fd355c6d96b643f4bb642b5fe70bf436769fa0f0833661ff0ad7946173a3529",
+      "kind": "commit",
+      "parent": "3014d87edae5cfa4d2722a10134f222f8dc06a1c",
+      "tree": "87192883a325617e6545fd5305a3975081141be4"
+    }
+  },
+  "readDigest": "ce1d38febad743829cf48723fa875133b810596d9238a21335d8e86ec4d58b9c",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U2b2",
+  "subject": {
+    "commit": "c15d4c2044bded8bdaa5f8dca5e6d219aac61327",
+    "parent": "3014d87edae5cfa4d2722a10134f222f8dc06a1c",
+    "tree": "87192883a325617e6545fd5305a3975081141be4",
+    "patchDigest": "9fd355c6d96b643f4bb642b5fe70bf436769fa0f0833661ff0ad7946173a3529",
+    "unitDigest": "1d144d762afec2f665247cb9fcb5654f2be954c3ad4185ecd1ae12aaa1d92261"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-aa85978faec15c9b914c1e3b",
+    "round": 1,
+    "closureSha256": "50619f7e8db10b70feb3bb842274d0298a68db7a89393e0c151189dbcad82cb5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "87192883a325617e6545fd5305a3975081141be4",
+    "runId": "goal-read-gate-20261118t174600z-121bd540967aab91"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    },
+    {
+      "kind": "read",
+      "commit": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "digest": "e3d4d07e631878bb31a3c84ad9ebcba9b4a38476e962dd1a1159a10518e874df"
+    },
+    {
+      "kind": "read",
+      "commit": "24c745d4df8f577aa6bceeb6ff7878b262236e90",
+      "digest": "4b43b55d52435a45317cffd98af0af15b8226ee137fedbc01da424ba8bfcfe3b"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/runner_replacement_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa85978faec15c9b914c1e3b"
+    }
+  ],
+  "sha256": "ea95e54c3385d51fa4f9a90ccdf1a7060d0cbdf65665fbab8bea55a93c7cd255"
+}
