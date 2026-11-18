@@ -6,11 +6,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 func requireCustodyRecord(t *testing.T, output string, e setupCustodyEvidence, what string) {
@@ -151,7 +150,7 @@ func TestSetupCustodySharedEvidenceHasIndependentWaits(t *testing.T) {
 }
 
 // The child signals on stdout only after the diagnostic write has completed,
-// then stays inside the wait until the parent releases stdin. Reading the pipe
+// then stays inside the wait until the parent releases stdin. Reading stderr
 // at that barrier proves the default writer did not retain the record in memory.
 func TestSetupCustodyDefaultDiagnosticReachesStderrBeforeReturn(t *testing.T) {
 	t.Parallel()
@@ -177,42 +176,34 @@ func TestSetupCustodyDefaultDiagnosticReachesStderrBeforeReturn(t *testing.T) {
 		}, func() (time.Duration, bool) { return 0, false }, func() time.Time { return clock }, nil)
 		return
 	}
-	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.timeout=30m")
+	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.timeout="+custodyHelperTimeout)
 	command.Env = append(os.Environ(), helper+"=1")
 	stdin, err := command.StdinPipe()
 	checkTestenv(t, err)
 	stdout, err := command.StdoutPipe()
 	checkTestenv(t, err)
-	read, write, err := os.Pipe()
+	// A regular file, not a pipe: a write to it never waits for a reader, so a
+	// child that dumps its goroutines on timeout still exits and its stderr is
+	// there to report. Its content at the barrier proves the write completed.
+	stderrPath := filepath.Join(t.TempDir(), "child-stderr")
+	stderr, err := os.OpenFile(stderrPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	checkTestenv(t, err)
-	defer read.Close()
-	defer write.Close()
-	command.Stderr = write
+	defer stderr.Close()
+	command.Stderr = stderr
 	checkTestenv(t, command.Start())
 	defer func() { _ = stdin.Close(); _ = command.Process.Kill(); _ = command.Wait() }()
 	lines := bufio.NewScanner(stdout)
 	if !lines.Scan() || lines.Text() != "diagnostic write completed" {
-		t.Fatalf("child did not reach the blocked wait: %q %v", lines.Text(), lines.Err())
+		text, scanErr := lines.Text(), lines.Err()
+		// The child's own timeout ends it; stdout closes when it exits.
+		_ = stdin.Close()
+		waitErr := command.Wait()
+		head, size := custodyHelperStderr(stderr)
+		t.Fatalf("child did not reach the blocked wait: %q %v; child exit: wait=%v state=%v; child stderr (%d bytes, first %d shown):\n%s",
+			text, scanErr, waitErr, command.ProcessState, size, len(head), head)
 	}
-	// Use the descriptor directly: os.File's poller would wait for future writes.
-	fd := int(read.Fd())
-	checkTestenv(t, unix.SetNonblock(fd, true))
-	var output bytes.Buffer
-	for {
-		var block [4096]byte
-		n, err := unix.Read(fd, block[:])
-		if n > 0 {
-			output.Write(block[:n])
-		}
-		if err == unix.EAGAIN {
-			break
-		}
-		checkTestenv(t, err)
-		if n == 0 {
-			break
-		}
-	}
-	got := output.String()
+	output, _ := custodyHelperStderr(stderr)
+	got := string(output)
 	for _, want := range []string{"testenv: still waiting test=" + t.Name(), "pending=the custodian to end the setup child", "condition=custodian records remain", "synthetic custodian: cleanup failed", "synthetic setup-child record\n\n\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("stderr lacks %q while child is blocked: %s", want, got)
@@ -224,4 +215,27 @@ func TestSetupCustodyDefaultDiagnosticReachesStderrBeforeReturn(t *testing.T) {
 	_, err = stdin.Write([]byte{1})
 	checkTestenv(t, err)
 	checkTestenv(t, command.Wait())
+}
+
+// The helper normally reaches the barrier in well under a second. Its own
+// timeout, armed inside m.Run, ends a child stuck before the barrier with a
+// goroutine dump instead of holding the parent for the package timeout.
+const custodyHelperTimeout = "3m"
+
+// custodyHelperStderrLimit keeps a goroutine dump whole in a failure message.
+const custodyHelperStderrLimit = 256 << 10
+
+// custodyHelperStderr reads the first custodyHelperStderrLimit bytes the child
+// has written to its stderr file and the file's size.
+func custodyHelperStderr(stderr *os.File) ([]byte, int64) {
+	info, err := stderr.Stat()
+	if err != nil {
+		return []byte("stat child stderr: " + err.Error()), 0
+	}
+	head := make([]byte, min(info.Size(), custodyHelperStderrLimit))
+	n, err := stderr.ReadAt(head, 0)
+	if err != nil && err != io.EOF {
+		return []byte("read child stderr: " + err.Error()), info.Size()
+	}
+	return head[:n], info.Size()
 }
