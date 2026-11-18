@@ -29,6 +29,9 @@ import (
 // or missing enrolled engine bytes.
 var ErrEnrollmentDrift = errors.New("the enrolled engine changed or is missing")
 
+// ErrPreparationBusy means another owner holds the preparation lock or lease.
+var ErrPreparationBusy = errors.New("the enrolled engine preparation is busy")
+
 // ErrEngineRebuilt distinguishes changed bytes at the enrolled path from
 // every other enrollment failure. Verifiers refuse both; ordinary up may
 // resolve this one cause after proving the new bytes came from a landed tree.
@@ -303,6 +306,16 @@ func (b *EnrolledBinary) Close() error {
 // cannot change this snapshot, and the snapshot remains available to the
 // detached owner and runner after the arming command exits.
 func (b *EnrolledBinary) PrepareForExecution() error {
+	return b.prepareForExecution(lock.Exclusive, unix.LOCK_SH)
+}
+
+// TryPrepareForExecution prepares the snapshot without waiting for a held lock
+// or lease. The caller may retry ErrPreparationBusy on its next pass.
+func (b *EnrolledBinary) TryPrepareForExecution() error {
+	return b.prepareForExecution(lock.TryExclusive, unix.LOCK_SH|unix.LOCK_NB)
+}
+
+func (b *EnrolledBinary) prepareForExecution(lockMode lock.Mode, leaseMode int) error {
 	if b == nil || b.file == nil {
 		return fmt.Errorf("the enrolled engine is not open")
 	}
@@ -313,7 +326,10 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	// One preparer owns publication through the descriptor open, so another
 	// process can reuse but never replace a valid pin retained by this caller.
 	prepareLockPath := filepath.Join(directory, ".prepare.flock")
-	prepareLock, err := lock.File(prepareLockPath, 0o600, lock.Exclusive)
+	prepareLock, err := lock.File(prepareLockPath, 0o600, lockMode)
+	if lock.Busy(err) {
+		return ErrPreparationBusy
+	}
 	var lockErr *lock.LockError
 	if errors.As(err, &lockErr) {
 		return fmt.Errorf("take engine pin preparation lock %s: %w", prepareLockPath, err)
@@ -326,7 +342,7 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if existing, err := os.Open(finalPath); err == nil {
 		if digest, digestErr := digestOpenFile(existing); digestErr == nil && digest == b.Install.InstallDigest {
 			if info, statErr := existing.Stat(); statErr == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
-				if err := takePreparationLease(existing); err != nil {
+				if err := takePreparationLease(existing, leaseMode); err != nil {
 					_ = existing.Close()
 					return err
 				}
@@ -376,7 +392,7 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if err != nil {
 		return err
 	}
-	if err := takePreparationLease(execFile); err != nil {
+	if err := takePreparationLease(execFile, leaseMode); err != nil {
 		_ = execFile.Close()
 		return err
 	}
@@ -388,9 +404,12 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 // .prepare.flock is held and kept until Close: a command prepared and not
 // yet started keeps its pin, because the disk sweeper's LOCK_EX probe fails
 // (engine-owns-disk-lifetimes 3.5, DL3B-08).
-func takePreparationLease(file *os.File) error {
+func takePreparationLease(file *os.File, mode int) error {
 	for {
-		err := unix.Flock(int(file.Fd()), unix.LOCK_SH)
+		err := unix.Flock(int(file.Fd()), mode)
+		if lock.Busy(err) {
+			return ErrPreparationBusy
+		}
 		if !errors.Is(err, unix.EINTR) {
 			if err != nil {
 				return fmt.Errorf("take the engine pin's preparation lease: %w", err)

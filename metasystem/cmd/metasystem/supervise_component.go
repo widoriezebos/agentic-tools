@@ -221,7 +221,11 @@ func setupWatcher(stderr io.Writer, metasystemRoot, repo, scope string, self ide
 	}
 
 	cfg := watcherConfig(stderr, metasystemRoot, repo, scope, supervisionDir, intervalSec)
-	pass = func() error {
+	return lock.Release, watcherPass(stderr, repo, self, generation, cfg), true
+}
+
+func watcherPass(stderr io.Writer, repo string, self identity.Ref, generation int, cfg supervise.WatcherConfig) func() error {
+	return func() error {
 		attempt, err := steward.BeginComponentAttempt(repo, "repo-watcher", generation, self, time.Now())
 		if err != nil {
 			return fmt.Errorf("record watcher attempt: %w", err)
@@ -229,7 +233,7 @@ func setupWatcher(stderr io.Writer, metasystemRoot, repo, scope string, self ide
 		var passErrors []error
 		if err := cfg.WatcherPass(); err != nil {
 			passErrors = append(passErrors, err)
-		} else if err := requireSuccessfulWatcherCensus(supervisionDir, generation); err != nil {
+		} else if err := requireSuccessfulWatcherCensus(cfg.SupervisionDir, generation); err != nil {
 			passErrors = append(passErrors, err)
 		}
 		// The run pass (monitor facility, MON-06/07): assess every
@@ -241,7 +245,7 @@ func setupWatcher(stderr io.Writer, metasystemRoot, repo, scope string, self ide
 		if err := runPass(stderr, repo, self); err != nil {
 			passErrors = append(passErrors, err)
 		}
-		repair, err := steward.RepairEnrolledRunner(repo)
+		repair, err := steward.RepairStep(repo)
 		if err != nil {
 			passErrors = append(passErrors, fmt.Errorf("repair enrolled steward: %w", err))
 		}
@@ -258,7 +262,6 @@ func setupWatcher(stderr io.Writer, metasystemRoot, repo, scope string, self ide
 		}
 		return nil
 	}
-	return lock.Release, pass, true
 }
 
 func requireSuccessfulWatcherCensus(supervisionDir string, generation int) error {

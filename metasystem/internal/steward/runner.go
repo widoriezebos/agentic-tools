@@ -975,7 +975,12 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 	return EnsureRunnerResult{Action: action, Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
 }
 
-// RunnerRepairOutcome says whether the watcher found the enrolled steward
+// RunnerRepairBusy means a repair lock is held; a later step may retry it.
+const RunnerRepairBusy = "BUSY"
+
+const repairPoll = 50 * time.Millisecond
+
+// RunnerRepairOutcome says whether the repair found the enrolled steward
 // current, excluded by policy, or restored at that same installation generation.
 type RunnerRepairOutcome struct {
 	Status         string
@@ -984,9 +989,9 @@ type RunnerRepairOutcome struct {
 	ReplacementPid int64
 }
 
-// RepairEnrolledRunner is the watcher's narrow repair path. It never mints an
-// installation identity: it may launch only the binary and generation already
-// enrolled in this checkout.
+// RepairEnrolledRunner is the blocking repair for a person's start, a revive,
+// or a session start. It may launch only the binary and generation already
+// enrolled in this checkout; it never mints an installation identity.
 func RepairEnrolledRunner(repoRoot string) (RunnerRepairOutcome, error) {
 	return repairEnrolledRunner(repoRoot, nil)
 }
@@ -996,6 +1001,21 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 }
 
 func repairEnrolledRunnerWithClock(repoRoot string, beforeLock func(), now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
+	return repairPreparedEnrolledRunner(repoRoot, (*EnrolledBinary).PrepareForExecution, func(top string, pinned *EnrolledBinary) (RunnerRepairOutcome, error) {
+		return repairPinnedRunnerWithClock(top, pinned, beforeLock, now, sleep)
+	})
+}
+
+// RepairStep takes one repair step without waiting for a held repair lock.
+func RepairStep(repoRoot string) (RunnerRepairOutcome, error) {
+	return repairPreparedEnrolledRunner(repoRoot, (*EnrolledBinary).TryPrepareForExecution, func(top string, pinned *EnrolledBinary) (RunnerRepairOutcome, error) {
+		deps := defaultRearmResolverDeps()
+		deps.launch = nil
+		return repairPinnedStep(top, pinned, runnerNow, runnerSleep, deps)
+	})
+}
+
+func repairPreparedEnrolledRunner(repoRoot string, prepare func(*EnrolledBinary) error, repair func(string, *EnrolledBinary) (RunnerRepairOutcome, error)) (RunnerRepairOutcome, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
@@ -1018,10 +1038,13 @@ func repairEnrolledRunnerWithClock(repoRoot string, beforeLock func(), now func(
 		return RunnerRepairOutcome{}, err
 	}
 	defer pinned.Close()
-	if err := pinned.PrepareForExecution(); err != nil {
+	if err := prepare(pinned); err != nil {
+		if errors.Is(err, ErrPreparationBusy) {
+			return RunnerRepairOutcome{Status: RunnerRepairBusy, Generation: pinned.Install.Generation}, nil
+		}
 		return RunnerRepairOutcome{}, err
 	}
-	return repairPinnedRunnerWithClock(top, pinned, beforeLock, now, sleep)
+	return repair(top, pinned)
 }
 
 func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func()) (RunnerRepairOutcome, error) {
@@ -1035,17 +1058,30 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 }
 
 func repairPinnedRunnerWithDependencies(top string, pinned *EnrolledBinary, beforeLock func(), now func() time.Time, sleep func(time.Duration), deps rearmResolverDeps) (RunnerRepairOutcome, error) {
+	if beforeLock != nil {
+		beforeLock()
+	}
+	for {
+		outcome, err := repairPinnedStep(top, pinned, now, sleep, deps)
+		if err != nil || outcome.Status != RunnerRepairBusy {
+			return outcome, err
+		}
+		sleep(repairPoll)
+	}
+}
+
+func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, sleep func(time.Duration), deps rearmResolverDeps) (RunnerRepairOutcome, error) {
 	if deps.prober == nil {
 		deps.prober = identity.KernelProber{}
 	}
 	installed := pinned.Install
-	if beforeLock != nil {
-		beforeLock()
-	}
 	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	armLock, err := lock.File(filepath.Join(runnerDir(top), "arm.flock"), 0o644, lock.Exclusive)
+	armLock, err := lock.File(filepath.Join(runnerDir(top), "arm.flock"), 0o644, lock.TryExclusive)
+	if lock.Busy(err) {
+		return RunnerRepairOutcome{Status: RunnerRepairBusy, Generation: installed.Generation}, nil
+	}
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
