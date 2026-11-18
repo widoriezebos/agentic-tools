@@ -150,22 +150,25 @@ func (execution CheckExecution) sectionUnits(id, directory string) []loopstop.Re
 func sectionRedUnits(output, module, prefix string) []loopstop.RedUnit {
 	var units []loopstop.RedUnit
 	var pending []string
+	finished := false
 	failure := regexp.MustCompile(`^--- FAIL: ([^\s/]+) \([^)]+\)$`)
 	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(line, "panic: ") {
-			return nil
-		}
 		if match := failure.FindStringSubmatch(line); len(match) > 0 {
 			pending = append(pending, match[1])
+			finished = false
+		}
+		if line == "FAIL" {
+			finished = true
 		}
 		if strings.HasPrefix(line, "FAIL\t") {
 			fields := strings.Fields(line)
-			if len(fields) < 2 || len(pending) == 0 || strings.Contains(line, "[build failed]") || fields[1] != module && !strings.HasPrefix(fields[1], module+"/") {
+			if len(fields) < 2 || len(pending) == 0 || !finished || strings.Contains(line, "[build failed]") || fields[1] != module && !strings.HasPrefix(fields[1], module+"/") {
 				return nil
 			}
 			pkg := strings.TrimPrefix(strings.TrimPrefix(fields[1], module), "/")
 			units = append(units, loopstop.RedUnit{Unit: prefix + filepath.Join(".", pkg), Tests: pending})
 			pending = nil
+			finished = false
 		}
 	}
 	if len(pending) > 0 {

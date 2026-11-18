@@ -16,7 +16,7 @@ import (
 
 func TestALaterCheckSectionKeepsItsFailedTests(t *testing.T) {
 	t.Parallel()
-	const named = "--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"
+	const named = "--- FAIL: TestAudit (0.01s)\nFAIL\nFAIL\texample.test/m/pkg/unit\t0.01s\n"
 	for _, scenario := range []struct {
 		name, output, outcome string
 		both, fallback, older bool
@@ -25,6 +25,7 @@ func TestALaterCheckSectionKeepsItsFailedTests(t *testing.T) {
 		{name: "same package", output: "--- FAIL: TestRed (0.01s)\n" + named, outcome: "failed", both: true},
 		{name: "build failure", output: "FAIL\texample.test/m/pkg/unit [build failed]\n", outcome: "failed", fallback: true},
 		{name: "mixed build failure", output: named + "FAIL\texample.test/m/other [build failed]\n", outcome: "failed", fallback: true},
+		{name: "crash after named failure", output: "--- FAIL: TestAudit (0.01s)\nfatal error: stack overflow\n\ngoroutine 1 [running]:\nFAIL\texample.test/m/pkg/unit\t1.5s\nFAIL\n", outcome: "failed", fallback: true},
 		{name: "outside module", output: strings.ReplaceAll(named, "example.test/m/", "example.test/else/"), outcome: "failed", fallback: true},
 		{name: "deadline", output: named, outcome: "deadline", fallback: true},
 		{name: "cancelled", output: named, outcome: "cancelled", fallback: true},
@@ -37,7 +38,7 @@ func TestALaterCheckSectionKeepsItsFailedTests(t *testing.T) {
 			t.Parallel()
 			initial, repeated := "LANDING-CHECKED\\t0\\n", "LANDING-CHECKED\\t0\\n"
 			cheap := "passed"
-			if scenario.both || scenario.fallback {
+			if scenario.both || (scenario.fallback && scenario.name != "crash after named failure") {
 				cheap = "failed"
 				initial = "LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n"
 			}
@@ -138,6 +139,9 @@ func TestALaterCheckSectionKeepsItsFailedTests(t *testing.T) {
 			}
 			if scenario.fallback && scenario.outcome != "passed" && !strings.Contains(step.Red, "section/audits") {
 				t.Fatalf("unnamed audits failure lost: %+v", step)
+			}
+			if scenario.name == "crash after named failure" && len(step.Flakes) != 0 {
+				t.Fatalf("crashed audits section recorded a flake: %+v", step)
 			}
 			var base PlainBrief
 			data, err := os.ReadFile(filepath.Join(result.Record.Rounds[0].Directory, "base-1.json"))

@@ -11,7 +11,7 @@ import (
 
 func TestCheckSectionNamesOnlyFullyAccountedFailures(t *testing.T) {
 	t.Parallel()
-	const named = "--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"
+	const named = "--- FAIL: TestAudit (0.01s)\nFAIL\nFAIL\texample.test/m/pkg/unit\t0.01s\n"
 	for _, tc := range []struct {
 		name, output, prefix string
 		want                 []loopstop.RedUnit
@@ -19,14 +19,21 @@ func TestCheckSectionNamesOnlyFullyAccountedFailures(t *testing.T) {
 		{name: "top level", output: named, want: []loopstop.RedUnit{{Unit: "pkg/unit", Tests: []string{"TestAudit"}}}},
 		{name: "template", prefix: "metasystem/", output: named, want: []loopstop.RedUnit{{Unit: "metasystem/pkg/unit", Tests: []string{"TestAudit"}}}},
 		{name: "subtest ignored", output: "    --- FAIL: TestAudit/sub (0.01s)\n" + named, want: []loopstop.RedUnit{{Unit: "pkg/unit", Tests: []string{"TestAudit"}}}},
-		{name: "subtest alone", output: "--- FAIL: TestAudit/sub (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
+		{name: "subtest alone", output: "--- FAIL: TestAudit/sub (0.01s)\nFAIL\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
 		{name: "indented top level ignored", output: "    " + named},
-		{name: "two packages", output: named + "--- FAIL: TestOther (0.02s)\nFAIL\texample.test/m/other\t0.02s\n", want: []loopstop.RedUnit{{Unit: "pkg/unit", Tests: []string{"TestAudit"}}, {Unit: "other", Tests: []string{"TestOther"}}}},
-		{name: "module root", output: "--- FAIL: TestRoot (0.01s)\nFAIL\texample.test/m\t0.01s\n", want: []loopstop.RedUnit{{Unit: ".", Tests: []string{"TestRoot"}}}},
+		{name: "two packages", output: named + "--- FAIL: TestOther (0.02s)\nFAIL\nFAIL\texample.test/m/other\t0.02s\n", want: []loopstop.RedUnit{{Unit: "pkg/unit", Tests: []string{"TestAudit"}}, {Unit: "other", Tests: []string{"TestOther"}}}},
+		{name: "module root", output: "--- FAIL: TestRoot (0.01s)\nFAIL\nFAIL\texample.test/m\t0.01s\n", want: []loopstop.RedUnit{{Unit: ".", Tests: []string{"TestRoot"}}}},
 		{name: "unfinished", output: named + "--- FAIL: TestUnfinished (0.01s)\n"},
+		{name: "process exit", output: "--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\nFAIL\n"},
+		{name: "fatal error", output: "--- FAIL: TestAudit (0.01s)\nfatal error: stack overflow\n\ngoroutine 1 [running]:\nFAIL\texample.test/m/pkg/unit\t1.5s\nFAIL\n"},
+		{name: "bare FAIL before failure", output: "FAIL\n--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
+		{name: "bare FAIL before last failure", output: "--- FAIL: TestOther (0.02s)\nFAIL\n--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
+		{name: "second package crashed", output: named + "--- FAIL: TestOther (0.02s)\nFAIL\texample.test/m/other\t0.02s\n"},
+		{name: "earlier command finished", output: named + "FAIL\n--- FAIL: TestOther (0.02s)\nFAIL\texample.test/m/other\t0.02s\n"},
+		{name: "exit status after bare FAIL", output: "--- FAIL: TestAudit (0.01s)\nFAIL\nexit status 1\nFAIL\texample.test/m/pkg/unit\t0.01s\n", want: []loopstop.RedUnit{{Unit: "pkg/unit", Tests: []string{"TestAudit"}}}},
 		{name: "timeout after named failure", output: "--- FAIL: TestAudit (0.01s)\npanic: test timed out after 30m\n\trunning tests:\n\t\tTestHang (30m0s)\nFAIL\texample.test/m/pkg/unit\t1800.1s\n"},
 		{name: "package without name", output: named + "FAIL\texample.test/m/other\t0.01s\n"},
-		{name: "outside module", output: named + "--- FAIL: TestOther (0.01s)\nFAIL\texample.test/more/other\t0.01s\n"},
+		{name: "outside module", output: named + "--- FAIL: TestOther (0.01s)\nFAIL\nFAIL\texample.test/more/other\t0.01s\n"},
 		{name: "build after name", output: "--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit [build failed]\n"},
 		{name: "no package", output: "--- FAIL: TestAudit (0.01s)\nFAIL\n"},
 	} {
@@ -68,8 +75,8 @@ func TestCheckSectionUsesTheInstallationModuleAndTemplateMode(t *testing.T) {
 				want = nil
 			}
 			if err := writeUnitJSON(filepath.Join(execution, "result.json"), struct{ Exits []CheckExit }{[]CheckExit{
-				{Name: "cheap", Output: "--- FAIL: TestCheap (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
-				{Name: "audits", Output: "--- FAIL: TestAudit (0.01s)\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
+				{Name: "cheap", Output: "--- FAIL: TestCheap (0.01s)\nFAIL\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
+				{Name: "audits", Output: "--- FAIL: TestAudit (0.01s)\nFAIL\nFAIL\texample.test/m/pkg/unit\t0.01s\n"},
 			}}, execution); err != nil {
 				t.Fatal(err)
 			}
