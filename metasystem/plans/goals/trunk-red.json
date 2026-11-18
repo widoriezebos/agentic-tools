@@ -30032,6 +30032,71 @@
       "opened": "2026-11-18T11:02:08Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "testUnit": "metasystem/internal/deploy",
+      "testName": "TestPauseAfterTheRollbackRecordsTheReturn",
+      "id": "flake:48c5463edaa052d8e17133bb45f638909f83e29d5b6fd6601b43b7df4fb92a99",
+      "identity": "flake:48c5463edaa052d8e17133bb45f638909f83e29d5b6fd6601b43b7df4fb92a99",
+      "group": "metasystem/internal/deploy",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T105724.112903000Z.log",
+          "classname": "metasystem/internal/deploy",
+          "name": "TestPauseAfterTheRollbackRecordsTheReturn",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261118T105724.112903000Z",
+          "batch": "",
+          "baseCommit": "c9c81b32eccd2eddc9525a634480aaf9c3d09653",
+          "baseTree": "14c95b9b6d6235e0b53c6c4db41e2b4fd194e3e7",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T105724.112903000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-18T11:51:34Z",
+          "opid": "275097A0477F6C45DB04DCFF56-landing-41ad7d6c",
+          "tree": "14c95b9b6d6235e0b53c6c4db41e2b4fd194e3e7",
+          "rerun": {
+            "attempt": "20261118T105724.112903000Z-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T105724.112903000Z-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T105724.112903000Z-repeat-1.log.48c5463edaa052d8e17133bb45f638909f83e29d5b6fd6601b43b7df4fb92a99.output",
+              "digest": "dd5cd8419686d55e5570d691a8a4be737d80aa4e57045037e77d62162d5610c1",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T105724.112903000Z.log.48c5463edaa052d8e17133bb45f638909f83e29d5b6fd6601b43b7df4fb92a99.output",
+            "digest": "ca2e93798033f5bb0d31eb35bca22c4bc2d07b514695621dbe536f30b1af7b20",
+            "outcome": "fail"
+          },
+          "load": 12.583984375,
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-18T11:51:34Z",
+      "closed": null,
+      "class": "flake"
     }
   ],
   "cadence": {
