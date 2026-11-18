@@ -434,11 +434,11 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		if code, result := checkActBuild(t, b, owners, remedy...); code != 0 {
 			t.Fatalf("damaged carry resume: %d %+v", code, result)
 		}
-		// An unseen subject with unavailable declarations needs classification.
-		// Damaged snapshots are covered by the refusal/no-archive public test.
-		subject.Commit = strings.Repeat("e", 40)
-		owners.connection.readRepository = carryFullRepository{root: b.worktree, common: t.TempDir(), subject: subject}
+		// A damaged frozen subject can be repaired without archiving its payload.
 		snapshot := filepath.Join(b.root(), "artifacts", "unit-checks", "carry", subject.Commit, "subject.json")
+		if err := os.WriteFile(snapshot, []byte("damaged"), 0600); err != nil {
+			t.Fatal(err)
+		}
 		unavailable = true
 		owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
 		repair := []string{"work", "review", "--commit", subject.Commit, "--goal", b.id, "--repo", b.root(), "--check-only", "--reason", "Repair missing classification", "--by", "Wido", "--check", script}
@@ -458,6 +458,10 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		}
 		if code, result := checkActBuild(t, b, owners, withoutOption(repair, "by")...); code != 0 {
 			t.Fatalf("carry repair without a typed name: %d %+v", code, result)
+		}
+		archives, err := filepath.Glob(snapshot + ".damaged-*")
+		if err != nil || len(archives) != 0 {
+			t.Fatal("carry repair archived the damaged payload")
 		}
 		data, err := os.ReadFile(snapshot)
 		var repaired launch.UnitCheck

@@ -50,6 +50,7 @@ func TestDeclaredEnvironmentPublicWritersAndAttribution(t *testing.T) {
 	unrelated := rand.Text()
 	t.Setenv("E1_AMBIENT", first)
 	t.Setenv("GOOGLE_API_KEY", unrelated)
+	t.Setenv("BASH_FUNC_which%%", rand.Text())
 	for _, flake := range []bool{false, true} {
 		t.Run(map[bool]string{false: "base comparison", true: "isolated flake"}[flake], func(t *testing.T) {
 			t.Setenv("E1_AMBIENT", first)
@@ -83,7 +84,7 @@ func TestDeclaredEnvironmentPublicWritersAndAttribution(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.Proof[0].Input == nil || !slices.Contains(plan.Proof[0].Input.Dropped, "E1_AMBIENT") || !slices.Contains(plan.Proof[0].Input.Dropped, "GOOGLE_API_KEY") {
+			if plan.Proof[0].Input == nil || !slices.Contains(plan.Proof[0].Input.Dropped, "E1_AMBIENT") || !slices.Contains(plan.Proof[0].Input.Dropped, "GOOGLE_API_KEY") || !slices.Contains(plan.Proof[0].Input.Dropped, "BASH_FUNC_which%%") {
 				t.Fatal("dropped names not retained")
 			}
 		})
@@ -168,27 +169,64 @@ func TestDeclaredEnvironmentGeneratedUnsupported(t *testing.T) {
 }
 func TestDeclaredEnvironmentDamagedCarryNoArchive(t *testing.T) {
 	t.Parallel()
-	b, owners, args, _ := carryRecoveryBed(t)
-	records := filepath.Join(b.root(), "artifacts", "unit-checks", "carry", args[3])
-	path := filepath.Join(records, "subject.json")
-	if err := os.MkdirAll(records, 0700); err != nil {
-		t.Fatal(err)
-	}
-	before := []byte(`{"environment":["E1_OLD=synthetic-old-carry"],`)
-	if err := os.WriteFile(path, before, 0600); err != nil {
-		t.Fatal(err)
-	}
-	code, _, diagnostic := b.run(owners, append(args, "--check", "true")...)
-	if strings.Contains(diagnostic, "synthetic-old-carry") {
-		t.Fatal("damaged carry refusal disclosed a value")
-	}
-	if code == 0 {
-		t.Fatal("damaged carry accepted")
-	}
-	after, _ := os.ReadFile(path)
-	archives, _ := filepath.Glob(path + ".damaged-*")
-	if !bytes.Equal(before, after) || len(archives) != 0 {
-		t.Fatal("damaged carry changed or was archived")
+	for _, kind := range []string{"damaged", "legacy", "invalid-policy"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			b, owners, args, _ := carryRecoveryBed(t)
+			if code, _ := b.runJSON(owners, args...); code != 0 {
+				t.Fatal("initial carry failed")
+			}
+			records := filepath.Join(b.root(), "artifacts", "unit-checks", "carry", args[3])
+			path := filepath.Join(records, "subject.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var prior launch.UnitCheck
+			if json.Unmarshal(data, &prior) != nil {
+				t.Fatal("initial snapshot unreadable")
+			}
+			prior.Environment = []string{"E1_OLD=synthetic-old-carry"}
+			prior.Input = nil
+			if kind == "invalid-policy" {
+				prior.Input = &checkenv.Input{Version: checkenv.Version + 1}
+			}
+			before, err := json.Marshal(prior)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "damaged" {
+				before = []byte(`{"environment":["E1_OLD=synthetic-old-carry"],`)
+			}
+			if err := os.WriteFile(path, before, 0600); err != nil {
+				t.Fatal(err)
+			}
+			code, refused := b.runJSON(owners, args...)
+			diagnostic := refused.Summary
+			if code == 0 || !strings.Contains(diagnostic, "run:") || strings.Contains(diagnostic, "declaredEnv") || strings.Contains(diagnostic, "synthetic-old-carry") {
+				t.Fatalf("carry refusal: exit=%d repairHint=%t callerAdvice=%t disclosed=%t snapshotUnavailable=%t", code, strings.Contains(diagnostic, "run:"), strings.Contains(diagnostic, "declaredEnv"), strings.Contains(diagnostic, "synthetic-old-carry"), strings.Contains(diagnostic, "carry snapshot is unavailable"))
+			}
+			after, _ := os.ReadFile(path)
+			if !bytes.Equal(before, after) {
+				t.Fatal("refusal changed snapshot")
+			}
+			engine := publicationEngineStub(t)
+			owners.processes.executable = func() (string, error) { return engine, nil }
+			repair := append(withoutOption(args, "act"), "--reason", "Repair unavailable snapshot", "--by", "Wido", "--check", "true")
+			if code, _, _ := b.run(owners, repair...); code != 0 {
+				t.Fatal("explicit carry repair failed")
+			}
+			data, err = os.ReadFile(path)
+			var repaired launch.UnitCheck
+			if err != nil || json.Unmarshal(data, &repaired) != nil || repaired.Input == nil || repaired.Input.Validate() != nil || repaired.Environment != nil {
+				t.Fatal("repair did not publish a current approved snapshot")
+			}
+			archives, err := filepath.Glob(path + ".damaged-*")
+			if err != nil || len(archives) != 0 {
+				t.Fatal("repair archived the old payload")
+			}
+			assertNoAmbientBytes(t, records, "synthetic-old-carry")
+		})
 	}
 }
 func TestDeclaredEnvironmentPreservesHostSelection(t *testing.T) {
@@ -229,6 +267,7 @@ func TestDeclaredEnvironmentPublicRerunSeesDeclaredInput(t *testing.T) {
 func TestDeclaredEnvironmentPublicCarryWriters(t *testing.T) {
 	value := rand.Text()
 	t.Setenv("E1_CARRY_AMBIENT", value)
+	t.Setenv("BASH_FUNC_which%%", value)
 	b, owners, args, _ := carryRecoveryBed(t)
 	code, _ := b.runJSON(owners, args...)
 	if code != 0 {
@@ -238,5 +277,10 @@ func TestDeclaredEnvironmentPublicCarryWriters(t *testing.T) {
 	found := assertNoAmbientBytes(t, root, value)
 	if !found["subject.json"] || !found["result.json"] {
 		t.Fatal("carry writers not exercised")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "subject.json"))
+	var check launch.UnitCheck
+	if err != nil || json.Unmarshal(data, &check) != nil || check.Input == nil || !slices.Contains(check.Input.Dropped, "BASH_FUNC_which%%") {
+		t.Fatal("carry snapshot lost the dropped ambient name")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 const Version = 1
@@ -30,16 +31,28 @@ var hostNames = strings.Fields(`PATH HOME TMPDIR TMP TEMP LANG LANGUAGE LC_ALL L
 func HostName(name string) bool { return slices.Contains(hostNames, name) }
 
 var validName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-var urlUser = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^\s/]*@`)
+
+func hasURLUserInformation(value string) bool {
+	for _, element := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == '|' || unicode.IsSpace(r) }) {
+		if prefix, rest, ok := strings.Cut(element, "://"); ok && !strings.Contains(prefix, "/") {
+			element = rest
+		}
+		authority, _, _ := strings.Cut(element, "/")
+		if strings.Contains(authority, "@") {
+			return true
+		}
+	}
+	return false
+}
 
 func validate(name, value string) error {
 	if !validName.MatchString(name) || strings.ContainsRune(value, 0) {
-		return fmt.Errorf("unsupported environment entry name")
+		return fmt.Errorf("unsupported environment entry name: %s", name)
 	}
 	if name == "GOAUTH" && value != "off" && value != "netrc" {
 		return fmt.Errorf("unsupported environment input: %s", name)
 	}
-	if (strings.HasPrefix(name, "GO") || strings.Contains(strings.ToUpper(name), "PROXY")) && urlUser.MatchString(value) {
+	if (strings.HasPrefix(name, "GO") || strings.Contains(strings.ToUpper(name), "PROXY")) && hasURLUserInformation(value) {
 		return fmt.Errorf("unsupported environment input: %s", name)
 	}
 	return nil
@@ -57,18 +70,18 @@ func Admit(environment, declared []string, ambient bool) (*Input, error) {
 	}{{environment, false}, {declared, true}} {
 		for _, assignment := range group.values {
 			name, value, ok := strings.Cut(assignment, "=")
+			if ambient && !group.declared && !HostName(name) {
+				dropped[name] = true
+				continue
+			}
 			if !ok || !validName.MatchString(name) {
-				return nil, fmt.Errorf("unsupported environment entry name")
+				return nil, fmt.Errorf("unsupported environment entry name: %s", name)
 			}
 			source := "host"
 			if group.declared {
 				source = "declared"
 			} else if !HostName(name) {
-				if !ambient {
-					return nil, fmt.Errorf("environment input %s must move to declaredEnv or be removed", name)
-				}
-				dropped[name] = true
-				continue
+				return nil, fmt.Errorf("environment input %s must move to declaredEnv or be removed", name)
 			}
 			if err := validate(name, value); err != nil {
 				return nil, err
@@ -105,7 +118,7 @@ func (input *Input) Validate() error {
 		last = entry.Name
 	}
 	for _, name := range input.Dropped {
-		if !validName.MatchString(name) {
+		if strings.ContainsAny(name, "=\x00") {
 			return fmt.Errorf("unsupported environment diagnostic name")
 		}
 	}

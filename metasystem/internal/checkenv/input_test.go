@@ -112,3 +112,59 @@ func TestEmptyStableInputDoesNotDependOnEncoding(t *testing.T) {
 		t.Fatal("empty encoding changed stable identity or enabled inheritance")
 	}
 }
+
+func TestAmbientNamesAreDroppedBeforeShapeValidation(t *testing.T) {
+	t.Parallel()
+	name := "BASH_FUNC_which%%"
+	assignment := name + "=synthetic-function-body"
+	input, err := Admit([]string{assignment}, nil, true)
+	if err != nil || len(input.Entries) != 0 || !slices.Equal(input.Dropped, []string{name}) {
+		t.Fatal("ambient exported function was not dropped with a names-only diagnostic")
+	}
+	if err := input.Validate(); err != nil {
+		t.Fatal("dropped ambient name cannot be retained")
+	}
+	for _, declared := range []bool{false, true} {
+		var err error
+		if declared {
+			_, err = Admit(nil, []string{assignment}, true)
+		} else {
+			_, err = Admit([]string{assignment}, nil, false)
+		}
+		if err == nil || !strings.Contains(err.Error(), name) || strings.Contains(err.Error(), "synthetic") {
+			t.Fatal("caller or declared name was not refused names-only")
+		}
+	}
+}
+
+func TestProxyUserInformationElements(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"HTTP_PROXY", "https_proxy", "ALL_PROXY", "GOPROXY", "GONOPROXY", "GONOSUMDB", "GOFLAGS"} {
+		t.Run(name, func(t *testing.T) {
+			for _, value := range []string{"user:synthetic@host:8080", "https://safe.example,user:synthetic@host:8080", "https://safe.example|https://user:synthetic@host", "safe.example user:synthetic@host"} {
+				for _, mode := range []string{"ambient", "caller", "declared", "retained"} {
+					var err error
+					assignment := name + "=" + value
+					switch mode {
+					case "ambient":
+						_, err = Admit([]string{assignment}, nil, true)
+					case "caller":
+						_, err = Admit([]string{assignment}, nil, false)
+					case "declared":
+						_, err = Admit(nil, []string{assignment}, false)
+					case "retained":
+						err = (&Input{Version: Version, Entries: []Entry{{Name: name, Value: value, Source: "host"}}}).Validate()
+					}
+					if err == nil || !strings.Contains(err.Error(), name) || strings.Contains(err.Error(), "synthetic") {
+						t.Errorf("%s did not refuse user information names-only", mode)
+					}
+				}
+			}
+			for _, value := range []string{"https://host/path/@revision", "host/path/@revision", "host/path/http://segment@revision", "https://host/path/@revision,https://other/path/@revision"} {
+				if _, err := Admit([]string{name + "=" + value}, nil, true); err != nil {
+					t.Fatal("path-only at sign refused")
+				}
+			}
+		})
+	}
+}

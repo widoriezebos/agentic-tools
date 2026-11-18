@@ -45,9 +45,11 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	path := filepath.Join(records, "subject.json")
 	var check launch.UnitCheck
 	data, readErr := os.ReadFile(path)
-	if readErr == nil && (json.Unmarshal(data, &check) != nil || check.SourceTree != subject.Tree || check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Environment == nil && check.Input == nil || check.Declaration != nil && (check.Cheap != check.Declaration.Values[0] || check.Audits != check.Declaration.Values[1])) {
-		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: errors.New("the carry snapshot is unavailable; the original was retained without an archive")}
-	} else if os.IsNotExist(readErr) {
+	unusable := readErr == nil && (json.Unmarshal(data, &check) != nil || check.SourceTree != subject.Tree || check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Input == nil || check.AdmitEnvironment() != nil || check.Declaration != nil && (check.Cheap != check.Declaration.Values[0] || check.Audits != check.Declaration.Values[1]))
+	if unusable && !inv.input.has("check") {
+		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: fmt.Errorf("the carry snapshot is unavailable\nrun: %s", repair)}
+	}
+	if unusable || os.IsNotExist(readErr) {
 		input, err := checkenv.Admit(os.Environ(), nil, true)
 		if err != nil {
 			return branch.GateObservation{}, err

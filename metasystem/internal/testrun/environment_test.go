@@ -22,3 +22,15 @@ func TestSharedEnvironmentRefusesUnsupportedInputsBeforeLaunch(t *testing.T) {
 		}
 	}
 }
+
+func TestSharedEnvironmentDropsExportedFunctions(t *testing.T) {
+	t.Parallel()
+	environment, err := Environment([]string{"BASH_FUNC_which%%=synthetic-function-body"})
+	if err != nil || len(environment) != 0 {
+		t.Fatal("shared environment refused an unrelated ambient name")
+	}
+	_, err = RequireWorkerCapabilities(t.Context(), "/nonexistent-e1-worker", []string{"BASH_FUNC_which%%=synthetic-function-body"})
+	if !errors.Is(err, ErrWorkerPolicyUnsupported) {
+		t.Fatal("ambient name blocked worker admission before handshake")
+	}
+}
