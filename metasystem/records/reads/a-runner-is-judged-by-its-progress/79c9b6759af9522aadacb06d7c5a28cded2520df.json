@@ -1,0 +1,69 @@
+{
+  "canonicalRead": {
+    "engine": "4e5971550ac45b3af9ecc1631abce3ba35200653",
+    "findings": [],
+    "id": "code-critic-0d712f36bbc1eed8d32777e9",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-0d712f36bbc1eed8d32777e9/rounds/1/return.md",
+    "subject": {
+      "commit": "79c9b6759af9522aadacb06d7c5a28cded2520df",
+      "diffDigest": "f4c7d7c20d7b3afb6641a56423b3974a939377fbeacb343cde4d38ec8ad9ae98",
+      "kind": "commit",
+      "parent": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "tree": "e157113a5b4cf9a971f8ad8acc9fbb445bf62723"
+    }
+  },
+  "readDigest": "320be8a432afda027ef65f5604ee813d5d54fe47719bb852a9fa24e5335b08f7",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U2a1",
+  "subject": {
+    "commit": "79c9b6759af9522aadacb06d7c5a28cded2520df",
+    "parent": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+    "tree": "e157113a5b4cf9a971f8ad8acc9fbb445bf62723",
+    "patchDigest": "f4c7d7c20d7b3afb6641a56423b3974a939377fbeacb343cde4d38ec8ad9ae98",
+    "unitDigest": "0d00e22ffa7c0b14e0222ea6a9c9438f2e5c566c08df81053eef9499fd92ea0e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-0d712f36bbc1eed8d32777e9",
+    "round": 1,
+    "closureSha256": "af0109a93f1f933cfe570387d0b4dbdb67c75868a11fd5a241a23b5e7ab7ffb6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e157113a5b4cf9a971f8ad8acc9fbb445bf62723",
+    "runId": "goal-read-gate-20261118t025308z-5ff4d16fdd33d13a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/supervise_component_test.go",
+      "readerWord": "reviewed by critic root code-critic-0d712f36bbc1eed8d32777e9"
+    }
+  ],
+  "sha256": "42b4890bae5ec91d8ee0dab6584c5cd5eeb00ff4149e440502d3cf36175d2c4a"
+}
