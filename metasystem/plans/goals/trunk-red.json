@@ -29112,11 +29112,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261117T075510.327326000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-17T08:58:19Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T00:02:11Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "K8YK5DA9NZZZ2M3JHRYD68C8PT-landing-8e06a73b",
+        "by": "Wido",
+        "why": "Fixture defect seen only on the MacBook (HEAD named a commit that did not exist yet with Command Line Tools git 2.50.1); fixed on main at bf7cee909c (goal a-fixture-commit-exists-before-head-names-it, unit fixture) on 17 Nov; the test passes on the MacBook since."
+      }
     },
     {
       "id": "red:fast-static-build-10",
