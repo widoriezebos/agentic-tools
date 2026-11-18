@@ -1,6 +1,6 @@
 # a-fixture-commit-exists-before-head-names-it
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="A test fixture change only: a wrong fix leaves one test red on one computer, as today (severity 1); the fixture pattern exists in the same file (novelty 1); it runs only in that test (exposure 1); nothing is left behind (accumulation 1)."
@@ -10,14 +10,12 @@
 - Next step: Diagnose on the MacBook (seat m1f; the failure reproduces only there: lane proofs of 2026-11-07 and 2026-11-15 08:02Z and their repeats, logs under the MacBook's agentic-tools-landing/metasystem/artifacts/agents/landing/proofs). Fix the fixture so the commit exists before HEAD names it, whatever the git version; test-only change, one unit (--last). The two tests that failed once and passed on the repeat in the same proof (TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress, TestGitAdapterGoManifestInventoryMatchesNativeGoList) are noted in the report, not fixed here.; ASKED KG2DNPRH4AVTTDYXBX0ZTTSBXP (other): Let the fix for main's red test land while main is still red? The lane holds it back because of that same red.; ASKED N68M0J5HKPBVR2G0FXBXN8XJ3X (other): The lane stopped while proving the fix for main's red. Start its check yourself and then resume the lane?; WITHDRAWN N68M0J5HKPBVR2G0FXBXN8XJ3X: Done by a1 in Wido's name: the gate was started in a gap at 23:45 and went green for d902c6db9580 after 56 minutes; the lane was resumed at 00:5x on 2026-11-16.; ASKED DF2MJB6SEVQ4R3XJYN567Q5D8K (other): The lane is stuck holding the fixture fix behind the very red test it fixes. Restart the lane's proof of the fix?; WITHDRAWN DF2MJB6SEVQ4R3XJYN567Q5D8K: Answer in Wido's name (a1): yes, restart. Done at 10:55 on 2026-11-16: landing prove as Wido on the lane, with no other check running, started the full proof of d902c6db9580 (tree 5242cd4e2329) in the background. A full proof on this host takes about 3.5 hours; the land-anyway decision of 2026-11-15 21:23 stands.; ASKED 2C3KH7QEZD3XPFS52C3N9JA8PY (other): The fixture fix was proved again and the lane holds it a second time for the same reason. How should it reach main?; WITHDRAWN 2C3KH7QEZD3XPFS52C3N9JA8PY: Answered by your act: you pushed the fixture fix to main yourself as bf7cee909 at 14:20, a cherry-pick of 42dd335b with an identical diff. What still stands between it and its proof here is the hang in question N0ANAFPW6EK95HX12VX18D2MCW.; ASKED 9HAX0HHSVBBGWZN2ZA7Q4B77EZ (other): The lane's proof hangs again in the same test, now in its re-run. Restart the lane so it proves your current main?
 - OpenedAt: 2026-11-15T12:59:34Z
 - FirstClaimAt: 2026-11-15T18:14:18Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1f
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=NE0NP5MWGQG17Z9A7753ZSHKAE-m1e-666638bb minutes=1200 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-11-15T12:59:51Z revision=2 opid=NE0NP5MWGQG17Z9A7753ZSHKAE-m1e-666638bb authority=proven digest=ab7119e34c0b6f99f20330edcc1354c35e459759dd6302bd301acfb5b09cdbb7 episode=2
-- Claimed: machine=m1f lineage=steward-seat at=2026-11-15T18:14:18Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-fixture-commit-exists-before-head-names-it: no accepted design declares areas\"]" revision=5 accountingRevision=5 episodeAt=2026-11-15T18:14:18Z episodeRevision=5
-- StopCapability: generation=5 revision=5 machine=m1f claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-11-15T12:59:34Z HYVHQTQ6NYFB49F28QYZMG707N-m1e-666638bb open actor=human:Wido targets=a-fixture-commit-exists-before-head-names-it
@@ -33,4 +31,5 @@ History:
 - 2026-11-16T15:51:38Z 983EBRB9H352D62BRR02RWSR8Z-m1f-71c5cb39 ask actor=m1f+steward-seat targets=a-fixture-commit-exists-before-head-names-it
 - 2026-11-17T15:23:00Z X2HDNR7832408FXHD3RS0QE2RX-m1f-71c5cb39 withdraw-question actor=m1f+steward-seat targets=a-fixture-commit-exists-before-head-names-it reason=question 2C3KH7QEZD3XPFS52C3N9JA8PY
 - 2026-11-17T16:57:50Z 452DY7PWRZ1JAS14J63AWR9NC2-m1f-71c5cb39 ask actor=m1f+steward-seat targets=a-fixture-commit-exists-before-head-names-it
-Integrity: sha256=e9079832233fe1b9021a87793331d0a9cfcb3011da74cabe5ba29f74a683474f
+- 2026-11-18T12:54:28Z NT82Q3Z35EQA40Y2XF1CDXGJVE-m1e-8d74a27f release actor=human:Wido targets=a-fixture-commit-exists-before-head-names-it displaced=m1f+steward-seat@2026-11-15T18:14:18Z reason=a1 for Wido 2026-11-18: claimed by m1f, whose computer (the Intel MacBook) Wido retired today.
+Integrity: sha256=18fca2195dc4f18d363580379861077b04e653d19dd14fb71949b5e0e7a29d82
