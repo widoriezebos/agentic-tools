@@ -292,7 +292,7 @@ func TestKernelAncestryWalkReachesProcessTreeRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	nodes, _, outcome, continuation, walkErr := walkProcessTree(invokerPID, invoker, reader, signatures, nil)
-	if continuation != "" {
+	if continuation != "" && (outcome != OutcomeAgent || continuation != OutcomeUnreadable) {
 		t.Fatalf("live ancestry recorded a later failure after outcome %s: %s", outcome, continuation)
 	}
 	if len(nodes) == 0 {
@@ -308,7 +308,12 @@ func TestKernelAncestryWalkReachesProcessTreeRoot(t *testing.T) {
 			t.Fatalf("agent-free live ancestry returned an error after reaching the root: %v", walkErr)
 		}
 	case OutcomeAgent:
-		if last.Ref.PID != 1 || last.ParentRef != (ProcessRef{}) {
+		if continuation == OutcomeUnreadable {
+			// Linux may deny an ancestor's executable path even after an
+			// agent has already been identified. Verify that exact boundary.
+			_, refusal := stableRead(reader, last.ParentRef.PID)
+			assertExecutableUnreadableAtNextAncestor(t, last, refusal)
+		} else if last.Ref.PID != 1 || last.ParentRef != (ProcessRef{}) {
 			t.Fatalf("live ancestry did not reach the known process-tree root: last=%+v outcome=%s err=%v", last, outcome, walkErr)
 		}
 		if walkErr == nil {
