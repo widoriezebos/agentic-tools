@@ -934,8 +934,12 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 	if deps.prober == nil {
 		deps.prober = identity.KernelProber{}
 	}
+	pending, err := readRunnerReplacement(top)
+	if err != nil {
+		return EnsureRunnerResult{}, err
+	}
 	record, wasAlive := liveRunnerWithProber(top, deps.prober)
-	if wasAlive {
+	if wasAlive && pending == nil {
 		execution := ReadRunnerExecution(top, deps.prober)
 		if execution.Digest == "" {
 			return EnsureRunnerResult{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
@@ -977,6 +981,9 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 
 // RunnerRepairBusy means a repair lock is held; a later step may retry it.
 const RunnerRepairBusy = "BUSY"
+
+// RunnerRepairStopping means the saved runner is draining before replacement.
+const RunnerRepairStopping = "STOPPING"
 
 const repairPoll = 50 * time.Millisecond
 
@@ -1063,7 +1070,7 @@ func repairPinnedRunnerWithDependencies(top string, pinned *EnrolledBinary, befo
 	}
 	for {
 		outcome, err := repairPinnedStep(top, pinned, now, sleep, deps)
-		if err != nil || outcome.Status != RunnerRepairBusy {
+		if err != nil || (outcome.Status != RunnerRepairBusy && outcome.Status != RunnerRepairStopping) {
 			return outcome, err
 		}
 		sleep(repairPoll)
@@ -1101,6 +1108,19 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 		lockedInstalled.InstallDigest != installed.InstallDigest {
 		return RunnerRepairOutcome{Status: "ENROLLMENT_CHANGED", Generation: installed.Generation}, nil
 	}
+	at := now()
+	pending, err := readRunnerReplacement(top)
+	if err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	if pending != nil {
+		if pending.Generation == lockedInstalled.Generation {
+			return continueReplacement(top, pinned, *pending, at, sleep, deps)
+		}
+		if err := endRunnerReplacement(top); err != nil {
+			return RunnerRepairOutcome{}, err
+		}
+	}
 	ended, err := AutoHealingEnded(top, RoleStewardRunner)
 	if err != nil {
 		return RunnerRepairOutcome{}, fmt.Errorf("read steward health breaker: %w", err)
@@ -1118,7 +1138,7 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 		return RunnerRepairOutcome{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
 	}
 	obsolete := alive && execution.Digest != installed.InstallDigest
-	verdict := checkStewardRunner(top, now(), deps.prober)
+	verdict := checkStewardRunner(top, at, deps.prober)
 	if !obsolete && verdict.Status == HealthAlive {
 		record, _ := liveRunnerWithProber(top, deps.prober)
 		return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: record.Pid}, nil
@@ -1126,30 +1146,11 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 	if !obsolete && verdict.Status == HealthUnknown {
 		return RunnerRepairOutcome{}, fmt.Errorf("steward freshness is unknown: %s", verdict.Reason)
 	}
-	if alive {
-		if err := stopRunnerForReplacementWithClock(top, previous, deps.signal, now, sleep, deps.prober); err != nil {
-			return RunnerRepairOutcome{}, err
-		}
+	cause := "dead"
+	if obsolete {
+		cause = "obsolete-engine"
 	}
-	// A watcher repair relaunches without an arming caller, so the
-	// replacement runner reports no-lease until the next arm.
-	if deps.launch == nil {
-		deps.launch = func(root string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
-			return launchRunner(root, binary, lineage, sleep)
-		}
-	}
-	replacement, err := deps.launch(top, pinned, "")
-	if err != nil {
-		return RunnerRepairOutcome{}, err
-	}
-	observed := ReadRunnerExecution(top, deps.prober)
-	if observed.Digest != installed.InstallDigest {
-		return RunnerRepairOutcome{}, fmt.Errorf("replacement runner execution not verified: got %s (%s), want %s", observed.Digest, observed.Cause, installed.InstallDigest)
-	}
-	return RunnerRepairOutcome{
-		Status: "RESTORED", Generation: installed.Generation,
-		PreviousPid: previous.Pid, ReplacementPid: replacement.Pid,
-	}, nil
+	return beginReplacement(top, pinned, previous, alive, cause, at, sleep, deps)
 }
 
 func runnerExclusion(top string, allowFixture bool) (string, bool) {

@@ -91,6 +91,7 @@ func TestARepairStepNeverWaitsForALock(t *testing.T) {
 func TestTheBlockingEntryWaitsOutABusyLock(t *testing.T) {
 	t.Parallel()
 	bed := newExecutionBed(t)
+	delete(bed.processes, bed.old.Pid)
 	held, err := lock.File(filepath.Join(runnerDir(bed.root), "arm.flock"), 0o600, lock.Exclusive)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +146,8 @@ func TestTheBlockingEntryReturnsEachOutcomeFromOneCall(t *testing.T) {
 				process := bed.old
 				process.ExeKnown = false
 				bed.processes[process.Pid] = process
+			case "RESTORED":
+				delete(bed.processes, bed.old.Pid)
 			}
 			sleeps := 0
 			sleep := func(d time.Duration) { sleeps++; bed.sleep(d) }
