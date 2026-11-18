@@ -434,10 +434,11 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		if code, result := checkActBuild(t, b, owners, remedy...); code != 0 {
 			t.Fatalf("damaged carry resume: %d %+v", code, result)
 		}
+		// An unseen subject with unavailable declarations needs classification.
+		// Damaged snapshots are covered by the refusal/no-archive public test.
+		subject.Commit = strings.Repeat("e", 40)
+		owners.connection.readRepository = carryFullRepository{root: b.worktree, common: t.TempDir(), subject: subject}
 		snapshot := filepath.Join(b.root(), "artifacts", "unit-checks", "carry", subject.Commit, "subject.json")
-		if err := os.WriteFile(snapshot, []byte("damaged snapshot"), 0600); err != nil {
-			t.Fatal(err)
-		}
 		unavailable = true
 		owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
 		repair := []string{"work", "review", "--commit", subject.Commit, "--goal", b.id, "--repo", b.root(), "--check-only", "--reason", "Repair missing classification", "--by", "Wido", "--check", script}
@@ -454,10 +455,6 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 			return a.Measure == "full-suite classification unknown" && a.Status == "applied"
 		}) {
 			t.Fatal("repair invented a classification")
-		}
-		preserved, _ := filepath.Glob(snapshot + ".damaged-*")
-		if len(preserved) != 1 {
-			t.Fatalf("damaged snapshot not preserved: %v", preserved)
 		}
 		if code, result := checkActBuild(t, b, owners, withoutOption(repair, "by")...); code != 0 {
 			t.Fatalf("carry repair without a typed name: %d %+v", code, result)

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -48,9 +49,21 @@ func (p OSProcesses) StartChild(spec Command) (Child, identity.Ref, error) {
 	if err != nil {
 		return nil, identity.Ref{}, err
 	}
-	command := exec.Command(spec.Program, spec.Args...)
+	program := spec.Program
+	if spec.ReplaceEnvironment {
+		program, err = checkenv.Resolve(program, spec.Directory, spec.Environment)
+		if err != nil {
+			log.Close()
+			return nil, identity.Ref{}, err
+		}
+	}
+	command := exec.Command(program, spec.Args...)
 	command.Dir = spec.Directory
-	command.Env = childEnvironment(os.Environ(), spec.Environment)
+	if spec.ReplaceEnvironment {
+		command.Env = append([]string{}, spec.Environment...)
+	} else {
+		command.Env = childEnvironment(os.Environ(), spec.Environment)
+	}
 	command.Stdin = strings.NewReader(spec.Stdin)
 	files := []*os.File{log}
 	command.Stdout, command.Stderr = log, log

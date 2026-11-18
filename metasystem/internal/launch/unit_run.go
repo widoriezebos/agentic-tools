@@ -2,6 +2,7 @@ package launch
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -18,7 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -492,7 +492,7 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 		return UnitRunRecord{}, err
 	}
 	copyPath := filepath.Join(dir, "plan.json")
-	if _, err := atomicfile.CopyFile(plan.Path, copyPath, filepath.Dir(dir)); err != nil {
+	if err := writeUnitJSON(copyPath, plan, filepath.Dir(dir)); err != nil {
 		return UnitRunRecord{}, err
 	}
 	settings, err := runner.Manager.resolvedSettings()
@@ -658,7 +658,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	plan = planned
 	if round.Result != nil {
-		commands, err := json.Marshal(proofCommands(plan))
+		commands, err := json.Marshal(proofIdentityCommands(plan))
 		if err != nil {
 			return UnitResult{}, err
 		}
@@ -689,7 +689,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		round.Steps[index].Command = &command
 		briefPath := filepath.Join(round.Directory, "proof-"+command.Name+".json")
 		if _, err := os.Stat(briefPath); os.IsNotExist(err) {
-			data, _ := json.Marshal(PlainBrief{command.Argv, command.Dir, command.Env})
+			data, _ := json.Marshal(PlainBrief{Argv: command.Argv, Dir: command.Dir, Env: command.Env, Input: command.Input})
 			if _, err := atomicfile.WriteText(briefPath, string(data)+"\n", runner.runDir(record.ID)); err != nil {
 				return UnitResult{}, err
 			}

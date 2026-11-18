@@ -269,7 +269,8 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 		t.Fatal(err)
 	}
 	plan.Read = UnitReadPlan{}
-	plan.Proof[0].Argv, plan.Proof[0].Env = []string{executable, "arg with spaces"}, []string{"CHECK_ENV=exact"}
+	plan.Proof[0].Input = nil
+	plan.Proof[0].Argv, plan.Proof[0].DeclaredEnv = []string{executable, "arg with spaces"}, []string{"CHECK_ENV=exact"}
 	f.runner.FreezeCheck = func(plan UnitPlan, _ string) (UnitPlan, error) {
 		plan.FullArgv = slices.Clone(plan.Proof[0].Argv)
 		return plan, nil
@@ -313,7 +314,7 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 			return err
 		}
 		command := exec.Command(spec.Program, spec.Args...)
-		command.Dir, command.Env = spec.Directory, childEnvironment(os.Environ(), spec.Environment)
+		command.Dir, command.Env = spec.Directory, spec.Environment
 		data, err := command.CombinedOutput()
 		var exit *exec.ExitError
 		if err != nil && !errors.As(err, &exit) {
@@ -436,7 +437,7 @@ func TestAUnitCheckStopNamesItsTestsAndEvidence(t *testing.T) {
 				tests = []string{"pkg/unit TestRed"}
 				var command PlainBrief
 				data, err := os.ReadFile(filepath.Join(round.Directory, "base-1.json"))
-				if err != nil || json.Unmarshal(data, &command) != nil || !slices.Equal(command.Env, append([]string{"CHECK_ENV=exact"}, step.Alone.Selectors...)) {
+				if err != nil || json.Unmarshal(data, &command) != nil || command.Input == nil || !slices.Equal(command.Input.Environment(), []string{"CHECK_ENV=exact"}) || !slices.Equal(command.Overlays, step.Alone.Selectors) {
 					t.Fatalf("base selectors differ from rerun: %+v err=%v", command, err)
 				}
 			}
@@ -622,7 +623,7 @@ func TestUnitProofRefusesStaleComparison(t *testing.T) {
 			case "argv":
 				comparison.Command.Argv[1] = "different-argument"
 			case "environment":
-				comparison.Command.Env[0] = "CHECK_ENV=different"
+				comparison.Command.Input.Entries[0].Value = "different"
 			case "selectors":
 				comparison.Selectors = []string{"LANDING_ONLY=different"}
 			case "directory":
@@ -873,7 +874,7 @@ func TestAUnitCheckRedIsRerunAloneBeforeTheBase(t *testing.T) {
 				}
 				plan.FullArgv = nil
 				f.runner.FreezeCheck = nil
-				plan.Check = &UnitCheck{Cheap: "'" + cheap + "'", Audits: "printf audited", Directory: f.worktree, Environment: []string{"CHECK_ENV=frozen", "LANDING_ONLY=", "LANDING_ONLY_TESTS="}}
+				plan.Check = &UnitCheck{Cheap: "'" + cheap + "'", Audits: "printf audited", Directory: f.worktree, DeclaredEnv: []string{"CHECK_ENV=frozen", "LANDING_ONLY=", "LANDING_ONLY_TESTS="}}
 				plan.Proof[0].Argv = []string{"/bin/sh", "-c", "'" + cheap + "'; code=$?; printf audited >> '" + audited + "'; exit $code"}
 				if err := writeUnitJSON(f.plan, plan, f.runner.Root); err != nil {
 					t.Fatal(err)
