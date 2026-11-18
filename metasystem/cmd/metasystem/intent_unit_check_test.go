@@ -400,9 +400,12 @@ func declaredCheckAtEngineWithStderr(t *testing.T, b *workBed, directory, kind, 
 	}
 	var stdout, stderr bytes.Buffer
 	owners := b.workOwners()
-	if engine != "" {
-		owners.processes.executable = func() (string, error) { return engine, nil }
+	if engine == "" {
+		// This in-process executor stands in for the fixture's engine. Its
+		// installation supplies engine-owned commands used by manual audits.
+		engine = filepath.Join(b.root(), "bin", "metasystem")
 	}
+	owners.processes.executable = func() (string, error) { return engine, nil }
 	owners.lookupEnv = func(key string) (string, bool) { return kind, key == launch.KindEnv }
 	git := owners.work.git
 	owners.work.git = func(root string, args ...string) ([]byte, error) {

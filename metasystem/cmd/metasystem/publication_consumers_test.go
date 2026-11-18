@@ -126,7 +126,7 @@ func TestCarryProducesThenReusesItsEvidence(t *testing.T) {
 			results, err := filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", subject.Commit, "check-*", "result.json"))
 			helmMust(t, err)
 			if len(results) != len(want)/len("ran") {
-				t.Fatalf("second carry executions: %v", results)
+				t.Fatalf("second carry executions: %v; reuse decision: %s", results, message)
 			}
 			if string(mustRead(t, marker)) != want {
 				t.Fatalf("second carry ran the wrong commands: %s", mustRead(t, marker))

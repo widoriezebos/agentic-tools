@@ -2,12 +2,13 @@ package checkenv
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestAdmission(t *testing.T) {
@@ -46,6 +47,14 @@ func TestAdmission(t *testing.T) {
 		t.Fatal("legacy custom input must be refused names-only")
 	}
 }
+
+func TestGoRuntimeParallelismIsAnExplicitHostInput(t *testing.T) {
+	t.Parallel()
+	input, err := Admit([]string{"GOMAXPROCS=1", "GOOGLE_API_KEY=synthetic"}, nil, true)
+	if err != nil || !slices.Equal(input.Environment(), []string{"GOMAXPROCS=1"}) || !slices.Equal(input.Dropped, []string{"GOOGLE_API_KEY"}) {
+		t.Fatal("Go runtime parallelism must be frozen without admitting unrelated GO names")
+	}
+}
 func TestUnsupportedInputs(t *testing.T) {
 	t.Parallel()
 	for _, assignment := range []string{"GOPROXY=https://user:synthetic@host", "GOFLAGS=-proxy=https://user:synthetic@host", "GONOSUMDB=https://user:synthetic@host", "HTTPS_PROXY=https://user:synthetic@host", "GOAUTH=synthetic-command"} {
@@ -71,7 +80,7 @@ func TestUnsupportedInputs(t *testing.T) {
 func TestApprovedExecutableResolution(t *testing.T) {
 	directory := t.TempDir()
 	program := filepath.Join(directory, "tool")
-	if err := os.WriteFile(program, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+	if err := testexec.WriteFile(program, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", directory)

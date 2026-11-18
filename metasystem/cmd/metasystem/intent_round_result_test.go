@@ -194,7 +194,12 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			commands, err := json.Marshal(initial.Proof)
+			// Dropped ambient names are diagnostics, not planned proof inputs.
+			commandsForIdentity := slices.Clone(initial.Proof)
+			for i := range commandsForIdentity {
+				commandsForIdentity[i].Input = commandsForIdentity[i].Input.Stable()
+			}
+			commands, err := json.Marshal(commandsForIdentity)
 			if err != nil {
 				t.Fatal(err)
 			}

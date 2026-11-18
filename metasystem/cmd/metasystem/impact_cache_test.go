@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -168,8 +169,16 @@ func TestWholeCheckEvidenceIgnoresTheCheapCache(t *testing.T) {
 	}
 	root := impactCacheBed(t)
 	cheap := shellCommand([]string{os.Args[0], "-test.run=^TestWholeCheckEvidenceIgnoresTheCheapCache$"})
+	declared := []string{"METASYSTEM_IMPACT_CACHE_CHILD=" + root, "METASYSTEM_TESTING_WORKERS=2", "METASYSTEM_TEST_WORKERS=1"}
+	// The child runs in the impact fixture, not the engine source tree, so
+	// its TestMain must reuse the engine already built by this package.
+	for _, name := range []string{"METASYSTEM_WAIT_BINARY", "METASYSTEM_WAIT_BINARY_SOURCE"} {
+		declared = append(declared, name+"="+os.Getenv(name))
+	}
+	input, err := checkenv.Admit(os.Environ(), declared, true)
+	helmMust(t, err)
 	check := launch.UnitCheck{Base: "base", Directory: root, Cheap: cheap, Audits: "printf audited", Minutes: 15,
-		Environment: fixtureCommandEnvironment(t, "METASYSTEM_IMPACT_CACHE_CHILD="+root, "METASYSTEM_TESTING_WORKERS=2")}
+		Input: input}
 	check.Declaration = &launch.UnitDeclaration{Values: [4]string{cheap, check.Audits, "15", "full"}, SourceSHA256: "declaration"}
 	execution, exits, err := check.Run(root, t.TempDir(), launch.CheckContext{Worktree: root,
 		Tree: func() (string, error) { return "candidate-tree", nil },
