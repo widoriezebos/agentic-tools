@@ -138,7 +138,8 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 			if mode == "declared" {
 				form = "declared: ./check.sh"
 			}
-			if checked.Form != form+" + no audits" || checked.Minutes <= 0 || checked.DurationMS <= 0 || checked.Base != parent || checked.Tree == "" {
+			// A real sub-millisecond check has positive minutes and zero whole milliseconds.
+			if checked.Form != form+" + no audits" || checked.Minutes <= 0 || checked.DurationMS < 0 || checked.Base != parent || checked.Tree == "" {
 				t.Fatalf("check record: %+v", checked)
 			}
 			t.Logf("%s: exit=%d %s; %.4f minutes", mode, code, checked.Form, checked.Minutes)
