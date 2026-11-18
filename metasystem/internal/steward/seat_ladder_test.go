@@ -1624,3 +1624,19 @@ func TestASeatThatIsOffStartsNothingAndTheLadderIsTodays(t *testing.T) {
 		}
 	})
 }
+
+func TestTheReapClosesASeatRecordWhoseLaunchIsMissing(t *testing.T) {
+	t.Parallel()
+	b := newSeatBed(t)
+	record := SeatRecord{Schema: 1, LaunchID: "never-launched", Kind: "steward", Machine: seatBedMachine, StartedAt: b.now.Format(seatStartedAtLayout)}
+	if err := writeSeatRecord(b.root, record); err != nil {
+		t.Fatal(err)
+	}
+	if state := reapSeatLaunches(b.root, *b.seatDependencies(), b.now); state.Err != nil || state.Unreaped != "" {
+		t.Fatalf("reap: %+v", state)
+	}
+	records, err := readSeatRecords(b.root)
+	if err != nil || len(records) != 1 || records[0].LaunchState != "missing" || records[0].Outcome != SeatNoProgress || records[0].ReapedAt != b.now.Format(time.RFC3339) {
+		t.Fatalf("missing launch left open: %+v %v", records, err)
+	}
+}

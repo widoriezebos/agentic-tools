@@ -985,6 +985,9 @@ const RunnerRepairBusy = "BUSY"
 // RunnerRepairStopping means the saved runner is draining before replacement.
 const RunnerRepairStopping = "STOPPING"
 
+// RunnerRepairLaunching means the child has not yet announced its live start.
+const RunnerRepairLaunching = "LAUNCHING"
+
 const repairPoll = 50 * time.Millisecond
 
 // RunnerRepairOutcome says whether the repair found the enrolled steward
@@ -1018,7 +1021,7 @@ func RepairStep(repoRoot string) (RunnerRepairOutcome, error) {
 	return repairPreparedEnrolledRunner(repoRoot, (*EnrolledBinary).TryPrepareForExecution, func(top string, pinned *EnrolledBinary) (RunnerRepairOutcome, error) {
 		deps := defaultRearmResolverDeps()
 		deps.launch = nil
-		return repairPinnedStep(top, pinned, runnerNow, runnerSleep, deps)
+		return repairPinnedStep(top, pinned, runnerNow, deps)
 	})
 }
 
@@ -1069,15 +1072,15 @@ func repairPinnedRunnerWithDependencies(top string, pinned *EnrolledBinary, befo
 		beforeLock()
 	}
 	for {
-		outcome, err := repairPinnedStep(top, pinned, now, sleep, deps)
-		if err != nil || (outcome.Status != RunnerRepairBusy && outcome.Status != RunnerRepairStopping) {
+		outcome, err := repairPinnedStep(top, pinned, now, deps)
+		if err != nil || (outcome.Status != RunnerRepairBusy && outcome.Status != RunnerRepairStopping && outcome.Status != RunnerRepairLaunching) {
 			return outcome, err
 		}
 		sleep(repairPoll)
 	}
 }
 
-func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, sleep func(time.Duration), deps rearmResolverDeps) (RunnerRepairOutcome, error) {
+func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, deps rearmResolverDeps) (RunnerRepairOutcome, error) {
 	if deps.prober == nil {
 		deps.prober = identity.KernelProber{}
 	}
@@ -1115,7 +1118,7 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 	}
 	if pending != nil {
 		if pending.Generation == lockedInstalled.Generation {
-			return continueReplacement(top, pinned, *pending, at, sleep, deps)
+			return continueReplacement(top, pinned, *pending, at, deps)
 		}
 		if err := endRunnerReplacement(top); err != nil {
 			return RunnerRepairOutcome{}, err
@@ -1150,7 +1153,7 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 	if obsolete {
 		cause = "obsolete-engine"
 	}
-	return beginReplacement(top, pinned, previous, alive, cause, at, sleep, deps)
+	return beginReplacement(top, pinned, previous, alive, cause, at, deps)
 }
 
 func runnerExclusion(top string, allowFixture bool) (string, bool) {
@@ -1372,24 +1375,43 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	return outcome, nil
 }
 
-func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string, clocks ...func(time.Duration)) (RunnerRecord, error) {
+func startRunnerProcess(repoRoot string, binary *EnrolledBinary, lineage string) (int, <-chan error, error) {
 	logFile, err := os.OpenFile(runnerLogPath(repoRoot), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return RunnerRecord{}, err
+		return 0, nil, err
 	}
 	defer logFile.Close()
 	cmd, err := binary.Command(runnerLaunchArguments(repoRoot, lineage)...)
 	if err != nil {
-		return RunnerRecord{}, err
+		return 0, nil, err
 	}
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return RunnerRecord{}, err
+		return 0, nil, err
 	}
 	// The runner is detached on purpose: it must outlive this launch.
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
+	return cmd.Process.Pid, waited, nil
+}
+
+func startRunner(repoRoot string, binary *EnrolledBinary, lineage string) (identity.Ref, error) {
+	pid, _, err := startRunnerProcess(repoRoot, binary, lineage)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if exact, state, err := (identity.KernelProber{}).Probe(int64(pid)); err == nil && state == identity.Alive {
+		return exact.Ref(), nil
+	}
+	return identity.Ref{Pid: int64(pid)}, nil
+}
+
+func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string, clocks ...func(time.Duration)) (RunnerRecord, error) {
+	_, waited, err := startRunnerProcess(repoRoot, binary, lineage)
+	if err != nil {
+		return RunnerRecord{}, err
+	}
 	sleep := runnerSleep
 	if len(clocks) > 0 {
 		sleep = clocks[0]
