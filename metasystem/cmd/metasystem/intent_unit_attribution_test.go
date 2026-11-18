@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -39,7 +40,7 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 		if err != nil {
 			return identity.Ref{}, err
 		}
-		child := identity.Exact{Pid: int64(os.Getpid()), StartedAt: s.bed.manager.Now()}.Ref()
+		child := nativeUnitProofIdentity(identity.Exact{Pid: int64(os.Getpid()), StartedAt: s.bed.manager.Now()}).Ref()
 		if _, err := s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Child = &child; return nil }); err != nil {
 			return identity.Ref{}, err
 		}
@@ -77,6 +78,15 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 	return supervisor, err
 }
 
+// Both sides of the fixture custody join must carry this host's exact
+// process representation, even though the prober itself is simulated.
+func nativeUnitProofIdentity(exact identity.Exact) identity.Exact {
+	if runtime.GOOS == "linux" {
+		exact.StartTicks, exact.BootID = 1, "unit-proof-fixture"
+	}
+	return exact
+}
+
 type unitProofProber struct {
 	workProber
 	exact identity.Exact
@@ -84,7 +94,7 @@ type unitProofProber struct {
 
 func (p unitProofProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
 	if pid == p.exact.Pid {
-		return p.exact, identity.Alive, nil
+		return nativeUnitProofIdentity(p.exact), identity.Alive, nil
 	}
 	return p.workProber.Probe(pid)
 }
