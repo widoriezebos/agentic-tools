@@ -211,7 +211,7 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	prepared := testrun.Preparation{Installation: fixture.installation, ControlRoot: fixture.root, ProjectRoot: fixture.root,
 		Prefix: "metasystem", ConfPath: filepath.Join(fixture.root, "metasystem.conf"), GoalID: "portable", AccountingRevision: 2,
 		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, CandidateTree: ordinaryProjectTree,
-		EffectiveContract: contract, Plan: plan, Environment: testrun.Environment(os.Environ()),
+		EffectiveContract: contract, Plan: plan, Environment: approvedTestingEnvironment(t, os.Environ()),
 		ContractDigest: bytesSHA256(contractBytes), BaseContractDigest: bytesSHA256(contractBytes),
 		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
 	fixture.queueJudge()
@@ -934,7 +934,7 @@ func TestTestingSelectionCarriesDeliveryAllGroupsOnlyForExecution(t *testing.T) 
 func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
 	fixture := newOrdinaryCandidateFixture(t)
 	ctx := context.Background()
-	environment := testrun.Environment(os.Environ())
+	environment := approvedTestingEnvironment(t, os.Environ())
 	build := func(tree, projection, commit string) *candidateengine.Engine {
 		t.Helper()
 		fixture.queueBuild(tree, projection, commit, environment)
@@ -1099,7 +1099,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
 	custodyContext := candidateResourceCustodyContext(t)
-	environment := testrun.InheritedEnvironment(testrun.Environment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
+	environment := testrun.InheritedEnvironment(approvedTestingEnvironment(t, os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
 	prepare := func(tree, engineTree, commit string, build bool) *candidateengine.Engine {
 		t.Helper()
 		fixture.queuePrepare(tree, engineTree, commit, environment, build)
@@ -1130,7 +1130,7 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	if buildCount() != 1 || first.Commit != second.Commit || first.Digest != second.Digest {
 		t.Fatalf("warm candidate engine preparation rebuilt: first=%+v second=%+v count=%d", first, second, buildCount())
 	}
-	environment = testrun.InheritedEnvironment(testrun.Environment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
+	environment = testrun.InheritedEnvironment(approvedTestingEnvironment(t, os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
 	custodyVariant := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
 	if buildCount() != 1 || custodyVariant.Commit != first.Commit {
 		t.Fatalf("custody-only change fragmented candidate engine cache: first=%s variant=%s count=%d", first.Commit, custodyVariant.Commit, buildCount())
@@ -1214,7 +1214,7 @@ func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testi
 	built := make(chan buildOutcome, 1)
 	go func() {
 		artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot,
-			gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testrun.Environment(os.Environ()), func() error {
+			gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, approvedTestingEnvironment(t, os.Environ()), func() error {
 				close(buildEntered)
 				<-releaseBuild
 				return nil
@@ -1285,7 +1285,7 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
 	custodyContext := candidateResourceCustodyContext(t)
-	environment := testrun.Environment(os.Environ())
+	environment := approvedTestingEnvironment(t, os.Environ())
 	for run := 0; run < 2; run++ {
 		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
 		if artifact, err := candidateengine.Prepare(candidateScratchContext(t, custodyContext, controlRoot), controlRoot, workspace, "metasystem", tree, environment, nil, fixture.dependency()); artifact != nil || err == nil {
@@ -1358,7 +1358,7 @@ func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t
 		output := filepath.Join(t.TempDir(), "metasystem")
 		command := exec.Command(devgate, append(append([]string{"build"}, args...), "--out", output)...)
 		command.Dir = root
-		command.Env = append(candidateengine.BuildEnvironment(testrun.Environment(os.Environ()), stamp),
+		command.Env = append(candidateengine.BuildEnvironment(approvedTestingEnvironment(t, os.Environ()), stamp),
 			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
 		if combined, buildErr := command.CombinedOutput(); buildErr != nil {
 			t.Fatalf("build identical tree in %s: %v\n%s", root, buildErr, combined)
@@ -1479,7 +1479,7 @@ func TestFrozenPolicyProbeRefusalNamesResultPathPredicate(t *testing.T) {
 func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
 	ctx := context.Background()
-	built, err := candidateengine.Build(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testrun.Environment(os.Environ()))
+	built, err := candidateengine.Build(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, approvedTestingEnvironment(t, os.Environ()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1503,7 +1503,7 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	// materialized checkout; with no stamp it judges the stamp the installed
 	// candidate engine reports, as the dispatch that engine runs would.
 	reportedStamp := func(engine, root string) string {
-		command := (proofBinaryFixture{t: t}).command(testrun.Environment(os.Environ()), engine, "supervise", "status", "--repo", root)
+		command := (proofBinaryFixture{t: t}).command(approvedTestingEnvironment(t, os.Environ()), engine, "supervise", "status", "--repo", root)
 		output, err := command.Output()
 		if err != nil {
 			t.Fatalf("installed candidate engine did not report its build: %v", err)
@@ -1581,7 +1581,7 @@ func TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup(t *testin
 		return detached, err
 	}
 	built, err := candidateengine.Build(context.Background(), gittree.Workspace{Dir: fixture.projectRoot},
-		"metasystem", fixture.candidateTree, testrun.Environment(os.Environ()), io)
+		"metasystem", fixture.candidateTree, approvedTestingEnvironment(t, os.Environ()), io)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1634,7 +1634,7 @@ func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
 	fixture.script = broken
 	fixture.writeFiles()
 	fixture.declareSnapshot(ordinaryBrokenTree, ordinaryBrokenInstallationTree, ordinaryBrokenEngineTree, ordinaryBrokenScriptBlob, "")
-	environment := testrun.Environment(os.Environ())
+	environment := approvedTestingEnvironment(t, os.Environ())
 	fixture.steps = append(fixture.steps, ordinaryCandidateStep{kind: "open", output: []byte(ordinaryBrokenTree)})
 	fixture.queueRaw(true, ordinaryBrokenTree+"\n", "rev-parse", "HEAD^{tree}")
 	fixture.queueRaw(true, "", "rev-parse", "--show-prefix")
@@ -1909,7 +1909,7 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 		t.Fatal(err)
 	}
 	request := proofrun.TestRunRequest{ControlRoot: root, ProjectRoot: root, PolicyBaseCommit: head, PolicyEngine: engine, PolicyEngineDigest: digest,
-		CandidateEngine: engine, CandidateEngineDigest: digest, Environment: testrun.Environment(os.Environ())}
+		CandidateEngine: engine, CandidateEngineDigest: digest, Environment: approvedTestingEnvironment(t, os.Environ())}
 	// The caller's destination may advance while the probes run. The probes
 	// judge the admitted policy base, so a later destination that drops the
 	// reverse dependency must neither be read nor fail the admitted source.
@@ -2842,4 +2842,13 @@ func inProcessScratch(t testing.TB, dir string) bool {
 		t.Fatal(err)
 	}
 	return filepath.Dir(dir) == root
+}
+
+func approvedTestingEnvironment(t *testing.T, environment []string) []string {
+	t.Helper()
+	approved, err := testrun.Environment(environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return approved
 }

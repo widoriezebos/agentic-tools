@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -59,7 +58,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		return plan, inv.admitUnitDeclaration(&plan, directory, nil)
 	}
 	check := &launch.UnitCheck{Base: plan.Base, Directory: filepath.Join(plan.Worktree, inv.layout.InstallationRel),
-		Environment: commandenv.EngineEnvironmentInDirectory(plan.Proof[0].Env, filepath.Join(inv.layout.InstallationRoot.Path(), "bin"))}
+		Input: plan.Proof[0].Input}
 	laneFix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
 	laneCheck := laneFix != nil && slices.Equal(inv.input.values["check"], []string{"metasystem test impact"})
 	if laneCheck {
@@ -116,7 +115,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	}
 	plan.Build.Brief = filepath.Join(directory, "checked-build.md")
 	plan.Check = check
-	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run, "--repo", inv.layout.InstallationRoot.Path()}, Env: check.Environment}}
+	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run, "--repo", inv.layout.InstallationRoot.Path()}, Input: check.Input}}
 	publish := func() error {
 		exclusions := []string{"metasystem/records/reads/"}
 		for _, path := range landing.WorkspaceExclusions() {
@@ -330,7 +329,7 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 			snapshot.Commit, snapshot.Branch = commit, branch
 			snapshot.Tree = readGit("rev-parse", commit+"^{tree}")
 			snapshot.Directory, _ = filepath.Rel(plan.Worktree, check.Directory)
-			snapshot.EnvironmentSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(check.Environment, "\x00"))))
+			snapshot.EnvironmentSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(check.EnvironmentValues(), "\x00"))))
 			snapshot.Content = readGit("show", commit+":"+filepath.ToSlash(filepath.Join(inv.layout.InstallationRel, "metasystem.conf")))
 			snapshot.SourceSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(snapshot.Content)))
 			for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline", "proof.full"} {
@@ -462,12 +461,12 @@ func (inv *intentInvocation) publicationCheckContext(worktree, parent string, ch
 }
 
 func publicationCheckEnvironment(check launch.UnitCheck, parent string) (environment []string, digest string, workers int) {
-	environment = slices.Clone(check.Environment)
+	environment = slices.Clone(check.EnvironmentValues())
 	environment = slices.DeleteFunc(environment, func(entry string) bool {
 		return strings.HasPrefix(entry, "METASYSTEM_CHECK_SELECTION=") || strings.HasPrefix(entry, launch.CheckEnvironmentVariable+"=") || strings.HasPrefix(entry, "LANDING_ONLY=") || strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
 	})
 	environment = append(environment, "LANDING_ONLY=", "LANDING_PROOF_BASE="+parent)
-	digest = launch.CheckEnvironmentDigest(check.Environment, parent)
+	digest = launch.CheckEnvironmentDigest(check.EnvironmentValues(), parent)
 	workers = runtime.GOMAXPROCS(0)
 	for _, name := range []string{"METASYSTEM_TESTING_WORKERS", proofrun.TestWorkersEnvironment} {
 		for _, entry := range environment {

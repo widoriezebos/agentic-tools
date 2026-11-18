@@ -408,8 +408,8 @@ func TestDeclaredChangePrivateEnvironment(t *testing.T) {
 	b.declaredCheap = "printf '%s' \"$DECLARATION_CONTEXT\""
 	plan := launch.UnitPlan{Goal: b.id, Unit: "context", Worktree: b.worktree, Base: b.head,
 		Build: launch.UnitBuildPlan{Brief: filepath.Join(b.root(), b.brief("context.md", "Build.\n")), UnitsPage: filepath.Join(b.root(), b.brief("context-units.md", "## Units\n\n| Unit | Changed lines |\n| --- | --- |\n| context | 5 |\n")), Inputs: []string{}, Outputs: []string{}, Units: []string{"context"}},
-		Proof: []launch.ProofCommand{{Name: "check", Dir: b.worktree, Argv: []string{"true"}, Env: []string{"DECLARATION_CONTEXT=originating-agent"}}}}
-	plan.Check = &launch.UnitCheck{Cheap: "printf forged", Audits: "true", Minutes: 15, Directory: b.worktree, Environment: plan.Proof[0].Env, Declaration: &launch.UnitDeclaration{}}
+		Proof: []launch.ProofCommand{{Name: "check", Dir: b.worktree, Argv: []string{"true"}, DeclaredEnv: []string{"DECLARATION_CONTEXT=originating-agent"}}}}
+	plan.Check = &launch.UnitCheck{Cheap: "printf forged", Audits: "true", Minutes: 15, Directory: b.worktree, DeclaredEnv: plan.Proof[0].DeclaredEnv, Declaration: &launch.UnitDeclaration{}}
 	raw, err := json.Marshal(plan)
 	if err != nil {
 		t.Fatal(err)
@@ -431,7 +431,7 @@ func TestDeclaredChangePrivateEnvironment(t *testing.T) {
 		t.Fatal("the committed check or its retained private environment was replaced")
 	}
 	frozen, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
-	if err != nil || !slices.Equal(frozen.Check.Environment, plan.Proof[0].Env) {
+	if err != nil || !slices.Equal(frozen.Check.EnvironmentValues(), plan.Proof[0].DeclaredEnv) {
 		t.Fatalf("private environment was not frozen: %v", err)
 	}
 }

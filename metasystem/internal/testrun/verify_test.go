@@ -17,7 +17,10 @@ import (
 
 func TestRunOwnerSurvivesTestingWorkerFilters(t *testing.T) {
 	const owner = "outer-exact-ref"
-	prepared := Environment([]string{"PATH=/fixture/bin", identity.RunOwnerEnv + "=" + owner, "UNRELATED=drop"})
+	prepared, err := Environment([]string{"PATH=/fixture/bin", identity.RunOwnerEnv + "=" + owner, "UNRELATED=drop"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if joined := strings.Join(prepared, "\n"); !strings.Contains(joined, identity.RunOwnerEnv+"="+owner) || strings.Contains(joined, "UNRELATED=") {
 		t.Fatalf("testing environment filtered the run owner incorrectly: %v", prepared)
 	}

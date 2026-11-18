@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/checkenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -161,10 +163,13 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantPath := filepath.Join(b.root(), "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
-			wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
-			wantEnvironment = append(wantEnvironment, "PATH="+wantPath)
-			if len(plan.Proof) != 1 || plan.Check.Base != plan.Base || plan.Check.SourceTree != "declaration-tree" || plan.Check.Minutes != 15 || !slices.Equal(plan.Check.Environment, wantEnvironment) || !slices.Equal(plan.Proof[0].Env, wantEnvironment) {
+			wantPath := os.Getenv("PATH")
+			wantInput, inputErr := checkenv.Admit(os.Environ(), nil, true)
+			if inputErr != nil {
+				t.Fatal(inputErr)
+			}
+			wantEnvironment := wantInput.Environment()
+			if len(plan.Proof) != 1 || plan.Check.Base != plan.Base || plan.Check.SourceTree != "declaration-tree" || plan.Check.Minutes != 15 || !slices.Equal(plan.Check.EnvironmentValues(), wantEnvironment) || !slices.Equal(plan.Proof[0].Environment(), wantEnvironment) {
 				t.Fatal("declaration tree, minutes, environment or commands were not frozen")
 			}
 			canonicalDirectory, err := filepath.EvalSymlinks(b.worktree)
@@ -449,7 +454,8 @@ func TestTheCheckRunsTheStepsEngine(t *testing.T) {
 }
 
 func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
-	t.Parallel()
+	publicationSentinel := rand.Text()
+	t.Setenv("E1_PUBLICATION_AMBIENT", publicationSentinel)
 	phase := filepath.Join(t.TempDir(), "publication")
 	script := filepath.Join(t.TempDir(), "check")
 	body := "#!/bin/sh\nif test -f " + shellCommand([]string{phase}) + "; then cat gate-only; else printf 'builder\\n'; fi\n"
@@ -499,12 +505,17 @@ func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &retained) != nil {
 		t.Fatalf("gate record: %s %v", raw, err)
 	}
-	wantPath := filepath.Dir(engine) + string(os.PathListSeparator) + filepath.Join(b.root(), "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
-	wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
-	wantEnvironment = append(wantEnvironment, "PATH="+wantPath)
-	if retained.Directory != gate || retained.Check.Directory != b.worktree || retained.Check.SourceTree != "declaration-tree" || retained.Check.Minutes != 15 || !slices.Equal(retained.Check.Environment, wantEnvironment) || len(retained.Exits) != 2 || retained.Exits[0].Output != "commit tree\n" || retained.Exits[1].Output != wantPath {
+	wantPath := filepath.Dir(engine) + string(os.PathListSeparator) + os.Getenv("PATH")
+	wantInput, inputErr := checkenv.Admit(os.Environ(), nil, true)
+	if inputErr != nil {
+		t.Fatal(inputErr)
+	}
+	wantEnvironment := wantInput.Environment()
+	if retained.Directory != gate || retained.Check.Directory != b.worktree || retained.Check.SourceTree != "declaration-tree" || retained.Check.Minutes != 15 || !slices.Equal(retained.Check.EnvironmentValues(), wantEnvironment) || len(retained.Exits) != 2 || retained.Exits[0].Output != "commit tree\n" || retained.Exits[1].Output != wantPath {
 		t.Fatalf("gate did not record the new tree under frozen declarations: run directory=%q declared directory=%q source tree=%q minutes=%d exits=%+v", retained.Directory, retained.Check.Directory, retained.Check.SourceTree, retained.Check.Minutes, retained.Exits)
 	}
+
+	assertNoAmbientBytes(t, b.unitRoot, publicationSentinel)
 }
 
 func TestIntentDeclaredCheckBuilderRetainsWithUnwritableRound(t *testing.T) {

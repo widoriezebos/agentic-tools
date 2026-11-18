@@ -65,7 +65,7 @@ func TestUnitCheckComposesItsEvidence(t *testing.T) {
 				cheap += "; exit 1"
 			}
 			check := UnitCheck{Cheap: cheap, Audits: row.audit, Minutes: 15, Directory: f.worktree,
-				Environment: []string{"FIXTURE=" + fixture, "PATH=" + bin},
+				DeclaredEnv: []string{"FIXTURE=" + fixture, "PATH=" + bin},
 				Declaration: &UnitDeclaration{Values: [4]string{cheap, row.audit, "15", "full"}, SourceSHA256: "configuration-digest"}}
 			if row.manual {
 				check.Declaration = nil

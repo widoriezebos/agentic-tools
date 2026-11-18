@@ -54,7 +54,7 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 			}
 		} else {
 			command := exec.Command(spec.Program, spec.Args...)
-			command.Dir, command.Env = spec.Directory, append(os.Environ(), spec.Environment...)
+			command.Dir, command.Env = spec.Directory, spec.Environment
 			data, err = command.CombinedOutput()
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {
@@ -151,7 +151,7 @@ func TestUnitBuildAttributesUnitNewOnMainAfterJudgeError(t *testing.T) {
 	unitFlakeBuild(t, true, true, false)
 }
 
-func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool) *workBed {
+func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool, configure ...func(*workBed, *string) []string) *workBed {
 	t.Helper()
 	bed := newWorkBed(t)
 	bed.manager.Prober = unitProofProber{exact: identity.Exact{Pid: int64(os.Getpid()), StartedAt: bed.manager.Now()}}
@@ -237,6 +237,10 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool) *workBed {
 		script = strings.Replace(script, "if [ ! -f red ]", "if [ -n \"$LANDING_ONLY\" ]; then\nfor pair in u/a=TestA u/b=TestB u/a=TestOther; do\ncase \" $LANDING_ONLY \" in *\" $pair \"*) printf '%s %s\\n' \"${pair%=*}\" \"${pair#*=}\" >> '"+counter+".selected';; esac\ndone\n[ \"$LANDING_ONLY_TESTS\" = 'TestA TestB' ] || exit 3\nfi\nif [ ! -f red ]", 1)
 		script = strings.ReplaceAll(script, "LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1", "LANDING-FAILED\\tu/a\\tTestA\\nLANDING-FAILED\\tu/b\\tTestB\\nLANDING-CHECKED\\t2")
 	}
+	var declared []string
+	for _, apply := range configure {
+		declared = apply(bed, &script)
+	}
 	if err := testexec.WriteFile(check, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +251,20 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool) *workBed {
 	brief := filepath.Join(bed.root(), bed.brief("flake.md", text))
 	bed.declaredCheap = shellCommand([]string{check})
 	bed.declaredFull = bed.declaredCheap + " # full"
-	command, rest, ok := resolveIntentArgv([]string{"work", "build", bed.id, "flake", "--brief", brief, "--lines", "5"})
+	argv := []string{"work", "build", bed.id, "flake", "--brief", brief, "--lines", "5"}
+	if declared != nil {
+		units := filepath.Join(bed.root(), bed.brief("caller-units.md", "| Unit | Changed lines |\n| --- | --- |\n| flake | 5 |\n"))
+		plan := launch.UnitPlan{Unit: "flake", Goal: bed.id, Base: bed.head, Worktree: bed.worktree,
+			Build: launch.UnitBuildPlan{Brief: brief, Inputs: []string{}, Outputs: []string{}, UnitsPage: units, Units: []string{"flake"}},
+			Proof: []launch.ProofCommand{{Name: "check", Dir: bed.worktree, Argv: []string{check}, Env: []string{"PATH=" + os.Getenv("PATH")}, DeclaredEnv: declared}}}
+		body, _ := json.Marshal(plan)
+		path := filepath.Join(t.TempDir(), "caller.json")
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		argv = []string{"work", "build", bed.id, "--plan", path}
+	}
+	command, rest, ok := resolveIntentArgv(argv)
 	if !ok {
 		t.Fatal("build command unavailable")
 	}

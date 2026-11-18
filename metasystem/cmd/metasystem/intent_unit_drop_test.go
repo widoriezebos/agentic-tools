@@ -281,7 +281,7 @@ func (s dropProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 			f.t.Fatalf("publication check does not call this unit on its candidate: %v", err)
 		}
 		plan, err := launch.ReadUnitPlan(filepath.Join(filepath.Dir(r.Inputs[0].Path), "plan.json"))
-		if err != nil || plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || plan.Check.SourceTree != "declaration-tree" || plan.Check.Directory != f.bed.worktree || plan.Check.Environment == nil {
+		if err != nil || plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || plan.Check.SourceTree != "declaration-tree" || plan.Check.Directory != f.bed.worktree || plan.Check.Input == nil {
 			f.t.Fatalf("the frozen declared check is missing or changed: %v", err)
 		}
 	}

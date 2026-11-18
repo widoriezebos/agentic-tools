@@ -219,7 +219,7 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 // advanceNamedLocked reserves or continues the named run; the caller holds
 // the unit's named lock.
 func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key string, retained bool) (UnitResult, error) {
-	data, err := os.ReadFile(named.Path)
+	data, err := json.Marshal(named)
 	if err != nil {
 		return UnitResult{}, planInvalid("plan", err)
 	}
@@ -463,7 +463,7 @@ func namedUnitDigestContent(plan UnitPlan, worktree string, settings Settings, r
 		content.BuildWindow, content.ReadWindow = &settings.BuildWindow, &settings.ReadWindow
 	}
 	content.BuildLinesCap, content.ReadSplitLines = settings.BuildLinesCap, settings.ReadSplitLines
-	content.Proof = plan.Proof
+	content.Proof = proofIdentityCommands(plan)
 	data, err := json.Marshal(content)
 	if err != nil {
 		return "", err

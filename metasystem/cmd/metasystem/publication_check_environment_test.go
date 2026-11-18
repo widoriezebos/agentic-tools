@@ -27,12 +27,15 @@ func TestImpactSelectionAppliesToFrozenPublicationEnvironment(t *testing.T) {
 			planPath := resultData(t, built)["plan"].(string)
 			plan, err := launch.ReadUnitPlan(planPath)
 			helmMust(t, err)
-			plan.Check.Environment = []string{"Z=last", "PATH=/inst/bin:/usr/bin:/bin", "METASYSTEM_TESTING_WORKERS=9", "A=first"}
+			plan.Check.Input = nil
+			plan.Check.DeclaredEnv = []string{"Z=last", "PATH=/inst/bin:/usr/bin:/bin", "METASYSTEM_TESTING_WORKERS=9", "A=first"}
+			helmMust(t, plan.Check.AdmitEnvironment())
+			plan.Proof[0].Input = plan.Check.Input
 			data, err := json.Marshal(plan)
 			helmMust(t, err)
 			helmMust(t, os.WriteFile(planPath, data, 0600))
 			engine := filepath.Join(t.TempDir(), "metasystem")
-			helmMust(t, testexec.WriteFile(engine, []byte("#!/bin/sh\ntest \"$*\" = 'test impact --check' || exit 2\n/usr/bin/env\n"), 0700))
+			helmMust(t, testexec.WriteFile(engine, []byte("#!/bin/sh\ntest \"$*\" = 'test impact --check' || exit 2\nprintf 'PATH=%s\\nMETASYSTEM_CHECK_ENVIRONMENT_SHA256=%s\\nMETASYSTEM_TESTING_WORKERS=%s\\n' \"$PATH\" \"$METASYSTEM_CHECK_ENVIRONMENT_SHA256\" \"$METASYSTEM_TESTING_WORKERS\"\n"), 0700))
 			code, checked := declaredCheckAtEngine(t, b, b.worktree, "proof", engine, "test", "run", "--unit-run", resultData(t, built)["run"].(string))
 			if code != 0 {
 				t.Fatalf("check: %d %+v", code, checked)
@@ -63,7 +66,11 @@ func TestImpactSelectionAppliesToFrozenPublicationEnvironment(t *testing.T) {
 				t.Fatalf("producer recorded environment %s; consumer wants %s", selected.EnvironmentSHA256, digest)
 			}
 			if row.field != "" {
-				plan.Check.Environment[0] = "Z=changed"
+				for i := range plan.Check.Input.Entries {
+					if plan.Check.Input.Entries[i].Name == "Z" {
+						plan.Check.Input.Entries[i].Value = "changed"
+					}
+				}
 			}
 			current := selected
 			_, current.EnvironmentSHA256, current.Workers = publicationCheckEnvironment(*plan.Check, parent)

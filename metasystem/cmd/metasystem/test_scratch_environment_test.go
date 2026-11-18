@@ -54,7 +54,7 @@ func TestTestingEnvironmentCarriesGoConfigIntoScratchPreparation(t *testing.T) {
 		if test.goEnv != "" {
 			hostEnv = append(hostEnv, test.goEnv)
 		}
-		prepared := testrun.Preparation{EffectiveContract: contract, Plan: plan, Environment: testrun.Environment(hostEnv)}
+		prepared := testrun.Preparation{EffectiveContract: contract, Plan: plan, Environment: approvedTestingEnvironment(t, hostEnv)}
 		if slices.ContainsFunc(prepared.Environment, func(entry string) bool { return strings.HasPrefix(entry, "UNRELATED_SECRET=") }) {
 			t.Fatal("filter passed an unrelated host variable")
 		}

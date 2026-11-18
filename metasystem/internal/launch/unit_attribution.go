@@ -189,7 +189,9 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 			return false, err
 		}
 	}
-	if comparison.Base != base || comparison.Tree != strings.TrimSpace(string(tree)) || !reflect.DeepEqual(comparison.Command, command) || comparison.Directory != filepath.Join(directory, relative) || !slices.Equal(comparison.Selectors, selectors) {
+	retainedCommand, currentCommand := comparison.Command, command
+	retainedCommand.Input, currentCommand.Input = retainedCommand.Input.Stable(), currentCommand.Input.Stable()
+	if comparison.Base != base || comparison.Tree != strings.TrimSpace(string(tree)) || !reflect.DeepEqual(retainedCommand, currentCommand) || comparison.Directory != filepath.Join(directory, relative) || !slices.Equal(comparison.Selectors, selectors) {
 		return false, fmt.Errorf("the retained comparison names a different base tree or command; request a reasoned revision")
 	}
 	cleanup := false
@@ -361,12 +363,19 @@ func (runner *UnitRunner) rerunAlone(record *UnitRunRecord, round *UnitRound, in
 			if err != nil {
 				return run, false, err
 			}
-			command.Env = plan.Check.Environment
+			command.Input, command.Env = plan.Check.Input, plan.Check.Environment
+			if len(plan.Proof) > 0 && len(plan.Proof[0].Argv) > 0 && filepath.IsAbs(plan.Proof[0].Argv[0]) {
+				command.EngineDirectory = filepath.Dir(plan.Proof[0].Argv[0])
+			}
+			command.Overlays = append(command.Overlays, CheckEnvironmentVariable+"="+CheckEnvironmentDigest(plan.Check.EnvironmentValues(), plan.Check.Base))
+			if plan.Check.Base != "" {
+				command.Overlays = append(command.Overlays, "LANDING_PROOF_BASE="+plan.Check.Base)
+			}
 		}
 		if len(plan.FullArgv) > 0 {
 			command.Argv = plan.FullArgv
 		}
-		command.Env = childEnvironment(command.Env, alone.Selectors)
+		command.Overlays = append(command.Overlays, alone.Selectors...)
 		brief := filepath.Join(round.Directory, fmt.Sprintf("alone-%d.json", index))
 		if err := writeUnitJSON(brief, command, runner.root()); err != nil {
 			return run, false, err
