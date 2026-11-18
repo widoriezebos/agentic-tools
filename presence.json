@@ -1,0 +1,47 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1f",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1f/metasystem",
+  "generation": 30,
+  "engine": "fc18db2b370f7f0dfd43f1d131db631300fe01c6",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": {
+    "root": "seat-17c32b8b679578fc",
+    "job": "seat-17c32b8b679578fc",
+    "role": "working",
+    "round": 0,
+    "goal": "",
+    "startedAt": "2026-11-18T00:08:21Z"
+  },
+  "working": {
+    "goal": "",
+    "phase": {
+      "role": "working",
+      "round": 0,
+      "roundLimit": null
+    },
+    "job": {
+      "id": "seat-17c32b8b679578fc",
+      "role": "working",
+      "status": "running",
+      "startedAt": "2026-11-18T00:08:21Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": null,
+    "chain": [
+      {
+        "job": "seat-17c32b8b679578fc",
+        "role": "working",
+        "round": 0,
+        "status": "running",
+        "startedAt": "2026-11-18T00:08:21Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-11-18T11:26:31Z",
+  "diskFreeBytes": 1628849135616
+}
