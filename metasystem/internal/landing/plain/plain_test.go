@@ -45,6 +45,11 @@ func newBed(t *testing.T) *bed {
 	b.git(seed, "push", "--quiet", "origin", "main")
 	b.checkout = filepath.Join(b.root, "lane")
 	b.git(b.root, "clone", "--quiet", b.origin, b.checkout)
+	// Production Git commands also create commits in the lane checkout.
+	// Their identity must belong to the fixture, not the host account.
+	b.git(b.checkout, "config", "user.name", "lane")
+	b.git(b.checkout, "config", "user.email", "lane@example.invalid")
+	b.git(b.checkout, "config", "commit.gpgsign", "false")
 	b.install = filepath.Join(b.checkout, "metasystem")
 	fixtureEngine(t, b.install)
 	// The stand-in proof commands: green records the tree and commit it was

@@ -53,6 +53,9 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 		t.Fatal(err)
 	}
 	bed.git(t, base, "init", "--quiet", "-b", "main", bed.checkout)
+	bed.git(t, bed.checkout, "config", "user.name", "lane")
+	bed.git(t, bed.checkout, "config", "user.email", "lane@example.invalid")
+	bed.git(t, bed.checkout, "config", "commit.gpgsign", "false")
 	for path, text := range map[string]string{
 		filepath.Join(bed.installation, "metasystem.conf"): "metasystem.template=true\n",
 		filepath.Join(bed.checkout, ".gitignore"):          "metasystem/artifacts/\nmetasystem/bin/\nmetasystem/metasystem.conf.local\n",
