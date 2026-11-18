@@ -1,0 +1,104 @@
+{
+  "canonicalRead": {
+    "engine": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+    "findings": [
+      {
+        "change": "No change is needed for this unit. If this path is touched later, add a row where the engine follow is refused at the helm and the stop arrives during the channel duty.",
+        "claim": "One stop check in the runner loop has no test: the check after the channel duty on the path taken when an engine follow is refused while a person holds the helm. Removing it leaves the new drain test green. The slice works and is safe without a test for it: the brief does not list this site among its thirteen, and without the check the loop would only run the landing keeper before its wait notices the stop.",
+        "class": "other",
+        "evidence": "internal/steward/runner.go line 462 is the check. In a scratch copy, removing it left TestAStoppedRunnerBeginsNoFurtherDuty passing, while removing each of the other 14 checks made it fail. The test's engine-follow fake returns refused=false, so this branch is never entered.",
+        "id": "code-critic-a21f5146dc1f9ab1c47cd39f:1",
+        "material": false,
+        "relation": "R-124-m1u",
+        "severity": "low",
+        "where": "metasystem/internal/steward/runner_drain_test.go"
+      }
+    ],
+    "id": "code-critic-a21f5146dc1f9ab1c47cd39f",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-a21f5146dc1f9ab1c47cd39f/rounds/1/return.md",
+    "subject": {
+      "commit": "4fdb9052b6a51fa3f3424ee57ccc7869a10454bf",
+      "diffDigest": "f270284a40a0952fab7baaef54e1af06db6c8db9db09470f390be5f1879c40a6",
+      "kind": "commit",
+      "parent": "828852661c4495ffdca9209a88e9d5bd13737f44",
+      "tree": "c5089b536e5c2f7ace227750717f187228b9b0c7"
+    }
+  },
+  "readDigest": "62d9bd369036b8bd72aa9fee7372262a44bef02daa4ce085175abc1a42242087",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U2c",
+  "subject": {
+    "commit": "4fdb9052b6a51fa3f3424ee57ccc7869a10454bf",
+    "parent": "828852661c4495ffdca9209a88e9d5bd13737f44",
+    "tree": "c5089b536e5c2f7ace227750717f187228b9b0c7",
+    "patchDigest": "f270284a40a0952fab7baaef54e1af06db6c8db9db09470f390be5f1879c40a6",
+    "unitDigest": "7ab1c3159d3bef731f4df023718c46fa3923bdea4099ff85589db154ce046656"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-a21f5146dc1f9ab1c47cd39f",
+    "round": 1,
+    "closureSha256": "07ad469fc31c9297b1ec28d11704ddb7319029600d45b79c6adccfd54bf08c90"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "c5089b536e5c2f7ace227750717f187228b9b0c7",
+    "runId": "goal-read-gate-20261118t223932z-a0ba966b4934f2af"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    },
+    {
+      "kind": "read",
+      "commit": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "digest": "e3d4d07e631878bb31a3c84ad9ebcba9b4a38476e962dd1a1159a10518e874df"
+    },
+    {
+      "kind": "read",
+      "commit": "24c745d4df8f577aa6bceeb6ff7878b262236e90",
+      "digest": "4b43b55d52435a45317cffd98af0af15b8226ee137fedbc01da424ba8bfcfe3b"
+    },
+    {
+      "kind": "read",
+      "commit": "828852661c4495ffdca9209a88e9d5bd13737f44",
+      "digest": "dd8a600364be4fab797315ad4e5afa2a628b2108e179f0acefc51224574d9616"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/cache_trim_test.go",
+      "readerWord": "reviewed by critic root code-critic-a21f5146dc1f9ab1c47cd39f"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_helm_test.go",
+      "readerWord": "reviewed by critic root code-critic-a21f5146dc1f9ab1c47cd39f"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-a21f5146dc1f9ab1c47cd39f"
+    }
+  ],
+  "sha256": "02040860487d0c761719b7eda5534540afa215f9fbe051c20e77b95f8cc4b35e"
+}
