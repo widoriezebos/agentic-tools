@@ -29785,6 +29785,51 @@
         "by": "Wido",
         "why": "Caused by commit 3dab110a92 (read-once ledger files), which hung two steward-loop tests and added a run-state audit crossing; reverted on main at 4e5971550a on 17 Nov 16:38. Recorded from the proof of the pre-revert main; not a defect of current main."
       }
+    },
+    {
+      "id": "red:metasystem/internal/adopt:TestAdoptGitIntegrationWaitsForAutomaticMaintenance",
+      "identity": "red:metasystem/internal/adopt:TestAdoptGitIntegrationWaitsForAutomaticMaintenance",
+      "group": "metasystem/internal/adopt",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T021716.254297000Z.log",
+          "classname": "metasystem/internal/adopt",
+          "name": "TestAdoptGitIntegrationWaitsForAutomaticMaintenance",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261118T021716.254297000Z",
+          "batch": "20261118T021716.254297000Z",
+          "baseCommit": "d1614db2b1e55b22c19d979418188e2ad0a5896b",
+          "baseTree": "0d4d71508739763854d60357e5ea09624caf1998",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261118T021716.254297000Z.log",
+          "logDigest": "58a99011e290cbfc324f6235822affe347dd2251b1d5d1776f4265e8e4894baf",
+          "seenAt": "2026-11-18T03:24:33Z",
+          "opid": "37V2CGMZ83R4VJ9H9SV2T5KZ05-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261118T021716.254297000Z"
+      ],
+      "opened": "2026-11-18T03:24:33Z",
+      "closed": null
     }
   ],
   "cadence": {
