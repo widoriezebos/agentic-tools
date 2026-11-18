@@ -230,10 +230,18 @@ func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, runErr := command.CombinedOutput()
+	// The proof's JSON stream retains these logs outside the disposable test
+	// namespace. In verbose/JSON mode each record is emitted while the child
+	// runs, including when this inventory test ultimately passes.
+	recorder := newNestedInventoryRecorder(t.Logf)
+	command.Stdout, command.Stderr = recorder, recorder
+	t.Log("nested inventory: starting test-environment-standard")
+	runErr := command.Run()
+	recorder.finish(runErr)
+	output := recorder.inventory.Bytes()
 	observed, notPassed, err := standardInventoryVerdict(output, runErr, expected)
 	if err != nil {
-		t.Fatalf("%v\n%s", err, output)
+		t.Fatal(err)
 	}
 	t.Logf("engine inventory matched: expected roots=%d observed terminals=%d not passed=%d exit=%v; pass and fail are the nested package's own verdict", len(expected), len(observed), notPassed, runErr)
 }
