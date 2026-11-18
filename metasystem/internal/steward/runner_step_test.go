@@ -108,7 +108,7 @@ func TestTheBlockingEntryWaitsOutABusyLock(t *testing.T) {
 		}
 		bed.sleep(d)
 	}, bed.deps)
-	if err != nil || outcome.Status != "RESTORED" || bed.launches != 1 || sleeps != 1 || hooks != 1 {
+	if err != nil || outcome.Status != "RESTORED" || bed.launches != 1 || sleeps != 2 || hooks != 1 {
 		t.Fatalf("blocking repair: %+v %v, launches=%d sleeps=%d hooks=%d", outcome, err, bed.launches, sleeps, hooks)
 	}
 }
@@ -168,7 +168,11 @@ func TestTheBlockingEntryReturnsEachOutcomeFromOneCall(t *testing.T) {
 			} else if err != nil || outcome.Status != want {
 				t.Fatalf("want %s: %+v %v", want, outcome, err)
 			}
-			if sleeps != 0 {
+			wantSleeps := 0
+			if want == "RESTORED" {
+				wantSleeps = 1
+			}
+			if sleeps != wantSleeps {
 				t.Fatalf("terminal outcome slept %d times", sleeps)
 			}
 			if want == "RESTORED" && bed.launches != 1 {

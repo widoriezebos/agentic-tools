@@ -548,6 +548,48 @@ func TestMachineReviveRefusesUnknownRunnerExecution(t *testing.T) {
 	}
 }
 
+func TestMachineReviveWaitsForTheRealRepair(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBedWith(t, func(f *goal.GoalFile) { workApprovedBox(f); f.Claimed.Lineage = steward.SeatLineage })
+	root, home, now := bed.root(), bed.manager.CapacityHome, bed.manager.Now()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	owners := bed.owners()
+	owners.processes.launches = func() *launch.Manager { return bed.manager }
+	owners.processes.process.repositoryTop = fakeTop(root)
+	owners.landing.home = func() (string, error) { return home, nil }
+	registryPath := filepath.Join(root, "host-registry")
+	owners.machines.registryPath = func() (string, error) { return registryPath, nil }
+	owners.machines.nickname = func(path string) (string, bool) { return "mac-cli", path == root }
+	owners.machines.seatCensus = seatTickCensus{}
+	launcher := newStewardSeatLauncher()
+	launcher.manager, launcher.repositoryTop, launcher.laneRoot = owners.processes.launches, fakeTop(root), laneRootAt(home)
+	owners.machines.seatLauncher = &launcher
+	owners.prove = enrolledPersonProver(t, root, now)
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventRelaunched, "checkoutPath": root, "ownerTag": "revive", "at": now.Format(time.RFC3339), "generation": 1, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0})
+	if err := registry.AppendFrame(registryPath, payload); err != nil {
+		t.Fatal(err)
+	}
+	enrollReviveRunner(t, root, now)
+	if err := os.Remove(filepath.Join(root, "artifacts", "agents", "steward", "runner.json")); err != nil {
+		t.Fatal(err)
+	}
+	code, result := bed.runJSON(owners, "machine", "revive", "mac-cli")
+	if code == 0 || !strings.Contains(result.Summary, "the enrolled runner could not be repaired") || !strings.Contains(result.Summary, "the runner died before guarding the repository") {
+		t.Fatalf("failed runner launch must refuse revival: exit=%d result=%+v", code, result)
+	}
+	if starts := bed.starter.launched(); len(starts) != 0 {
+		t.Fatalf("failed runner launch launched seats: %v", starts)
+	}
+	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "steward", "runner-replacement.json")); !os.IsNotExist(err) {
+		t.Fatalf("replacement transition remains: %v", err)
+	}
+}
+
 func enrollReviveRunner(t *testing.T, root string, now time.Time) {
 	t.Helper()
 	engine := filepath.Join(root, "bin", "metasystem")

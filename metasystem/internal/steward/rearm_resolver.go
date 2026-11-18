@@ -52,6 +52,7 @@ type rearmResolverDeps struct {
 	// signal stops a runner the arm replaces (syscall.Kill in production).
 	signal func(int, syscall.Signal) error
 	clock  RearmClock
+	sleep  func(time.Duration)
 	launch func(string, *EnrolledBinary, string) (RunnerRecord, error)
 	prober identity.Prober
 }
