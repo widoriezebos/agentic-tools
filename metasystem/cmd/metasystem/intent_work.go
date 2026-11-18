@@ -544,6 +544,17 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return findings, nil
 	}
 	runner.Excluded = func(path string) bool { return branch.PathClass(path) == branch.ClassExcluded }
+	runner.BeforeResume = func(record launch.UnitRunRecord, request launch.UnitRequest) error {
+		if request.FollowUp == "" {
+			return inv.runAuthority(record, launch.StartSpec{})
+		}
+		conn := inv.connection()
+		endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
+		if err != nil {
+			return err
+		}
+		return branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), record.Goal, endpoint))
+	}
 	runner.BeforeModelLaunch = func(record launch.UnitRunRecord, spec launch.StartSpec) error {
 		settings := runner.Manager.Settings
 		if len(settings.Values) == 0 {
@@ -569,6 +580,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return nil
 	}
 	runner.Manager.SandboxAct = inv.consumedSandboxAct
+	runner.Installation = inv.layout.InstallationRoot.Path()
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
 		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
 			round := unit.Rounds[len(unit.Rounds)-1]
@@ -736,16 +748,11 @@ func (inv *intentInvocation) unitProof(plan launch.UnitPlan) ([]launch.ProofComm
 }
 
 // unitLaunchAuthority is asked before every build, proof or read launch of a unit
-// run this command advances, new or continued: the goal must be claimed by
-// this session and the checkout lease held, resolved through the selected
-// installation's own configuration.
+// run this command advances, new or continued, under the caller's claim or
+// the run's recorded holder, resolved through the selected installation.
 func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, spec launch.StartSpec, settings launch.Settings) error {
 	conn := inv.connection()
-	endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
-	if err != nil {
-		return err
-	}
-	if err := branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
+	if err := inv.runAuthority(record, spec); err != nil {
 		return err
 	}
 	if fix := conn.laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil && record.Unit == fix.Unit() {
@@ -777,6 +784,43 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	round := record.Rounds[len(record.Rounds)-1]
 	retry := strings.HasSuffix(spec.ID, "-retry") && slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool { return step.LaunchID == spec.ID && step.RetryBy == "machine" })
 	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, round.Number, cap, now, retry)
+}
+
+// runAuthority lets an admitted round continue while its recorded holder holds.
+func (inv *intentInvocation) runAuthority(record launch.UnitRunRecord, spec launch.StartSpec) error {
+	conn, root := inv.connection(), inv.layout.InstallationRoot.Path()
+	endpoint, err := conn.endpoint(root)
+	if err != nil {
+		return err
+	}
+	caller := branch.CheckHolder(inv.laneClaimCheck(conn, root, record.Goal, endpoint))
+	if caller == nil || record.Holder == nil || len(record.Rounds) == 0 {
+		return caller
+	}
+	round := record.Rounds[len(record.Rounds)-1]
+	if len(round.Steps) == 0 || round.Steps[0].State == launch.StepPending || round.Steps[0].State == launch.StepStarting || spec.ID != "" && !strings.HasPrefix(spec.ID, fmt.Sprintf("%s-r%d-s", record.ID, round.Number)) {
+		return caller
+	}
+	if err := conn.ownershipCheck(root, record.Goal, endpoint)(); err != nil {
+		return err
+	}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return fmt.Errorf("the claim on goal %s cannot be read: %s", record.Goal, problem.Summary)
+	}
+	file, _ := goalRecord(projection, record.Goal)
+	if file == nil {
+		return fmt.Errorf("the claim on goal %s cannot be read: the goal is unavailable", record.Goal)
+	}
+	var current launch.RunHolder
+	if file.Claimed != nil && file.StopCapability != nil {
+		current = launch.RunHolder{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage, ClaimEpoch: file.StopCapability.ClaimEpoch}
+	}
+	if current != *record.Holder {
+		return &refusal.Coded{Code: "UNIT_RUN_HOLDER_CHANGED", Reason: fmt.Errorf("the claim on goal %s changed after run %s started (was %s on %s, now %s on %s)", record.Goal, record.ID, record.Holder.Lineage, record.Holder.Machine, current.Lineage, current.Machine),
+			Run: fmt.Sprintf("metasystem work wait run:%s  (from the session that holds this checkout)", record.ID)}
+	}
+	return nil
 }
 
 // build
@@ -1062,6 +1106,9 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 				return inv.render(*problem)
 			}
 		}
+	}
+	if file.Claimed != nil && file.StopCapability != nil {
+		request.options.Holder = &launch.RunHolder{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage, ClaimEpoch: file.StopCapability.ClaimEpoch}
 	}
 	prepare := request.prepare
 	request.prepare = func(directory string) (string, error) {
@@ -1576,6 +1623,29 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "UNIT_WAIT_RETRY"):
+			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "This wait needs repeating; its error was not recorded as a work failure",
+				Data: unitData(record, runner.Manager), next: again, nextReason: "the same command continues it", Details: details}
+		case launch.IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED"):
+			next, reason := again, "after the cause in the details is repaired"
+			var held goalHeldElsewhere
+			var authorization *launch.CodedError
+			if errors.As(err, &held) {
+				next, reason = inv.claimRemedy(record.Goal, err), claimRemedyReason(err, "a person takes the goal over; or the session holding it builds")
+			} else if errors.As(err, &authorization) {
+				for cause := authorization.Reason; cause != nil; cause = errors.Unwrap(cause) {
+					var repair *refusal.Coded
+					if errors.As(cause, &repair) && repair.Run != "" {
+						reason = repair.Run
+					}
+					if refusal.CodeOf(cause) == "OWNED-ELSEWHERE" {
+						next, reason = inv.publicArgv("session", "isolate"), "then repeat the claim in the resulting writer session"
+						break
+					}
+				}
+			}
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "The next step could not start; no failure was recorded",
+				Data: unitData(record, runner.Manager), next: next, nextReason: reason, Details: details}
 		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
 			waits := "; no build was launched"
 			if len(record.Rounds) > 0 && slices.ContainsFunc(record.Rounds[len(record.Rounds)-1].Steps, func(step launch.UnitStep) bool { return step.State == launch.StepStarting && step.Kind == "attest" }) {
@@ -1869,12 +1939,12 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		if current.State == "cancelled" {
 			return inv.render(inv.cancelledWorkResult(current.Goal))
 		}
-		if err := inv.recordUnitStopOverride(current.Goal, "work-revise", reason, impact, person); err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
-		}
 		bytes, err := os.ReadFile(brief)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the correction brief cannot be read", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "uses the corrected brief path"})
+		}
+		if err := inv.recordRevisionOverride(current, 0, bytes, person, reason, &impact); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
 		}
 		result, err := runner.Revise(launch.UnitRevisionRequest{Run: run, Brief: bytes, Person: person, Reason: reason, Impact: impact})
 		inv.revisedAttempt = result.Revision.Attempt

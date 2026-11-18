@@ -41,8 +41,16 @@ const (
 	StepSkipped  UnitStepState = "skipped"
 )
 
+// RunHolder is the goal claim that admitted a run under one checkout hold.
+type RunHolder struct {
+	Machine    string `json:"machine"`
+	Lineage    string `json:"lineage"`
+	ClaimEpoch int64  `json:"claimEpoch"`
+}
+
 type UnitRunRecord struct {
-	ReviewCloseReason string `json:"reviewCloseReason,omitempty"`
+	ReviewCloseReason string     `json:"reviewCloseReason,omitempty"`
+	Holder            *RunHolder `json:"holder,omitempty"`
 
 	CorrectionBudget *int        `json:"correctionBudget,omitempty"`
 	PolicyError      string      `json:"policyError,omitempty"`
@@ -217,8 +225,13 @@ type UnitRunner struct {
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.
 	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// BeforeResume checks authority before a resumed run writes any records.
+	// Its refusal may only return a settled judgement without changes.
+	BeforeResume func(UnitRunRecord, UnitRequest) error
 	// CollectLaunch settles the physical execution through its reservation owner.
 	CollectLaunch func(UnitRunRecord, Record, string) error
+	// Installation is the caller's installation, whose dispatch ledger holds this runner's launch reservations.
+	Installation string
 	// PlanProof selects proof after the build. A nil result retains the
 	// caller's commands; selected commands are frozen for this round's retries.
 	PlanProof func(UnitPlan) ([]ProofCommand, error)
@@ -284,6 +297,14 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err != nil {
 			return UnitResult{}, err
 		}
+		if record.State != "cancelled" && runner.BeforeResume != nil {
+			if err := runner.BeforeResume(record, request); err != nil {
+				if record.State == "awaiting-judgement" && request.FollowUp == "" && !freshReadUnsettled(record) {
+					return UnitResult{Record: record, Round: len(record.Rounds)}, nil
+				}
+				return UnitResult{Record: record}, coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
+			}
+		}
 	}
 	if record.State != "cancelled" {
 		if err := runner.reserveTree(record); err != nil {
@@ -314,6 +335,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err := runner.named.verify(runner); err != nil {
 			return UnitResult{}, err
 		}
+	}
+	if err := runner.bookEndedRead(&record); err != nil {
+		return UnitResult{Record: record}, err
 	}
 	if request.Resume != "" && (request.FollowUp != "" || record.State != "awaiting-judgement") {
 		if request.FollowUp == "" {
@@ -476,6 +500,7 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 		return UnitRunRecord{}, err
 	}
 	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
+		Holder:     runner.options.Holder,
 		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds, CountedCap: int(settings.UnitCountedRounds)}
 	policy := "auto"
 	if runner.ReviewPolicy != nil {
@@ -850,11 +875,30 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, Round: round.Number, MaxRounds: record.MaxRounds}}
 }
 
+func freshReadUnsettled(record UnitRunRecord) bool {
+	return len(record.Rounds) > 0 && slices.ContainsFunc(record.Rounds[len(record.Rounds)-1].Steps, func(step UnitStep) bool {
+		return step.Name == FreshReadStep && (step.State == StepPending || step.State == StepStarting || step.State == StepRunning)
+	})
+}
+
+func (runner *UnitRunner) beforeLaunch(record UnitRunRecord, spec StartSpec) error {
+	if runner.BeforeModelLaunch != nil {
+		if err := runner.BeforeModelLaunch(record, spec); err != nil {
+			if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") || IsCode(err, "LAUNCH_BUILD_CAPACITY") {
+				return err
+			}
+			return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
+		}
+	}
+	return nil
+}
+
 // driver starts a unit round's launches under the run's own launch ids,
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
 	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
 		spec.Actor = runner.Actor
+		spec.UnitRun, spec.UnitInstallation = record.ID, runner.Installation
 		spec.wait = runner.CommandWait
 		return runner.Manager.Start(spec)
 	},
@@ -865,13 +909,8 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 			return runner.save(*record)
 		}, unit: true, snapshot: runner.snapshotRepository, wait: runner.waitLaunch,
 		before: func(spec StartSpec) error {
-			if runner.BeforeModelLaunch != nil {
-				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-					if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") || IsCode(err, "LAUNCH_BUILD_CAPACITY") {
-						return err
-					}
-					return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
-				}
+			if err := runner.beforeLaunch(*record, spec); err != nil {
+				return err
 			}
 			if runner.named != nil {
 				return runner.named.verify(runner)
@@ -1046,6 +1085,8 @@ func (runner *UnitRunner) judgeBuildResult(record *UnitRunRecord, round *UnitRou
 	return runner.save(*record)
 }
 
+// BLOCKED deliberately has no result block, whatever the candidate's state;
+// the engine's check can still judge the builder's retained change.
 func parseBuildResult(message string) (word, open string) {
 	lines := strings.Split(message, "\n")
 	for index, line := range lines {

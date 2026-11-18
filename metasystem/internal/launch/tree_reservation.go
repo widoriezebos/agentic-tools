@@ -292,6 +292,13 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 			children = append([]string(nil), owner.Children...)
 		}
 		children = unitChildren(record, children)
+		if len(record.Rounds) > 0 {
+			for _, step := range record.Rounds[len(record.Rounds)-1].Steps {
+				if step.Comparison != nil {
+					children = append(children, step.Comparison.LaunchID)
+				}
+			}
+		}
 		record.State = "cancelled"
 		if err := writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root()); err != nil {
 			return err
@@ -320,6 +327,11 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 	if !runner.treeChildrenEnded(children) {
 		return record, runner.childCustodyError(children, errors.New("the run's children are not proven dead; its worktree remains reserved"))
 	}
+	for _, round := range record.Rounds {
+		if err := runner.collectLaunches(record, round); err != nil {
+			return record, err
+		}
+	}
 	if runner.CriticCustody != nil && !runner.finishedMutationEnded(record, children) {
 		dead, err := runner.CriticCustody(record, true)
 		if err != nil {
@@ -342,6 +354,11 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		return nil
 	})
 	return record, err
+}
+
+func (runner *UnitRunner) neverCreated(id string) Record {
+	now := runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+	return Record{ID: id, State: Cancelled, StartedAt: now, FinishedAt: now}
 }
 
 func (runner *UnitRunner) childCustodyError(children []string, cause error) error {

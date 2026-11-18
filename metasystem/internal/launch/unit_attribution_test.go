@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,11 +15,162 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
+
+func TestAPersonsReviseEndsARerunAlone(t *testing.T) {
+	t.Parallel()
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprint("pending=", pending), func(t *testing.T) {
+			t.Parallel()
+			f, git := attributionFixture(t, false, "", false)
+			f.runner.Git = resultAttributionGit{git}
+			start := f.starter.onStart
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "build" {
+					prober := f.manager.Prober.(*fakeProber)
+					prober.states[10], prober.states[20] = identity.Alive, identity.Alive
+				}
+				if err := start(r); err != nil {
+					return err
+				}
+				if strings.HasSuffix(r.ID, "-alone") {
+					f.starter.holdKind = "proof"
+				}
+				return nil
+			}
+			if pending {
+				f.runner.BeforeModelLaunch = func(_ UnitRunRecord, spec StartSpec) error {
+					if strings.HasSuffix(spec.ID, "-alone") {
+						return coded("BUDGET_REFUSED", "", errors.New("wait for budget"))
+					}
+					return nil
+				}
+			}
+			held, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if !pending && err != nil || pending && !IsCode(err, "BUDGET_REFUSED") || held.Record.State != "running" {
+				t.Fatalf("rerun not held: %+v %v", held, err)
+			}
+			alone := held.Record.Rounds[0].Steps[1].Alone.LaunchID
+			if pending {
+				if _, err := f.manager.Store.Read(alone); !os.IsNotExist(err) {
+					t.Fatalf("pending rerun has a launch: %v", err)
+				}
+			}
+			var collected []Record
+			f.runner.CollectLaunch = func(_ UnitRunRecord, r Record, _ string) error {
+				if r.ID == alone {
+					collected = append(collected, r)
+				}
+				return nil
+			}
+			prober := f.manager.Prober.(*fakeProber)
+			sleep := f.manager.Sleep
+			cancelled := false
+			f.manager.Sleep = func(d time.Duration) {
+				if !cancelled {
+					prober.states[10], prober.states[20] = identity.Dead, identity.Dead
+					cancelled = true
+				}
+				sleep(d)
+			}
+			f.starter.holdKind = "build"
+			result, err := f.runner.Revise(UnitRevisionRequest{Run: held.Record.ID, Brief: []byte("Correct the unit.\n"), Person: "Wido", Reason: "start over"})
+			if err != nil || len(result.Record.Rounds) != 2 || result.Record.Rounds[0].Outcome != "proof-red" || result.Record.Rounds[0].Cause != "unclassified" || len(collected) != 1 || collected[0].State != Cancelled || collected[0].Executed() == pending {
+				t.Fatalf("rerun not superseded: %+v collected=%+v err=%v", result, collected, err)
+			}
+			if !pending {
+				execution, err := f.manager.Store.Read(alone)
+				if err != nil || execution.State != Cancelled {
+					t.Fatalf("rerun still running: %+v %v", execution, err)
+				}
+			}
+		})
+	}
+}
+
+func TestARerunAloneLeavesCallerErrorsToItsCaller(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"refused", "retry"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			var resume []bool
+			if kind == "retry" {
+				resume = append(resume, true)
+			}
+			f, _ := attributionFixture(t, false, "", resume...)
+			var collected []string
+			f.runner.CollectLaunch = func(_ UnitRunRecord, r Record, _ string) error {
+				collected = append(collected, r.ID)
+				return nil
+			}
+			f.runner.BeforeModelLaunch = func(_ UnitRunRecord, spec StartSpec) error {
+				if kind == "refused" && strings.HasSuffix(spec.ID, "-alone") {
+					return refusal.New("OWNED-ELSEWHERE", "holder=other-session", errors.New("this checkout is held by other-session"))
+				}
+				return nil
+			}
+			start := f.starter.onStart
+			var written []byte
+			path := ""
+			f.starter.onStart = func(r Record) error {
+				if kind == "retry" && strings.HasSuffix(r.ID, "-alone") {
+					path = filepath.Join(f.runner.Root, strings.Split(r.ID, "-r1-")[0], "run.json")
+					data, err := os.ReadFile(path)
+					if err != nil {
+						return err
+					}
+					var record UnitRunRecord
+					if err := json.Unmarshal(data, &record); err != nil {
+						return err
+					}
+					record.Notes = append(record.Notes, "another command kept this note")
+					written, err = json.Marshal(record)
+					if err != nil {
+						return err
+					}
+					if err := os.WriteFile(path, written, 0600); err != nil {
+						return err
+					}
+				}
+				return start(r)
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			code := map[string]string{"refused": "UNIT_LAUNCH_UNAUTHORIZED", "retry": "UNIT_WAIT_RETRY"}[kind]
+			if !IsCode(err, code) {
+				t.Fatalf("alone %s returned %v, want %s", kind, err, code)
+			}
+			record, err := f.runner.Status(result.Record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := record.Rounds[0]
+			alone := round.Steps[1].Alone
+			if round.Stop != nil || round.Outcome != "" || round.Steps[1].RedCause != nil || alone.Outcome != "" || slices.Contains(collected, alone.LaunchID) {
+				t.Fatalf("caller error was recorded or collected: outcome=%s alone=%s collected=%v", round.Outcome, alone.Outcome, collected)
+			}
+			if kind == "refused" {
+				if _, err := f.manager.Store.Read(alone.LaunchID); !os.IsNotExist(err) {
+					t.Fatalf("refusal created an alone launch: %v", err)
+				}
+				return
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || written == nil || !bytes.Equal(after, written) {
+				t.Fatalf("alone start overwrote another command: equal=%v err=%v", bytes.Equal(after, written), err)
+			}
+			resumed, err := f.runner.Advance(UnitRequest{Resume: record.ID})
+			if err != nil || resumed.Record.Rounds[0].Cause != "own" || !slices.Contains(resumed.Record.Notes, "another command kept this note") || strings.Count(strings.Join(f.starter.ids, "\n"), alone.LaunchID) != 1 {
+				t.Fatalf("alone retry did not follow its launch: cause=%s err=%v ids=%v", resumed.Record.Rounds[0].Cause, err, f.starter.ids)
+			}
+		})
+	}
+}
 
 type attributionGit struct {
 	fixture        unitFixture
@@ -95,8 +247,11 @@ func (git *attributionGit) Run(dir string, env []string, args ...string) ([]byte
 func attributionFixture(t *testing.T, baseRed bool, script string, resume ...bool) (unitFixture, *attributionGit) {
 	t.Helper()
 	events := []string{"branch", "round"}
-	for range resume {
+	for _, continuing := range resume {
 		events = append(events, "branch")
+		if !continuing {
+			events = append(events, "before")
+		}
 	}
 	f := newUnitFixture(t, "", events...)
 	git := &attributionGit{fixture: f, tree: "base-tree", mainTree: "main-tree", baseRed: baseRed}

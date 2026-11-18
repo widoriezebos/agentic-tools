@@ -189,7 +189,7 @@ func TestTheHolderCollectsUnderItsOwnAuthority(t *testing.T) {
 	b, id, _ := completedRound(t)
 	o := collectionOwners(t, b)
 	collectionOwnership(t, b, "another-lineage", true)
-	if code, result := collectWithOwners(t, b, id, o); code == 0 || !strings.Contains(result.Summary, "may not start") {
+	if code, result := collectWithOwners(t, b, id, o); code == 0 || !strings.Contains(result.Summary, "could not start") {
 		t.Fatalf("non-holder collected: %d %+v", code, result)
 	}
 	file := b.goalFile(b.id)
@@ -230,6 +230,7 @@ func TestCollectItFromTheChannelCollectsTheRound(t *testing.T) {
 				id = r.ID
 			}
 			if !other {
+				withoutRunHolder(t, b, id)
 				if code, result := collectWithOwners(t, b, id, o); code == 0 {
 					t.Fatalf("a process without the lease collected: %+v", result)
 				}

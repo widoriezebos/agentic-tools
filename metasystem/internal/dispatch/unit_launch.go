@@ -7,8 +7,25 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
+
+// UnitLaunchEnded excludes an ended physical launch from the running job projection.
+func UnitLaunchEnded(record map[string]any, launchStatus func(string) (string, error)) bool {
+	lens := JobRecordOf(record)
+	if asString(record["unitRun"]) == "" || lens.OperationID() != "unit-launch:"+lens.JobID() || TerminalStatus(lens.Status()) {
+		return false
+	}
+	if launchStatus == nil {
+		launchStatus = func(id string) (string, error) {
+			execution, err := (launch.Store{}).Read(id)
+			return string(execution.State), err
+		}
+	}
+	state, err := launchStatus(lens.JobID())
+	return err == nil && launch.State(state).Terminal()
+}
 
 // ReserveUnitLaunch binds a physical execution to its goal revision and unit
 // round before it starts. Repeating the same admission joins that reservation.
@@ -128,7 +145,7 @@ func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, ca
 			delete(record, "error")
 		}
 		if _, owned := record["unitExecuted"]; owned && TerminalStatus(asString(record["status"])) && !swept {
-			if asString(record["status"]) != status || asString(record["startedAt"]) != started || asString(record["endedAt"]) != ended || record["unitExecuted"] != executed {
+			if asString(record["status"]) != status || record["unitExecuted"] != executed || executed && (asString(record["startedAt"]) != started || asString(record["endedAt"]) != ended) {
 				return fmt.Errorf("the unit execution %s contradicts its terminal reservation", id)
 			}
 			if cause != "environment" || record["unitEnvironment"] == true {

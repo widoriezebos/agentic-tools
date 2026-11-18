@@ -1,0 +1,119 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "Guard the call: when selected.Record is nil, call recordUnitStopOverride with the goal id and the ordinary impact text, as before, or render the existing 'still being reserved by its build' in-progress result. Alternatively pass a pointer and let recordRevisionOverride treat nil as having no kept revisions and no classification.",
+        "claim": "The named revise form can crash with a nil-pointer panic when a person revises work whose run is reserved but has no run record yet. The new call recordRevisionOverride(*selected.Record, ...) dereferences the record before anything checks that it exists. The old code passed only the goal id at this point. This is not material: that state persists only after a crash or write failure between writing the named entry and writing the run record, or else lasts only milliseconds. The panic writes nothing, so the slice works and is safe without the fix. Recorded under the no-reproduction-needed rule as noted.",
+        "class": "regression",
+        "evidence": "intent_selection.go:589-596: with --work, selectWork returns named[0] whatever its Record. internal/launch/unit_named.go:593-605: one.Record stays nil when runner.read(entry.Run) returns fs.ErrNotExist. intent_selection.go:975: inv.recordRevisionOverride(*selected.Record, after, brief, person, reason, \u0026impact). unit_named.go:295-312: the entry is written as reserved before newRunWithID creates the record.",
+        "id": "code-critic-d768aea3b691d0dccbc509ff:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_selection.go"
+      },
+      {
+        "change": "Optionally choose the classification impact only when after is 0 or equals len(current.Rounds). Put this on the later list instead of a fix round.",
+        "claim": "When a person's revise names a stale --after while the newest round is classifying, both forms still record and print the classification impact ('the red's comparison or rerun stops now'). Revise then refuses the request as UNIT_REVISION_STALE and stops nothing. The kept override record then states an effect that never happened. This is not material: the old code also recorded an impact for a revise that was later refused, the record is admission evidence that cannot close a question, and nothing is cancelled.",
+        "class": "other",
+        "evidence": "intent_unit_questions.go: recordRevisionOverride picks the impact from launch.ClassificationInFlight(current) and does not check `after` against len(current.Rounds). unit_revise.go reviseLocked: the stale refusal comes before the state check and before supersedeClassification.",
+        "id": "code-critic-d768aea3b691d0dccbc509ff:2",
+        "material": false,
+        "relation": "R-143-m1e (the person understands the impact first)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_unit_questions.go"
+      }
+    ],
+    "id": "code-critic-d768aea3b691d0dccbc509ff",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-d768aea3b691d0dccbc509ff/rounds/1/return.md",
+    "subject": {
+      "commit": "3af597e197cc2261fcae5d35f8445efa0c028154",
+      "diffDigest": "8d32fa86f92d996a100f56daea02fa72e468eb7527083a6101707857d4b29efc",
+      "kind": "commit",
+      "parent": "42e75e70bc8754bbba6304dbeb9d1ac2d3f13584",
+      "tree": "9f52d6167523ef6f6976b8e3314d0a627260393c"
+    }
+  },
+  "readDigest": "8a15f00bc59f00696540d7a27e1c860fbf38c030167c4ef1984c6e8a102032c0",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U5b",
+  "subject": {
+    "commit": "3af597e197cc2261fcae5d35f8445efa0c028154",
+    "parent": "42e75e70bc8754bbba6304dbeb9d1ac2d3f13584",
+    "tree": "9f52d6167523ef6f6976b8e3314d0a627260393c",
+    "patchDigest": "8d32fa86f92d996a100f56daea02fa72e468eb7527083a6101707857d4b29efc",
+    "unitDigest": "b09560a5ebd8a75822bf37713b380340ed67b60708ff26f69b0b497cbac88737"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d768aea3b691d0dccbc509ff",
+    "round": 1,
+    "closureSha256": "996c44121ac2d803019605456b776490d2e93593124f569099584a6a92d735c1"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "9f52d6167523ef6f6976b8e3314d0a627260393c",
+    "runId": "goal-read-gate-20261116t051010z-3428a07cb3412c8a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    },
+    {
+      "kind": "read",
+      "commit": "ae2f61c1ef0c58e803b183e1b0030cb05f63ee07",
+      "digest": "a0def01a53bfb8ad3fd7f9511fae6c0badec706bee597682ab9f41c030dc7918"
+    },
+    {
+      "kind": "read",
+      "commit": "9a2183656ed4f5e9f51c1c5ed4f5b1fd76a9a8ca",
+      "digest": "b3808658d850bb8d57f08615d09c66fdd94851d9786d72817fdffc25320ff692"
+    },
+    {
+      "kind": "read",
+      "commit": "d5f51aa8d0181e56bd7d72c003774e2871dea8f6",
+      "digest": "4e6deaf09e77be9ea34ad23120624fbf37533f0e751ce7f2b803ee080fcadf44"
+    },
+    {
+      "kind": "read",
+      "commit": "7db01934fb9c08dd48b6b602910daee8b39cf2e4",
+      "digest": "307ab8c05ec92789eacae35e2469bbe93c8b9cab73c2a000dc333268f203e13f"
+    },
+    {
+      "kind": "read",
+      "commit": "42e75e70bc8754bbba6304dbeb9d1ac2d3f13584",
+      "digest": "98d306b81bdf8d8c0576d094a0c17923ab0955c7d4167ef6dcddf606ee459daf"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_comparison_accounting_test.go",
+      "readerWord": "reviewed by critic root code-critic-d768aea3b691d0dccbc509ff"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_settlement_test.go",
+      "readerWord": "reviewed by critic root code-critic-d768aea3b691d0dccbc509ff"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-d768aea3b691d0dccbc509ff"
+    }
+  ],
+  "sha256": "ffbfaaf020e7118bb31853c887beceed6756a4047966c27c786b9362db2f7e47"
+}

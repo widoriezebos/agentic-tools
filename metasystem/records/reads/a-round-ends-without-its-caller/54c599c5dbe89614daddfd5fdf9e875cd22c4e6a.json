@@ -1,0 +1,103 @@
+{
+  "canonicalRead": {
+    "engine": "6a49a12bfffdfe8c96b15fa7552d7255b2b52c4c",
+    "findings": [
+      {
+        "change": "None for U3. Put it on the design's 'later, when it hurts' list: the rule could measure against the starting diff of the first round after the last checked round.",
+        "claim": "The new rule only covers a run whose first rounds were never checked. Suppose round 1 was checked, round 2's builder wrote a candidate and then failed before its check, and round 3's correction changes nothing. Round 3 is still measured against its own starting diff, which already contains round 2's candidate, so it stops as a gap without that candidate ever being checked. That is the same symptom as finding 492, one round later. The implementation does exactly what the brief asks, so this is a limit of the design, not a build defect.",
+        "class": "other",
+        "evidence": "unit_build_outcome.go:43-46 (reviewed tree): round 1's starting diff is used only when earlierProofExecuted returns false for every earlier round; once any earlier round's proof executed, the round's own build-before is used. Brief decision 4 and Scope U3 ask for exactly this.",
+        "id": "code-critic-3ef41f9e9868109b6e4ce1f1:1",
+        "material": false,
+        "relation": "R-124-m1u",
+        "severity": "low",
+        "where": "metasystem/internal/launch/unit_build_outcome.go"
+      },
+      {
+        "change": "None needed. Optionally, return errors other than a missing record instead of swallowing them.",
+        "claim": "earlierProofExecuted treats every launch-store read error as 'never executed'. If a record exists but cannot be read (for example it is corrupt), a no-op correction made after a checked round would run the check instead of stopping as a gap. That costs one extra check run; it never ships unchecked work.",
+        "class": "other",
+        "evidence": "unit_build_outcome.go:122: `if launch, err := runner.Manager.Store.Read(id); err == nil \u0026\u0026 launch.Executed()`. A missing record and an unreadable one are handled the same way. Decision 1 only covers ids that have no record.",
+        "id": "code-critic-3ef41f9e9868109b6e4ce1f1:2",
+        "material": false,
+        "relation": "R-124-m1u",
+        "severity": "low",
+        "where": "metasystem/internal/launch/unit_build_outcome.go"
+      },
+      {
+        "change": "None.",
+        "claim": "The brief places T7 in intent_build_outcome_test.go. The builder put T7, T9, T10 and T11 in a new file, intent_unchecked_round_test.go. The tests are the ones the brief asks for, and the frozen check selected and passed them.",
+        "class": "scope",
+        "evidence": "The diff creates metasystem/cmd/metasystem/intent_unchecked_round_test.go. Brief section U3: 'T7 ... (new, intent_build_outcome_test.go)'.",
+        "id": "code-critic-3ef41f9e9868109b6e4ce1f1:3",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_unchecked_round_test.go"
+      },
+      {
+        "change": "None. Report the count against the estimate at hand-in, as the brief asks.",
+        "claim": "There are about 31 production lines (unit_build_outcome.go +29/-5 and unit_run.go +2) against an estimate of 25. That is well under the 250-line stop line, and the diff total of 248 is close to the estimated 245.",
+        "class": "other",
+        "evidence": "git diff --stat 54c599c5d^ 54c599c5d.",
+        "id": "code-critic-3ef41f9e9868109b6e4ce1f1:4",
+        "material": false,
+        "relation": "R-124-m1u",
+        "severity": "low",
+        "where": "metasystem/internal/launch/unit_build_outcome.go"
+      }
+    ],
+    "id": "code-critic-3ef41f9e9868109b6e4ce1f1",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui-a-round-ends-without-its-caller/metasystem/artifacts/agents/code-critic-3ef41f9e9868109b6e4ce1f1/rounds/1/return.md",
+    "subject": {
+      "commit": "54c599c5dbe89614daddfd5fdf9e875cd22c4e6a",
+      "diffDigest": "4a5e582c2641adba07d2197a82608faa083068dcb1fca67c85ba77055008c738",
+      "kind": "commit",
+      "parent": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "tree": "19ee07cbc7055ac86cfbc594b10a3f274ce27606"
+    }
+  },
+  "readDigest": "5076ed10389ac85fa209a2cf37e663bffadc8e50378a4a9be1b1f7d59486ae45",
+  "schemaVersion": 1,
+  "goal": "a-round-ends-without-its-caller",
+  "unit": "U3",
+  "subject": {
+    "commit": "54c599c5dbe89614daddfd5fdf9e875cd22c4e6a",
+    "parent": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+    "tree": "19ee07cbc7055ac86cfbc594b10a3f274ce27606",
+    "patchDigest": "4a5e582c2641adba07d2197a82608faa083068dcb1fca67c85ba77055008c738",
+    "unitDigest": "ddc37838752b6bf18743a689a78b457e9cbdf59e016c03b955db7e242051b994"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3ef41f9e9868109b6e4ce1f1",
+    "round": 1,
+    "closureSha256": "0eaf8045feb462cec328623b6d3fb8fdb146736219ccf52847138c6ab8862d78"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "19ee07cbc7055ac86cfbc594b10a3f274ce27606",
+    "runId": "goal-read-gate-20261115t104452z-9eb5f1fd491e9788"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e7b38724039b1c62e0b33b90fe57af78ea0eff66",
+      "digest": "c32625714af1eaed8f00b283d021565fbdcfe2f7b726defc881d0d0654ae1d1c"
+    },
+    {
+      "kind": "read",
+      "commit": "8a85ea5f509027e36a740f93c6a833d2a3c1cffd",
+      "digest": "ec08163be7e2c7b545358a09d605f1dad976cc21f3386ba9c07c118ec506c6a2"
+    },
+    {
+      "kind": "read",
+      "commit": "24c2e35a8630e3bebcb3f7dbe1f44584b34cf56e",
+      "digest": "767784ace76e527afb9c8d6fa526a82832f72b29552827cd2a8a20ddf98ab62c"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "387c2c087f414742b5543fe8ad226562aa5e1b47fa8c25a32c3e75a62c2ceaba"
+}

@@ -466,12 +466,90 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	if err != nil || capped {
 		return UnitResult{Record: record, Capped: capped}, err
 	}
-	result, err := runner.finish(&record, round, "green")
+	return runner.finishFreshRead(&record, round)
+}
+
+// BookEndedRead accounts ended launches and settles a late fresh read when the command locks are free.
+func (runner *UnitRunner) BookEndedRead(id string) error {
+	record, err := runner.read(id)
+	if err != nil {
+		return err
+	}
+	if runner.tree == nil {
+		_, err := treeCall(runner, record.Worktree, func(r *UnitRunner) (struct{}, error) { return struct{}{}, r.BookEndedRead(id) })
+		if IsCode(err, "UNIT_RUN_BUSY") {
+			return nil
+		}
+		return err
+	}
+	lock, err := runner.lock(id)
+	if IsCode(err, "UNIT_RUN_BUSY") {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer releaseUnitLock(lock)
+	record, err = runner.read(id)
+	if err != nil {
+		return err
+	}
+	for _, round := range record.Rounds {
+		if err := runner.collectLaunches(record, round); err != nil {
+			return err
+		}
+	}
+	return runner.bookEndedRead(&record)
+}
+
+func (runner *UnitRunner) finishFreshRead(record *UnitRunRecord, round *UnitRound) (UnitResult, error) {
+	result, err := runner.finish(record, round, "green")
 	if err == nil && round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") {
-		retry.Decision = "stop"
-		retry.Handoff = round.Stop.Handoff
-		retryBytes, _ = json.Marshal(retry)
-		_, err = atomicfile.WriteFile(filepath.Join(round.Directory, "unknown-retry.json"), retryBytes, 0o600, runner.root())
+		path := filepath.Join(round.Directory, "unknown-retry.json")
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return result, readErr
+		}
+		var retry loopstop.Stop
+		if err := json.Unmarshal(data, &retry); err != nil {
+			return result, err
+		}
+		retry.Decision, retry.Handoff = "stop", round.Stop.Handoff
+		data, _ = json.Marshal(retry)
+		_, err = atomicfile.WriteFile(path, data, 0o600, runner.root())
 	}
 	return result, err
+}
+
+// bookEndedRead settles only the last round's fresh read from its launch.
+func (runner *UnitRunner) bookEndedRead(record *UnitRunRecord) error {
+	if record.State != "awaiting-judgement" || len(record.Rounds) == 0 {
+		return nil
+	}
+	round := &record.Rounds[len(record.Rounds)-1]
+	ended := false
+	for index, step := range round.Steps {
+		if step.Name != FreshReadStep || (step.State != StepStarting && step.State != StepRunning) || step.LaunchID == "" {
+			continue
+		}
+		execution, err := runner.Manager.Status(step.LaunchID)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !execution.State.Terminal() {
+			continue
+		}
+		(stepDriver{manager: runner.Manager, round: round, unit: true}).endStep(index, execution)
+		ended = true
+	}
+	if !ended {
+		return nil
+	}
+	if _, err := runner.finishFreshRead(record, round); err != nil {
+		return err
+	}
+	return runner.collectLaunches(*record, *round)
 }

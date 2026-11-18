@@ -120,9 +120,11 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 						return Record{}, err
 					}
 				}
-				if err := prepareReadOutputDirectories(spec.Outputs); err != nil {
-					return Record{}, err
-				}
+			}
+			if err := prepareReadOutputDirectories(spec.Outputs); err != nil {
+				return Record{}, err
+			}
+			if driver.unit {
 				if len(replacements) > 0 {
 					data, err := os.ReadFile(spec.Brief)
 					if err != nil {
@@ -401,11 +403,6 @@ func (sequence readSequence) stepSpec(step UnitStep) (StartSpec, error) {
 
 func (sequence readSequence) run(readStart int, deadline time.Time) (int, bool, error) {
 	round := sequence.driver.round
-	if sequence.outputs == nil {
-		if err := prepareReadOutputDirectories(sequence.spec.Outputs); err != nil {
-			return -1, false, err
-		}
-	}
 	for index := readStart; index < len(round.Steps); index++ {
 		step := &round.Steps[index]
 		// A serial read an earlier call left running completes before a
@@ -422,11 +419,6 @@ func (sequence readSequence) run(readStart int, deadline time.Time) (int, bool, 
 		spec, err := sequence.stepSpec(*step)
 		if err != nil {
 			return -1, false, err
-		}
-		if sequence.outputs != nil {
-			if err := prepareReadOutputDirectories(spec.Outputs); err != nil {
-				return -1, false, err
-			}
 		}
 		if _, err := sequence.driver.startStep(index, spec); err != nil {
 			return -1, false, err

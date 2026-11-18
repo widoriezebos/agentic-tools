@@ -154,7 +154,10 @@ func TestIntentTreeReservationWaitsAcrossCommandsAndExactCancellation(t *testing
 
 			// A terminal record cannot release custody while its exact child is live.
 			if terminalRecord {
-				b.manager.Store.Update(child, func(r *launch.Record) error { r.State = launch.Cancelled; return nil })
+				b.manager.Store.Update(child, func(r *launch.Record) error {
+					r.State, r.FinishedAt = launch.Cancelled, b.manager.Now().UTC().Format(time.RFC3339Nano)
+					return nil
+				})
 			}
 			assertWait := func(result intentResult, code int) {
 				t.Helper()
@@ -665,7 +668,7 @@ func TestIntentTreeWaitDoesNotOverwritePersonCancellation(t *testing.T) {
 	}
 	code, result := treeBuild(t, b, "u", false)
 	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
-	if code != 1 || !cancelled || err != nil || record.State != "cancelled" || len(b.starter.launched()) != 1 {
+	if code != 3 || !cancelled || err != nil || record.State != "cancelled" || len(b.starter.launched()) != 1 {
 		t.Fatalf("wait overwrote cancellation: %d %+v %+v %v", code, result, record, err)
 	}
 }
@@ -1001,7 +1004,7 @@ func TestIntentTreeStartupLockRetakePrintsRetryWithoutSaving(t *testing.T) {
 		held.Release()
 	}
 	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
-	if code != 1 || err != nil || !strings.Contains(resultWords(result), "repeat the same command") || record.Rounds[0].Steps[0].State != launch.StepStarting {
+	if code != 3 || err != nil || !strings.Contains(resultWords(result), "needs repeating") || record.Rounds[0].Steps[0].State != launch.StepStarting {
 		t.Fatalf("lock retake failed without a safe retry: %d %+v %+v %v", code, result, record, err)
 	}
 	b.manager.Supervisor = b.starter
@@ -1046,7 +1049,7 @@ func TestIntentTreeStartupCannotOverwriteReleasedCancellation(t *testing.T) {
 	})
 	code, built := treeBuild(t, b, "owner", false)
 	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
-	if code != 1 || err != nil || record.State != "cancelled" || !strings.Contains(resultWords(built), "repeat the same command") || len(b.starter.launched()) != 1 {
+	if code != 3 || err != nil || record.State != "cancelled" || !strings.Contains(resultWords(built), "needs repeating") || len(b.starter.launched()) != 1 {
 		t.Fatalf("startup overwrote the person's cancellation: %d %+v %+v %v", code, built, record, err)
 	}
 	b.manager.Supervisor = b.starter
