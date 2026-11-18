@@ -1,0 +1,28 @@
+{
+  "attempt": "20261021T102231",
+  "base": "6eb2b20712f0e8877290ecf4ef6ef45898ce4e8d",
+  "head": "9f488da6fd7bc5a95c7fa0cfe38d890db24f46fd",
+  "source": "c_reds_trunk.json",
+  "package": "internal/testpolicy",
+  "test": "TestMetaSystemContractNamesOnlyUntaggedGoTests",
+  "scope": "full",
+  "reason": "instrument",
+  "paths": [
+    "metasystem/cmd/metasystem/question_plain_test.go",
+    "metasystem/cmd/metasystem/testdata/layout/question-retry.json",
+    "metasystem/cmd/metasystem/testdata/layout/question-withdraw.json",
+    "metasystem/internal/channel/answer_code_test.go",
+    "metasystem/internal/channel/channel_test.go",
+    "metasystem/internal/channel/goalless_question_test.go",
+    "metasystem/internal/channel/intent_coverage_paths_test.go",
+    "metasystem/internal/channel/lane_wording_test.go",
+    "metasystem/internal/channel/poll.go",
+    "metasystem/internal/channel/question.go",
+    "metasystem/internal/channel/question_text_test.go",
+    "metasystem/internal/channel/targeted.go",
+    "metasystem/internal/landing/plain/question_plain_test.go"
+  ],
+  "status_no_renames": "M\tmetasystem/cmd/metasystem/question_plain_test.go\nM\tmetasystem/cmd/metasystem/testdata/layout/question-retry.json\nM\tmetasystem/cmd/metasystem/testdata/layout/question-withdraw.json\nM\tmetasystem/internal/channel/answer_code_test.go\nM\tmetasystem/internal/channel/channel_test.go\nM\tmetasystem/internal/channel/goalless_question_test.go\nM\tmetasystem/internal/channel/intent_coverage_paths_test.go\nM\tmetasystem/internal/channel/lane_wording_test.go\nM\tmetasystem/internal/channel/poll.go\nM\tmetasystem/internal/channel/question.go\nA\tmetasystem/internal/channel/question_text_test.go\nM\tmetasystem/internal/channel/targeted.go\nM\tmetasystem/internal/landing/plain/question_plain_test.go\n",
+  "contract_sha256": "eeb3c36baa708daa0a9330bf145d08a009050f4aa0cc1225555c61eb367b4064",
+  "full_command": "sh proof/full.sh"
+}

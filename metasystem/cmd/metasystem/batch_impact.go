@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/doc"
 	"go/parser"
 	"go/token"
@@ -30,16 +31,20 @@ const (
 // batchImpactPlan is a read-only proposal. Only proof admission can turn a
 // proposal into an execution; a printed plan conveys no acceptance authority.
 type batchImpactPlan struct {
-	Purpose      string              `json:"purpose"`
-	Base         string              `json:"base"`
-	Scope        string              `json:"scope"`
-	Command      string              `json:"command"`
-	Policy       string              `json:"policy"`
-	Paths        []string            `json:"paths"`
-	Instruments  []string            `json:"instruments,omitempty"`
-	Groups       []testpolicy.Group  `json:"groups,omitempty"`
-	PackageTests map[string][]string `json:"package_tests,omitempty"`
-	TestCount    int                 `json:"test_count,omitempty"`
+	Purpose          string              `json:"purpose"`
+	Base             string              `json:"base"`
+	Scope            string              `json:"scope"`
+	Command          string              `json:"command"`
+	Policy           string              `json:"policy"`
+	Paths            []string            `json:"paths"`
+	Instruments      []string            `json:"instruments,omitempty"`
+	Groups           []testpolicy.Group  `json:"groups,omitempty"`
+	PackageTests     map[string][]string `json:"package_tests,omitempty"`
+	TestCount        int                 `json:"test_count,omitempty"`
+	GroupInvocations int                 `json:"group_invocations,omitempty"`
+	// GroupTests retains each group's build and execution obligations through Groups.
+	// PackageTests is the distinct identity union, not an execution request.
+	GroupTests map[string]map[string][]string `json:"group_tests,omitempty"`
 }
 
 // Instrument paths are module-relative except for the configured contract,
@@ -149,6 +154,9 @@ func (plan *batchImpactPlan) expand(installation string, contract testpolicy.Con
 		root = filepath.Dir(installation)
 	}
 	plan.PackageTests = map[string][]string{}
+	plan.GroupTests = map[string]map[string][]string{}
+	plan.TestCount, plan.GroupInvocations = 0, 0
+	plan.Groups = nil
 	for _, id := range closure.SelectedGroups {
 		i := slices.IndexFunc(contract.Groups, func(g testpolicy.Group) bool { return g.ID == id })
 		group := contract.Groups[i]
@@ -161,7 +169,9 @@ func (plan *batchImpactPlan) expand(installation string, contract testpolicy.Con
 		if context == nil {
 			return fmt.Errorf("batch group %s: Go build context is unavailable", id)
 		}
-		context.BuildTags = append(context.BuildTags, group.BuildTags...)
+		plainContext := *context
+		context.BuildTags = append(slices.Clone(context.BuildTags), group.BuildTags...)
+		plan.GroupTests[id] = map[string][]string{}
 		var requested []string
 		all := string(group.Tests) == `"all"`
 		if !all {
@@ -172,39 +182,43 @@ func (plan *batchImpactPlan) expand(installation string, contract testpolicy.Con
 		found := map[string]bool{}
 		for _, pkg := range group.Packages {
 			directory := filepath.Join(cwd, pkg)
-			listed, err := context.ImportDir(directory, 0)
+			available, err := batchPackageTests(context, directory)
 			if err != nil {
 				return fmt.Errorf("batch group %s package %s: %w", id, pkg, err)
+			}
+			var plain []string
+			if len(group.BuildTags) > 0 {
+				plain, err = batchPackageTests(&plainContext, directory)
+				if _, onlyTagged := err.(*build.NoGoError); onlyTagged {
+					err = nil
+				}
+				if err != nil {
+					return fmt.Errorf("batch group %s untagged package %s: %w", id, pkg, err)
+				}
 			}
 			key, err := filepath.Rel(installation, directory)
 			if err != nil {
 				return err
 			}
 			key = filepath.ToSlash(key)
-			names := plan.PackageTests[key]
-			var testFiles []*ast.File
-			for _, file := range append(slices.Clone(listed.TestGoFiles), listed.XTestGoFiles...) {
-				parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, file), nil, parser.SkipObjectResolution|parser.ParseComments)
-				if err != nil {
-					return err
+			var selected []string
+			for _, name := range available {
+				if !all && !slices.Contains(requested, name) {
+					continue
 				}
-				testFiles = append(testFiles, parsed)
-				for _, decl := range parsed.Decls {
-					fn, ok := decl.(*ast.FuncDecl)
-					if ok && fn.Recv == nil && testpolicy.GoTestName(fn.Name.Name) && (all || slices.Contains(requested, fn.Name.Name)) {
-						names = append(names, fn.Name.Name)
-						found[fn.Name.Name] = true
-					}
+				found[name] = true
+				// Match the full proof's extra pass: only identities absent
+				// from the untagged inventory need the tagged build.
+				if len(group.BuildTags) > 0 && slices.Contains(plain, name) {
+					continue
 				}
+				selected = append(selected, name)
 			}
-			for _, example := range doc.Examples(testFiles...) {
-				name := "Example" + example.Name
-				if (example.Output != "" || example.EmptyOutput) && (all || slices.Contains(requested, name)) {
-					names = append(names, name)
-					found[name] = true
-				}
+			plan.GroupTests[id][key] = selected
+			plan.GroupInvocations += len(selected)
+			if len(selected) > 0 {
+				plan.PackageTests[key] = slices.Compact(slices.Sorted(slices.Values(append(plan.PackageTests[key], selected...))))
 			}
-			plan.PackageTests[key] = slices.Compact(slices.Sorted(slices.Values(names)))
 		}
 		for _, name := range requested {
 			if !found[name] {
@@ -222,7 +236,7 @@ func (plan batchImpactPlan) text() string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "batch plan: %s against %s; command %s\n", plan.Scope, plan.Base, plan.Command)
 	if plan.Scope != "full" {
-		fmt.Fprintf(&out, "tests: %d\n", plan.TestCount)
+		fmt.Fprintf(&out, "tests: %d; group invocations: %d\n", plan.TestCount, plan.GroupInvocations)
 	}
 	for _, path := range plan.Instruments {
 		fmt.Fprintln(&out, "instrument: "+path)
@@ -234,4 +248,34 @@ func (plan batchImpactPlan) text() string {
 		fmt.Fprintln(&out, "selection: "+pkg+"="+strings.Join(plan.PackageTests[pkg], ","))
 	}
 	return out.String()
+}
+
+// batchPackageTests discovers native top-level tests and executable examples in
+// the supplied build context, without compiling or running the package.
+func batchPackageTests(context *build.Context, directory string) ([]string, error) {
+	listed, err := context.ImportDir(directory, 0)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	var files []*ast.File
+	for _, file := range append(slices.Clone(listed.TestGoFiles), listed.XTestGoFiles...) {
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, file), nil, parser.SkipObjectResolution|parser.ParseComments)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, parsed)
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if ok && fn.Recv == nil && testpolicy.GoTestName(fn.Name.Name) {
+				names = append(names, fn.Name.Name)
+			}
+		}
+	}
+	for _, example := range doc.Examples(files...) {
+		if example.Output != "" || example.EmptyOutput {
+			names = append(names, "Example"+example.Name)
+		}
+	}
+	return slices.Compact(slices.Sorted(slices.Values(names))), nil
 }

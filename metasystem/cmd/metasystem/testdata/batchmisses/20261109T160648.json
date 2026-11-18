@@ -1,0 +1,30 @@
+{
+  "attempt": "20261109T160648",
+  "base": "3f9eec5f5de8acb5b9a494481f9fc1fd9d04188f",
+  "head": "9b2be346ac7bfcfb966f10e31a7a9ac3636a6093",
+  "source": "c_batch.log",
+  "package": "cmd/metasystem",
+  "test": "TestLandingUnselectableRedStillRecordsMainIncident",
+  "scope": "full",
+  "reason": "instrument",
+  "paths": [
+    "metasystem/cmd/metasystem/intent_landing.go",
+    "metasystem/cmd/metasystem/landing_cause_test.go",
+    "metasystem/internal/landing/plain/cause.go",
+    "metasystem/internal/landing/plain/health.go",
+    "metasystem/internal/landing/plain/named_replay_test.go",
+    "metasystem/internal/landing/plain/repeat_attribution_test.go",
+    "metasystem/internal/landing/plain/repeat_selection_test.go",
+    "metasystem/internal/landing/plain/replay.go",
+    "metasystem/internal/landing/plain/report.go",
+    "metasystem/internal/landing/plain/steward_rows_test.go",
+    "metasystem/internal/loopstop/stop.go",
+    "metasystem/records/reads/a-return-names-the-failing-test/45af3bf13282f03f99574cbc55cc3fc4bf24e64d.closure.json",
+    "metasystem/records/reads/a-return-names-the-failing-test/45af3bf13282f03f99574cbc55cc3fc4bf24e64d.json",
+    "metasystem/records/reads/a-return-names-the-failing-test/bfac00f286ebf9761fa466a7707fa13281f9d3df.closure.json",
+    "metasystem/records/reads/a-return-names-the-failing-test/bfac00f286ebf9761fa466a7707fa13281f9d3df.json"
+  ],
+  "status_no_renames": "M\tmetasystem/cmd/metasystem/intent_landing.go\nM\tmetasystem/cmd/metasystem/landing_cause_test.go\nM\tmetasystem/internal/landing/plain/cause.go\nM\tmetasystem/internal/landing/plain/health.go\nM\tmetasystem/internal/landing/plain/named_replay_test.go\nM\tmetasystem/internal/landing/plain/repeat_attribution_test.go\nM\tmetasystem/internal/landing/plain/repeat_selection_test.go\nM\tmetasystem/internal/landing/plain/replay.go\nM\tmetasystem/internal/landing/plain/report.go\nM\tmetasystem/internal/landing/plain/steward_rows_test.go\nM\tmetasystem/internal/loopstop/stop.go\nA\tmetasystem/records/reads/a-return-names-the-failing-test/45af3bf13282f03f99574cbc55cc3fc4bf24e64d.closure.json\nA\tmetasystem/records/reads/a-return-names-the-failing-test/45af3bf13282f03f99574cbc55cc3fc4bf24e64d.json\nA\tmetasystem/records/reads/a-return-names-the-failing-test/bfac00f286ebf9761fa466a7707fa13281f9d3df.closure.json\nA\tmetasystem/records/reads/a-return-names-the-failing-test/bfac00f286ebf9761fa466a7707fa13281f9d3df.json\n",
+  "contract_sha256": "75a737b0b0538c0d797bb4ca346f17771d7af78e70cac8cc2a151dcbef45fb03",
+  "full_command": "sh proof/full.sh"
+}

@@ -1,0 +1,101 @@
+[
+  {
+    "attempt": "20261021T102231",
+    "base": "6eb2b20712f0e8877290ecf4ef6ef45898ce4e8d",
+    "head": "9f488da6fd7bc5a95c7fa0cfe38d890db24f46fd",
+    "source": "c_reds_trunk.json",
+    "package": "internal/testpolicy",
+    "test": "TestMetaSystemContractNamesOnlyUntaggedGoTests",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/internal/landing/plain/question_plain_test.go"
+  },
+  {
+    "attempt": "20261023T215301",
+    "base": "ca82ea7b76dcc1477e42d9c846a547218ecf4fbd",
+    "head": "600c58e31e117433ca8a46cac7f76d33ea7038d3",
+    "source": "c_reds_trunk.json",
+    "package": "internal/testutil",
+    "test": "TestFixtureSourcesHaveNoBareBusyLoop",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/testing.json"
+  },
+  {
+    "attempt": "20261031T213751",
+    "base": "d606ba3b995edcc30e8b521e9dee026b6bdbec17",
+    "head": "e236c4841fd0e026dec68958fcba636a8e7ecb15",
+    "source": "c_batch.log",
+    "package": "internal/goal",
+    "test": "TestAuditFreshProjectionsUseInjectedDeadline",
+    "scope": "full",
+    "reason": "instrument",
+    "current_mapping": "internal/testenv TestAuditFreshProjectionsUseInjectedDeadline; original failure remains internal/goal",
+    "witness": "metasystem/internal/landing/plain/health.go"
+  },
+  {
+    "attempt": "20261104T220024",
+    "base": "cd9474c806c5b308f2a2cd92412f1664797480d9",
+    "head": "06d23e6d86ad3b558a54347e3f508687afcb86a7",
+    "source": "c_batch.log",
+    "package": "internal/hostsetup",
+    "test": "TestShippedRepositoryHostRegistrationsAreConfigurationReady",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/internal/landing/plain/health.go"
+  },
+  {
+    "attempt": "20261109T160648",
+    "base": "3f9eec5f5de8acb5b9a494481f9fc1fd9d04188f",
+    "head": "9b2be346ac7bfcfb966f10e31a7a9ac3636a6093",
+    "source": "c_batch.log",
+    "package": "cmd/metasystem",
+    "test": "TestLandingUnselectableRedStillRecordsMainIncident",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/internal/landing/plain/cause.go"
+  },
+  {
+    "attempt": "20261110T014405",
+    "base": "648621817049f62f96007f80fcf81086aed6c755",
+    "head": "bd49c2c3e4a7eb4c099246a18ca1b62b419e8ccb",
+    "source": "c_batch.log",
+    "package": "cmd/metasystem",
+    "test": "TestLandingClassifyCannotRepeatIncompleteFull",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/internal/landing/plain/cause.go"
+  },
+  {
+    "attempt": "20261111T001123",
+    "base": "193ba591907444a73dff043dcf5915a063d72632",
+    "head": "8ac287ab016cf0739318c29c13d8d47ad00b932f",
+    "source": "c_reds_b_20261111T001123.json",
+    "package": "cmd/metasystem",
+    "test": "TestBrainBedActorSeamCoverage",
+    "scope": "impact",
+    "reason": "batch-verb-and-bed-coverage"
+  },
+  {
+    "attempt": "20261112T080208",
+    "base": "91fc1b02a74e41f09cafe5762f9c10b35c8d3631",
+    "head": "cbf98c9dbd4ce1b00cdd569b5d235da42b6a29b1",
+    "source": "c_reds_b_20261112T080208.json",
+    "package": "cmd/metasystem",
+    "test": "TestVerbRatchetEngineSelfSubprocess",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/cmd/devgate/checkout_delivery_test.go"
+  },
+  {
+    "attempt": "20261116T235635",
+    "base": "110b88814dc8298068e67200dd57111f40daa6e3",
+    "head": "d8d3948fa7c666d424930d3f80870d11e1b2fa84",
+    "source": "c_reds_trunk.json",
+    "package": "cmd/metasystem",
+    "test": "TestAppStartPreflightsDeclaredTools",
+    "scope": "full",
+    "reason": "instrument",
+    "witness": "metasystem/internal/testenv/git.go"
+  }
+]

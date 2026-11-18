@@ -326,35 +326,15 @@ func TestBatchInstrumentRepositoryDiffGitAdapter(t *testing.T) {
 	}
 }
 
-func TestBatchPlanRecordedMissesUseTheProductionRoster(t *testing.T) {
+func TestBatchPlanEmptyImpactStillSelectsRoster(t *testing.T) {
 	t.Parallel()
-	_, sources := batchPlanBed(t)
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	helmMust(t, err)
-	// Empty impact isolates the promise that mandatory coverage is selected
-	// whatever a batch changes, including no named dependency on these tests.
+	root, sources := batchPlanBed(t)
 	sources.impact = func(string, string, bool) (goadapter.Impact, error) { return goadapter.Impact{}, nil }
 	plan, err := sources.batchPlan(root, "batch-base")
 	helmMust(t, err)
-	for _, row := range []struct {
-		attempt, pkg, name string
-		selected           bool
-	}{
-		{"20261021T102231", "internal/testpolicy", "TestMetaSystemContractNamesOnlyUntaggedGoTests", true},
-		{"20261023T215301", "internal/testutil", "TestFixtureSourcesHaveNoBareBusyLoop", true},
-		{"20261031T213751", "internal/testenv", "TestAuditFreshProjectionsUseInjectedDeadline", true},
-		{"20261111T001123", "cmd/metasystem", "TestBrainBedActorSeamCoverage", true},
-		{"20261112T080208", "cmd/metasystem", "TestVerbRatchetEngineSelfSubprocess", true},
-		{"20261104T220024", "internal/hostsetup", "TestShippedRepositoryHostRegistrationsAreConfigurationReady", false},
-		{"20261109T160648", "cmd/metasystem", "TestLandingUnselectableRedStillRecordsMainIncident", false},
-		{"20261110T014405", "cmd/metasystem", "TestLandingClassifyCannotRepeatIncompleteFull", false},
-		{"20261116T235635", "cmd/metasystem", "TestAppStartPreflightsDeclaredTools", false},
-	} {
-		t.Run(row.attempt, func(t *testing.T) {
-			t.Parallel()
-			if got := slices.Contains(plan.PackageTests[row.pkg], row.name); got != row.selected {
-				t.Fatalf("%s %s selected=%v want %v", row.pkg, row.name, got, row.selected)
-			}
-		})
+	for _, id := range testpolicy.BatchRosterIDs() {
+		if !slices.ContainsFunc(plan.Groups, func(g testpolicy.Group) bool { return g.ID == id }) {
+			t.Errorf("empty impact omits %s", id)
+		}
 	}
 }

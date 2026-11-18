@@ -1,0 +1,28 @@
+{
+  "attempt": "20261023T215301",
+  "base": "ca82ea7b76dcc1477e42d9c846a547218ecf4fbd",
+  "head": "600c58e31e117433ca8a46cac7f76d33ea7038d3",
+  "source": "c_reds_trunk.json",
+  "package": "internal/testutil",
+  "test": "TestFixtureSourcesHaveNoBareBusyLoop",
+  "scope": "full",
+  "reason": "instrument",
+  "paths": [
+    "metasystem/cmd/metasystem/intent_unit_check_retry_test.go",
+    "metasystem/cmd/metasystem/intent_unit_review.go",
+    "metasystem/internal/boundedexec/boundedexec.go",
+    "metasystem/internal/boundedexec/progress_test.go",
+    "metasystem/internal/launch/check_evidence.go",
+    "metasystem/internal/launch/unit_attribution.go",
+    "metasystem/internal/launch/unit_check.go",
+    "metasystem/internal/launch/unit_check_cause_test.go",
+    "metasystem/internal/launch/unit_check_failure_test.go",
+    "metasystem/internal/launch/unit_check_progress_test.go",
+    "metasystem/internal/launch/unit_run.go",
+    "metasystem/internal/launch/unit_step_failure.go",
+    "metasystem/testing.json"
+  ],
+  "status_no_renames": "A\tmetasystem/cmd/metasystem/intent_unit_check_retry_test.go\nM\tmetasystem/cmd/metasystem/intent_unit_review.go\nM\tmetasystem/internal/boundedexec/boundedexec.go\nA\tmetasystem/internal/boundedexec/progress_test.go\nM\tmetasystem/internal/launch/check_evidence.go\nM\tmetasystem/internal/launch/unit_attribution.go\nM\tmetasystem/internal/launch/unit_check.go\nA\tmetasystem/internal/launch/unit_check_cause_test.go\nA\tmetasystem/internal/launch/unit_check_failure_test.go\nA\tmetasystem/internal/launch/unit_check_progress_test.go\nM\tmetasystem/internal/launch/unit_run.go\nM\tmetasystem/internal/launch/unit_step_failure.go\nM\tmetasystem/testing.json\n",
+  "contract_sha256": "28cda888bb8f9a085dc1147f25af30bf7dc4833cec35dbb7b7125d49eec3b43e",
+  "full_command": "sh proof/full.sh"
+}

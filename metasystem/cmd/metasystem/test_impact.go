@@ -297,7 +297,12 @@ func (sources impactSources) runConsumer(args []string, stdout, stderr io.Writer
 			mandatory := consumer == impactBatch && slices.Contains(testpolicy.BatchRosterIDs(), group.ID)
 			canary := slices.Contains(contract.Always.Canary, group.ID)
 			audit := auditGroup(contract, group) && reads[group.ID]
-			if strings.HasPrefix(group.ID, "section/") || !mandatory && !canary && !audit && (group.Phase == "acceptance" || !wanted[group.ID]) {
+			touched := group.Phase != "acceptance" && wanted[group.ID]
+			if consumer == impactBatch {
+				// A package template does not discharge a concrete group's inputs.
+				touched = group.PackageSelection == "" && reads[group.ID]
+			}
+			if strings.HasPrefix(group.ID, "section/") || consumer == impactBatch && group.Adapter == "section" || !mandatory && !canary && !audit && !touched {
 				continue
 			}
 			for _, input := range group.Inputs {
