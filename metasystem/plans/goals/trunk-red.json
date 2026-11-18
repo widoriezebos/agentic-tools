@@ -28944,6 +28944,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-18T05:16:05Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestLandingWaitReturnsDetachedRecordedResult",
       "id": "flake:1a452ace3bc5158d7b9bf20e78c45032db3dced229f4489bd6d44039eadc502f",
@@ -29026,7 +29027,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testlandingwaitreturnsdetachedrecordedresult",
       "fixBranch": {
         "name": "",
         "commit": "",
