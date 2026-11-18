@@ -1,0 +1,95 @@
+{
+  "canonicalRead": {
+    "engine": "e3a6b8efb7835aa7ae1ebf99bcce3b2ace25141c",
+    "findings": [
+      {
+        "change": "No change to this commit is needed. When building U2b, keep the confirmation tied to the launched pid, and add a zombie row that leaves runner.json in place so the case stays covered.",
+        "claim": "A runner that has just died but has not yet been reaped by its parent (a zombie) counts as gone for the stop and as still running for the launch confirmation. If its runner.json is still there, the repair reports a failed replacement even though the new runner may be starting normally. The step works and recovers on its own: the transition file is removed and the next pass decides afresh. The next unit, U2b, removes the cause, because it confirms the launch only when runner.json names the pid it launched. That is why this should not refuse the commit.",
+        "class": "regression",
+        "evidence": "Trace at the reviewed tree: continueReplacement uses identity.LiveRef, which reads a zombie as dead (runner_replacement.go:92-99; identity.go:215-221). launchReplacement then calls launchRunner, whose AwaitRunnerStart first asks liveRunner (runner.go, AwaitRunnerStart). liveRunnerWithProber does not check Zombie (runner.go:1673-1694), so it returns the dead runner's record at once. enginepin.Read refuses a zombie (execution.go:35), giving 'replacement runner execution not verified'. Reproduced with a real unreaped child on a throwaway copy; with runner.json removed the same step instead reported the launched child's real exit. runner.json survives only when the runner did not exit in an orderly way, for example at the drain limit. The old stop loop waited on liveRunnerWithProber, so it waited for the reap. The new test's zombie row deletes runner.json first (runner_replacement_test.go, TestAStopTellsGoneFromReusedFromUnknown), so it does not cover this. The fake runner in TestRecoveryReplacesALiveRunnerThroughTheRealRepair leaves its runner.json behind, so that proof could in principle hit the same moment under heavy load until U2b lands (inferred, not observed).",
+        "id": "code-critic-63228541dd36dc862f1236e8:1",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/steward/runner_replacement.go"
+      },
+      {
+        "change": "No change to this commit is needed. U2b's force test should include a runner that never received the first signal, so this path is proven to end.",
+        "claim": "If the process doing the repair dies after writing the stopping record and before sending the stop signal, the runner is never told to stop, yet every later step reports STOPPING and sends nothing. Until U2b adds the force after the 60 second grace, the watcher repeats STOPPING and a blocking caller waits with no end. The brief requires this write-before-signal order and accepts that only the runner's exit or the later force ends a stop, and the runner keeps working meanwhile, so this is a note for U2b and not a defect to fix here.",
+        "class": "regression",
+        "evidence": "Traced in the reviewed tree: beginReplacement writes the file and only then writes the stop marker and signals (runner_replacement.go:71-86). continueReplacement returns STOPPING for a live saved identity without any signal (runner_replacement.go:92-97). The blocking entry loops on STOPPING with no other bound (runner.go:1072-1077). Brief rule 5 and U2a2 contract 7 set this order and bound; U2b contract 1 forces once phaseSince plus StopDrainBound has passed, which also covers this case.",
+        "id": "code-critic-63228541dd36dc862f1236e8:2",
+        "material": false,
+        "severity": "low",
+        "where": "metasystem/internal/steward/runner_replacement.go"
+      }
+    ],
+    "id": "code-critic-63228541dd36dc862f1236e8",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-63228541dd36dc862f1236e8/rounds/1/return.md",
+    "subject": {
+      "commit": "7d62775c83f6ff3c9c50d14755b30e43c6cb9e49",
+      "diffDigest": "9e64d76173b918f7dbdb96482b88293d1a018e3d26d4e7e7b6da3be712523088",
+      "kind": "commit",
+      "parent": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "tree": "7b919d581fab42211cc1c5af540251f9a321cb9c"
+    }
+  },
+  "readDigest": "ba85fc422f54a1a61c607d065959f7d972128077697fbac9ee53ff67b76e9bd5",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U2a2",
+  "subject": {
+    "commit": "7d62775c83f6ff3c9c50d14755b30e43c6cb9e49",
+    "parent": "104b800ef0d63027a6c97b7d043f7594700cea54",
+    "tree": "7b919d581fab42211cc1c5af540251f9a321cb9c",
+    "patchDigest": "9e64d76173b918f7dbdb96482b88293d1a018e3d26d4e7e7b6da3be712523088",
+    "unitDigest": "4c02ab06903850817da18874238b27397a3ad60d2eaae227a7ab5bd17a48c829"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-63228541dd36dc862f1236e8",
+    "round": 1,
+    "closureSha256": "0d4f4d1f71611cc6792f346479e522601211ae3ec45bf4cdecb03441909d8592"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7b919d581fab42211cc1c5af540251f9a321cb9c",
+    "runId": "goal-read-gate-20261118t083330z-83353867cb8ab067"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    },
+    {
+      "kind": "read",
+      "commit": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "digest": "e3d4d07e631878bb31a3c84ad9ebcba9b4a38476e962dd1a1159a10518e874df"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/runner_step_test.go",
+      "readerWord": "reviewed by critic root code-critic-63228541dd36dc862f1236e8"
+    }
+  ],
+  "sha256": "8e410e56f9b4ada3d4766ead834c7c4b552ae469925d9c9237cc089d26e52be0"
+}
