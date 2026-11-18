@@ -30137,11 +30137,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryAndFullSuitePublicAdmission/carry-subject",
@@ -30182,11 +30188,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryProducesThenReusesItsEvidence",
@@ -30227,11 +30239,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestCarryProducesThenReusesItsEvidence/printf_audited",
@@ -30272,11 +30290,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestNestedCheckPublicCostReport",
@@ -30317,11 +30341,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestNestedCheckPublicCostReport/manual-full",
@@ -30362,11 +30392,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProcessCheckPublicRemedy",
@@ -30407,11 +30443,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProcessCheckRunContinuationRemedy",
@@ -30452,11 +30494,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRoundResultReplayGitAdapter",
@@ -30497,11 +30545,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRoundResultReplayGitAdapter/false",
@@ -30542,11 +30596,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestRoundResultReplayGitAdapter/true",
@@ -30587,11 +30647,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWholeCheckEvidenceIgnoresTheCheapCache",
@@ -30632,11 +30698,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkRebaseDeclaredCheckSubjectAndFailures",
@@ -30677,11 +30749,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkRebaseDeclaredCheckSubjectAndFailures/changed_declaration",
@@ -30722,11 +30800,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestEveryPackageUsesSharedMain",
@@ -30767,11 +30851,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestEveryPackageUsesSharedMain/shared_TestMain",
@@ -30812,11 +30902,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestTestExecutablesAreWrittenUnderTheForkLock-2",
@@ -30857,11 +30953,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261118T195743.408787000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-18T20:46:50Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-18T23:32:59Z",
+        "attempt": "20261118T214525.651653000Z",
+        "baseCommit": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+        "how": "green",
+        "opid": "AXWPCYESKQBPGZ003P56E31DW3-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
