@@ -31069,11 +31069,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261119T122208.930444000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-19T12:40:34Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-19T15:21:35Z",
+        "attempt": "20261119T144145.344916000Z",
+        "baseCommit": "eaea371ca505f1596971834cbbe592c0fa6a3ee4",
+        "how": "green",
+        "opid": "1NXZ1PR0AHYQCTVC9BTX4NJCJM-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "testUnit": "metasystem/internal/steward",
