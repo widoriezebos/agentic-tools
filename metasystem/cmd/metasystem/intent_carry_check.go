@@ -120,10 +120,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	}
 	if latest != "" {
 		data, problem := os.ReadFile(filepath.Join(latest, "result.json"))
-		var prior struct {
-			Check launch.UnitCheck
-			Exits []launch.CheckExit
-		}
+		var prior launch.CheckResult
 		if problem != nil || json.Unmarshal(data, &prior) != nil {
 			_, _, refusal := inv.settingsPerson(inv.layout, "repair the unavailable subject execution")
 			if (!inv.input.has("check") && !inv.input.has("act") && !inv.input.switched("rerun")) || refusal != nil {
@@ -131,13 +128,13 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 			}
 		}
 		if prior.Check.ProcessAct == check.ProcessAct && prior.Check.Cheap == check.Cheap && prior.Check.Audits == check.Audits && prior.Check.SourceTree == subject.Tree {
-			if len(prior.Exits) != 2 || prior.Exits[0].Exit != 0 || prior.Exits[1].Exit != 0 {
+			if prior.RequirePassed() != nil {
 				rerun := inv.publicArgv("work", "review", "--commit", subject.Commit, "--goal", goalID, "--repo", inv.layout.InstallationRoot.Path(), "--check-only", "--rerun")
 				if check.ProcessAct != "" {
 					rerun = append(rerun, "--act", check.ProcessAct)
 				}
 				if !inv.input.switched("rerun") {
-					return branch.GateObservation{}, fmt.Errorf("the retained subject check failed\nrun: %s", shellCommand(rerun))
+					return branch.GateObservation{}, fmt.Errorf("the retained subject check is not a complete pass\nrun: %s", shellCommand(rerun))
 				}
 			}
 		}
@@ -186,12 +183,14 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	if strings.TrimSpace(string(tree)) != subject.Tree || strings.TrimSpace(string(status)) != "" {
 		return branch.GateObservation{}, errors.New("the declared check changed its subject workspace")
 	}
-	var retained struct {
-		ExecutionID string             `json:"executionId"`
-		Check       launch.UnitCheck   `json:"check"`
-		Exits       []launch.CheckExit `json:"exits"`
-	}
+	var retained launch.CheckResult
 	if err := json.Unmarshal(evidence, &retained); err != nil {
+		return branch.GateObservation{}, err
+	}
+	if retained.ExecutionID != filepath.Base(execution) {
+		return branch.GateObservation{}, errors.New("the subject check result names a different execution")
+	}
+	if err := retained.RequirePassed(); err != nil {
 		return branch.GateObservation{}, err
 	}
 	// The execution retains the environment locally; a committed read carries

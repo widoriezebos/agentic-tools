@@ -43,6 +43,7 @@ func ApplicableCheck(record *CheckEvidence, path string, readErr error, need Che
 		same bool
 	}{
 		{"version", record.Version == 1},
+		{"outcome", record.Outcome == "" || record.Outcome == CheckPassed},
 		{"completeness", record.Strength.Complete && record.Source != "" && selected.Version == 1 && record.Content.Before != "" && record.Content.Before == record.Content.After},
 		{"strength", need.Strength == "audited" && audited || need.Strength == "cheap" && record.Strength.Cheap},
 		{"tree", record.Content.Before == need.Tree},

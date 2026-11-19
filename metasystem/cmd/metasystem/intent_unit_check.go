@@ -151,6 +151,7 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 	}
 	var execution string
 	var exits []launch.CheckExit
+	var outcome launch.CheckOutcome
 	if err == nil {
 		var top []byte
 		top, err = inv.work().git(inv.cwd, "rev-parse", "--show-toplevel")
@@ -208,6 +209,16 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					}
 				}
 				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records, checkContext)
+				if execution != "" {
+					completed, readErr := launch.ReadCheckResult(execution)
+					outcome = completed.Outcome
+					if err == nil {
+						err = readErr
+						if err == nil {
+							err = completed.RequirePassed()
+						}
+					}
+				}
 				if lease != nil {
 					_ = lease.Close()
 				}
@@ -221,7 +232,7 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 			break
 		}
 	}
-	result := intentResult{Outcome: intentConfirmed, Summary: "the frozen cheap check and audits passed", Data: map[string]any{"execution": execution, "exits": exits}}
+	result := intentResult{Outcome: intentConfirmed, Summary: "the frozen cheap check and audits passed", Data: map[string]any{"execution": execution, "exits": exits, "checkOutcome": outcome}}
 	if err != nil {
 		result.Outcome, result.code, result.Summary = intentFailed, 1, "the unit check failed: "+err.Error()
 	}

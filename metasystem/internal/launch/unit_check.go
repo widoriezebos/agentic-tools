@@ -57,6 +57,7 @@ type CheckExit struct {
 type CheckExecution struct {
 	ExecutionID, Goal, Run, Round, Role, BriefSHA256, SourceSHA256 string
 	Steps                                                          []processmeasure.Step
+	Outcome                                                        CheckOutcome `json:",omitempty"`
 }
 type CheckContext struct {
 	CheckExecution
@@ -75,6 +76,7 @@ type CheckContext struct {
 // Base and execution context are retained unchanged in Selection.
 type CheckEvidence struct {
 	Version                      int
+	Outcome                      CheckOutcome `json:",omitempty"`
 	Content                      struct{ Before, After string }
 	Selection                    CheckSelection
 	Declaration                  *UnitDeclaration
@@ -86,7 +88,7 @@ type CheckEvidence struct {
 }
 
 func (check UnitCheck) evidence(directory, cheapDirectory, execution, before string, context CheckContext) CheckEvidence {
-	record := CheckEvidence{Version: 1, Declaration: check.Declaration, Manual: check.Declaration == nil,
+	record := CheckEvidence{Version: 1, Outcome: CheckPassed, Declaration: check.Declaration, Manual: check.Declaration == nil,
 		Commands: [2]string{check.Cheap, check.Audits}, Source: filepath.Base(execution)}
 	record.Content.Before = before
 	if context.Tree != nil {
@@ -240,12 +242,13 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 			return execution, exits, errors.Join(append(failures, err)...)
 		}
 	}
-	err = writeUnitJSON(filepath.Join(execution, "result.json"), struct {
-		ExecutionID string      `json:"executionId"`
-		Directory   string      `json:"runDirectory"`
-		Check       UnitCheck   `json:"check"`
-		Exits       []CheckExit `json:"exits"`
-	}{filepath.Base(execution), directory, check, exits}, execution)
+	observation.Outcome = observation.outcome()
+	if err := save(); err != nil {
+		return execution, exits, errors.Join(append(failures, err)...)
+	}
+	err = writeUnitJSON(filepath.Join(execution, "result.json"), CheckResult{
+		Version: 1, Outcome: observation.Outcome, ExecutionID: filepath.Base(execution), Directory: directory, Check: check, Exits: exits,
+	}, execution)
 	if err == nil && len(failures) == 0 {
 		err = writeUnitJSON(evidencePath, check.evidence(directory, manualDirectory, execution, before, context), execution)
 		savedEvidence = err == nil
