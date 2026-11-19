@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -261,6 +262,13 @@ func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration
 	cleanup, err := prepare(declarations)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "prepare test environment: %v\n", err)
+		return 2
+	}
+	// This test process lowers its own syncs to kernel (internal/durable),
+	// before custodian, setup and tests; a sync before here kept it full.
+	if err := durable.UseKernelInThisTestProcess(); err != nil {
+		_ = cleanup()
+		fmt.Fprintln(os.Stderr, "prepare test durability:", err)
 		return 2
 	}
 	// The binary's own namespace, which prepare made TMPDIR; a test that
