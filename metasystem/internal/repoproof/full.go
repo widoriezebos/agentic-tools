@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -126,6 +127,10 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		return notRun(err)
 	}
 	ctx, environment := context.Background(), os.Environ()
+	// The installation hint belongs to this reporter, not to nested fixture proofs.
+	environment = slices.DeleteFunc(environment, func(entry string) bool {
+		return strings.HasPrefix(entry, proofrun.NativeHistoryRootEnvironment+"=")
+	})
 	if hooks.Native == nil {
 		hooks.Native = func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 			return proofrun.RunNativeInventory(ctx, r)
@@ -236,7 +241,7 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		}
 		reported := map[packageShard]string{}
 		batch := slices.Contains(tags, "batchtest")
-		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags, OnlyTaggedTests: batch, Unsharded: only != "" && len(tests) > 0, Progress: func(planned int, completed []proofrun.PackageExecution) {
+		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, HistoryRoot: roots.Installation(getenv(proofrun.NativeHistoryRootEnvironment)), LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags, OnlyTaggedTests: batch, Unsharded: only != "" && len(tests) > 0, Progress: func(planned int, completed []proofrun.PackageExecution) {
 			if completed == nil {
 				fmt.Fprintf(stdout, "landing planned %d\n", planned)
 			}

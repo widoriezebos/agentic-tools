@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -1280,7 +1281,7 @@ func runCheck(seams ProveSeams, install, dir, command string, running Running, o
 	}
 	shell := exec.Command("/bin/sh", "-c", command)
 	shell.Dir = dir
-	env := []string{"LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
+	env := []string{proofrun.NativeHistoryRootEnvironment + "=" + install, "LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
 		"LANDING_ONLY_TESTS=" + strings.Join(tests, " "),
 		"LANDING_PROOF_SCOPE=" + decision.Scope, "LANDING_PROOF_BASE=" + base, "LANDING_PROOF_GROUPS=" + strings.Join(decision.groupIDs(), " ")}
 	environment, environmentErr := commandenv.InstallationEnvironment(append(os.Environ(), env...), install)

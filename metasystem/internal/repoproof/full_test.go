@@ -37,6 +37,9 @@ func TestFullReportsPackageFailuresAndRunsOnlyRequestedPackage(t *testing.T) {
 			t.Parallel()
 			var out, stderr bytes.Buffer
 			hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				if r.HistoryRoot != "/fixture-installation" {
+					t.Fatal("reporter lost the installation history owner")
+				}
 				if !reflect.DeepEqual(r.Packages, []string{"internal/config"}) || len(r.BuildTags) != 0 {
 					t.Fatalf("selection: %+v", r)
 				}
@@ -65,6 +68,9 @@ func TestFullReportsPackageFailuresAndRunsOnlyRequestedPackage(t *testing.T) {
 				return nil
 			}
 			exit := run(&out, &stderr, func(key string) string {
+				if key == proofrun.NativeHistoryRootEnvironment {
+					return "/fixture-installation"
+				}
 				if key == "LANDING_ONLY" {
 					return "metasystem/internal/config"
 				}

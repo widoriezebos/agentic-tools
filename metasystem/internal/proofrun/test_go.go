@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -75,9 +76,11 @@ type NativeInventoryRequest struct {
 	Race, Coverage             bool
 	OnlyTaggedTests            bool
 	// Unsharded keeps an isolated replay in one package execution.
-	Unsharded   bool
-	Root        string
-	LogRoot     string
+	Unsharded bool
+	Root      string
+	LogRoot   string
+	// HistoryRoot owns advisory scheduling state; empty uses Root.
+	HistoryRoot roots.Installation
 	Environment []string
 	Workers     int
 	// Progress reports the selected package executions before and during the run.
@@ -193,6 +196,11 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byP
 	if request.Unsharded {
 		partitions = partitionGoTests(expected, discovery.Inventory, discovery.ModulePrefix, 1)
 	}
+	historyRoot := request.HistoryRoot
+	if historyRoot == "" {
+		historyRoot = roots.Installation(request.Root)
+	}
+	nativeRequest.nativeHistory = loadGoLaunchHistory(historyRoot, goHistoryTree(request.Root, discovery), group, partitions, environment)
 	outcome, closeErr, coverageMerge, executions, launchErr := runGoPartitions(ctx, nativeRequest, group, request.Root, environment, expected,
 		partitions, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
 	result.Execution = executions

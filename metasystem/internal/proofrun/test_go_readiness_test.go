@@ -305,8 +305,8 @@ func TestGoPartitionsReadinessWaitsForDistinctPredecessors(t *testing.T) {
 	defer cancel()
 	held := []chan struct{}{make(chan struct{}), make(chan struct{})}
 	release := []chan struct{}{make(chan struct{}), make(chan struct{})}
-	run := startReadinessRun(t, ctx, []goTestPartition{readinessPartition("a", "TestOne"), readinessPartition("b", "TestOne"), readinessPartition("a b", "TestTwo")}, nil, func(index int, e goEvent) bool {
-		if index < 2 && e.Action == "run" {
+	run := startReadinessRun(t, ctx, []goTestPartition{readinessPartition("a", "TestOne TestThree"), readinessPartition("b", "TestOne TestThree"), readinessPartition("a b", "TestTwo")}, nil, func(index int, e goEvent) bool {
+		if index < 2 && e.Action == "run" && e.Test == "TestOne" {
 			holdReadinessEvent(ctx, held[index], release[index])
 		}
 		return true
@@ -422,15 +422,15 @@ func TestGoPartitionsReadinessCompileFailurePreservesEveryShard(t *testing.T) {
 	defer cancel()
 	held, release := make(chan struct{}), make(chan struct{})
 	run := startReadinessRun(t, ctx, []goTestPartition{readinessPartition("broken", "TestOne"), readinessPartition("broken healthy", "TestTwo"), readinessPartition("broken", "TestThree")}, map[string]testSnapshotEntry{"broken/pkg.go": testSnapshotFile("package pkg\nvar _ = undefinedName\n", 0644)}, func(index int, e goEvent) bool {
-		if index == 0 && e.Action == "observed-start" {
+		if index == 1 && e.Action == "observed-start" && e.Package == readinessPrefix+"broken" {
 			holdReadinessEvent(ctx, held, release)
 		}
 		return true
 	})
-	run.gate(t, 1, 0, "broken")
-	run.gate(t, 2, 0, "broken")
+	run.gate(t, 0, 1, "broken")
+	run.gate(t, 2, 1, "broken")
 	awaitReadinessSignal(t, run.ctx, held)
-	run.blocked(t, 1, 2)
+	run.blocked(t, 0, 2)
 	close(release)
 	awaitReadinessSignal(t, run.ctx, run.done)
 	if run.result.launchErr != nil || run.result.outcome.WaitErr == nil {

@@ -2,6 +2,9 @@ package proofrun
 
 import (
 	"context"
+	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"reflect"
 	"sort"
 	"testing"
@@ -68,7 +71,16 @@ func TestGoWorkerOrderProfilePacking(t *testing.T) {
 	for i := 13; i < 66; i++ {
 		dependencies[i] = []*goPackageReadiness{producer}
 	}
-	q := newGoWorkerOrder(ctx, durations, dependencies)
+	partitions := make([]goTestPartition, len(durations))
+	var executions []PackageExecution
+	for i := range durations {
+		partitions[i] = goTestPartition{Packages: []string{fmt.Sprintf("profile/package%d", i)}, Names: []string{"TestProfile"}}
+		executions = append(executions, PackageExecution{Package: partitions[i].Packages[0], Shard: i + 1, Mode: PackageExecuted, Status: "ok", ElapsedMS: &durations[i]})
+	}
+	root := t.TempDir()
+	loadGoLaunchHistory(roots.Installation(root), "profile", testpolicy.Group{}, partitions).save(partitions, executions)
+	history := loadGoLaunchHistory(roots.Installation(root), "profile", testpolicy.Group{}, partitions)
+	q := newGoWorkerOrder(ctx, history.weights(make([]int64, len(durations))), dependencies)
 	type job struct {
 		index   int
 		finish  int64

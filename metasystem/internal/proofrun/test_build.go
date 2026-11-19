@@ -92,6 +92,7 @@ type TestRunRequest struct {
 	CandidateEngine              string
 	CandidateEngineDigest        string
 	CandidateEngineBuildIdentity string
+	nativeHistory                *goLaunchHistory
 	ControlRoot                  string
 	BehaviorPolicyDigest         string
 	ComponentIdentities          map[string]string
@@ -1505,7 +1506,10 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 	predecessors := make([][]*goPackageReadiness, len(partitions))
 	readiness := make([]map[string]*goPackageReadiness, len(partitions))
 	first := map[string]*goPackageReadiness{}
-	for index, partition := range partitions {
+	weights := request.nativeHistory.weights(goPartitionWeights(partitions, expected))
+	priority := newGoWorkerOrder(shardCtx, weights, predecessors)
+	for _, index := range priority.order {
+		partition := partitions[index]
 		readiness[index] = map[string]*goPackageReadiness{}
 		for _, pkg := range partition.Packages {
 			if producer := first[pkg]; producer != nil {
@@ -1516,7 +1520,7 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 			readiness[index][pkg], first[pkg] = ready, ready
 		}
 	}
-	order := newGoWorkerOrder(shardCtx, goPartitionWeights(partitions, expected), predecessors)
+	order := newGoWorkerOrder(shardCtx, weights, predecessors)
 	for _, index := range order.order {
 		countOne, reason := reusePolicy(request, group, index+1, facts)
 		runs[index].reason = reason
@@ -1702,6 +1706,9 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 			}
 		}
 		executions = append(executions, shardExecutions...)
+	}
+	if launchErr == nil && closeErr == nil && ctx.Err() == nil {
+		request.nativeHistory.save(partitions, executions)
 	}
 	// The merged percentages are appended to the group's diagnostic output,
 	// while the separate return remains the only coverage-authority channel.
@@ -3169,7 +3176,7 @@ func digestEnvironment(environment []string) string {
 		switch name {
 		// Fixture custody values locate the run and attempt without changing a
 		// test outcome, so binding them to the proof key would prevent reuse.
-		case identity.RunOwnerEnv, identity.FixtureAttemptEnv:
+		case identity.RunOwnerEnv, identity.FixtureAttemptEnv, NativeHistoryRootEnvironment:
 			continue
 		case "METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", "METASYSTEM_PROOF_AUTH_BIN", proofExecutionRootEnvironment:
 			continue
@@ -3193,7 +3200,7 @@ func digestGroupEnvironment(group testpolicy.Group, environment []string) string
 	ordered := make([]string, 0, len(environment))
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
-		if name != proofExecutionRootEnvironment {
+		if name != proofExecutionRootEnvironment && name != NativeHistoryRootEnvironment {
 			ordered = append(ordered, entry)
 		}
 	}
