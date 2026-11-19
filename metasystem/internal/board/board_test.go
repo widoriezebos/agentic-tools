@@ -205,6 +205,7 @@ func TestBoardImportsNothingAboveIt(t *testing.T) {
 	t.Parallel()
 	allowed := map[string]bool{
 		"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile": true,
+		"github.com/widoriezebos/agentic-tools/metasystem/internal/durable":    true,
 		"github.com/widoriezebos/agentic-tools/metasystem/internal/identity":   true,
 	}
 	files, _ := filepath.Glob("*.go")
@@ -219,7 +220,7 @@ func TestBoardImportsNothingAboveIt(t *testing.T) {
 		for _, spec := range parsed.Imports {
 			path, _ := strconv.Unquote(spec.Path.Value)
 			if strings.Contains(path, ".") && !allowed[path] {
-				t.Errorf("%s imports %s; board may import only the standard library, atomicfile and identity", file, path)
+				t.Errorf("%s imports %s; board may import only the standard library, atomicfile, durable and identity", file, path)
 			}
 		}
 		source, _ := os.ReadFile(file)
