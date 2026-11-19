@@ -181,7 +181,7 @@ var coreSettings = []Setting{
 	{Key: SeatPresenceStaleMinutesKey, Default: "30", ProofInput: true,
 		Meaning: "a seat whose presence record is older than this many minutes (or three of its writer's ticks) reads as unreachable"},
 	{Key: "steward.tick-patience-sec", Default: "120", ProofInput: true,
-		Meaning: "seconds a steward tick may take before the resident runner is considered stuck"},
+		Meaning: "no longer read: a live resident runner is judged by its progress; still accepted so an existing configuration keeps working"},
 	{Key: "steward.runner-quiet-min", Default: "30", ProofInput: true,
 		Meaning: "minutes without progress, or past a wait's deadline, after which the resident runner reads as quiet"},
 	{Key: "steward.runner-failed-ticks", Default: "3", ProofInput: true,

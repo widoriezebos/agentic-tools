@@ -1004,17 +1004,7 @@ func TestRearmStageTransitionsAndDurability(t *testing.T) {
 		if err != nil || outcome.Stage != StageMinted || !outcome.DurabilityPending || outcome.Status != "re-armed" {
 			t.Fatalf("doubted mint transition: %+v %v", outcome, err)
 		}
-		cadenceReads := 0
-		verdict := checkStewardRunnerWithCadence(bed.root, time.Now(), processidentity.KernelProber{}, func(root string) int {
-			cadenceReads++
-			if root != bed.root {
-				t.Fatalf("cadence read used root %q, want %q", root, bed.root)
-			}
-			return 600
-		})
-		if cadenceReads != 1 {
-			t.Fatalf("cadence read ran %d times, want once", cadenceReads)
-		}
+		verdict := checkStewardRunner(bed.root, time.Now(), processidentity.KernelProber{})
 		if !strings.Contains(verdict.Reason, "(durability pending)") {
 			t.Fatalf("health hid identity durability doubt: %+v", verdict)
 		}
@@ -1335,7 +1325,7 @@ func TestSessionArmMintsAHumanSessionEnrollment(t *testing.T) {
 	if got := EnrollmentProvenance(installed); got != want {
 		t.Fatalf("provenance = %q, want %q", got, want)
 	}
-	verdict := checkStewardRunnerWithCadence(bed.root, time.Now(), processidentity.KernelProber{}, func(string) int { return 600 })
+	verdict := checkStewardRunner(bed.root, time.Now(), processidentity.KernelProber{})
 	if !strings.Contains(verdict.Reason, want) {
 		t.Fatalf("health hid the session provenance: %+v", verdict)
 	}

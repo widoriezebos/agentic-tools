@@ -956,9 +956,8 @@ func canonicalPath(path string) string {
 	return filepath.Clean(absolute)
 }
 
-// EnsureRunner consults the standing enrolled engine and its live startup
-// announcement, and restores the runner without minting a generation.
-// The watcher owns tick freshness after startup.
+// EnsureRunner accepts a running runner of the enrolled engine that reads alive,
+// and otherwise restores the runner without minting a generation.
 func EnsureRunner(repoRoot string, enrolled *EnrolledBinary) (EnsureRunnerResult, error) {
 	deps := defaultRearmResolverDeps()
 	deps.launch = nil
@@ -990,23 +989,19 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 	if err != nil {
 		return EnsureRunnerResult{}, err
 	}
-	record, wasAlive := liveRunnerWithProber(top, deps.prober)
-	if wasAlive && pending == nil {
+	record, wasRunning := runningRunner(top, deps.prober)
+	if wasRunning && pending == nil {
 		execution := ReadRunnerExecution(top, deps.prober)
 		if execution.Digest == "" {
 			return EnsureRunnerResult{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
 		}
-		verdict := checkStewardRunner(top, now(), deps.prober)
-		evidence, evidenceErr := loadComponentEvidence(ComponentEvidencePath(top, "steward-tick"))
-		started, startErr := time.Parse(time.RFC3339, record.StartedAt)
-		minted, mintErr := time.Parse(time.RFC3339, enrolled.Install.MintedAt)
-		announced := startErr == nil && mintErr == nil && !started.Before(minted) && evidenceErr == nil &&
-			(evidence.Generation != enrolled.Install.Generation || evidence.LastAttempt.Before(started))
-		if execution.Digest == enrolled.Install.InstallDigest && (verdict.Status == HealthAlive || errors.Is(evidenceErr, os.ErrNotExist) || announced) {
-			return EnsureRunnerResult{Action: "verified", Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
-		}
-		if execution.Digest == enrolled.Install.InstallDigest && verdict.Status == HealthUnknown {
-			return EnsureRunnerResult{}, fmt.Errorf("steward runner cannot be verified: %s", verdict.Reason)
+		if execution.Digest == enrolled.Install.InstallDigest {
+			switch verdict := checkStewardRunnerObserved(top, now(), now, deps.prober); verdict.Status {
+			case HealthAlive:
+				return EnsureRunnerResult{Action: "verified", Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
+			case HealthUnknown:
+				return EnsureRunnerResult{}, fmt.Errorf("steward runner cannot be verified: %s", verdict.Reason)
+			}
 		}
 	}
 	repair, err := repairPinnedRunnerWithDependencies(top, enrolled, nil, now, sleep, deps)
@@ -1020,7 +1015,7 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 	action := "verified"
 	if repair.Status == "RESTORED" {
 		action = "started"
-		if wasAlive {
+		if wasRunning {
 			action = "replaced"
 		}
 	}
@@ -1176,6 +1171,20 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 			return RunnerRepairOutcome{}, err
 		}
 	}
+	if _, excluded := deps.runnerExcluded(top, false); excluded {
+		return RunnerRepairOutcome{Status: "EXCLUDED", Generation: installed.Generation}, nil
+	}
+
+	previous, running := runningRunner(top, deps.prober)
+	execution := ReadRunnerExecution(top, deps.prober)
+	if running && execution.Digest == "" {
+		return RunnerRepairOutcome{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
+	}
+	// An engine that is no longer enrolled is replaced whatever the breaker
+	// says: the breaker limits healing, not enrollment.
+	if running && execution.Digest != installed.InstallDigest {
+		return beginReplacement(top, pinned, previous, running, "obsolete-engine", at, deps)
+	}
 	ended, err := AutoHealingEnded(top, RoleStewardRunner)
 	if err != nil {
 		return RunnerRepairOutcome{}, fmt.Errorf("read steward health breaker: %w", err)
@@ -1183,29 +1192,17 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 	if ended {
 		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
 	}
-	if _, excluded := deps.runnerExcluded(top, false); excluded {
-		return RunnerRepairOutcome{Status: "EXCLUDED", Generation: installed.Generation}, nil
+	// No elapsed time replaces a live runner: only a dead or failing reading does.
+	report := runnerLiveness(top, at, now, deps.prober)
+	switch report.Reading {
+	case RunnerUnknown:
+		return RunnerRepairOutcome{}, fmt.Errorf("steward freshness is unknown: %s", report.Detail)
+	case RunnerDead:
+		return beginReplacement(top, pinned, previous, running, "dead", at, deps)
+	case RunnerFailing:
+		return beginReplacement(top, pinned, previous, running, "failing", at, deps)
 	}
-
-	previous, alive := liveRunnerWithProber(top, deps.prober)
-	execution := ReadRunnerExecution(top, deps.prober)
-	if alive && execution.Digest == "" {
-		return RunnerRepairOutcome{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
-	}
-	obsolete := alive && execution.Digest != installed.InstallDigest
-	verdict := checkStewardRunner(top, at, deps.prober)
-	if !obsolete && verdict.Status == HealthAlive {
-		record, _ := liveRunnerWithProber(top, deps.prober)
-		return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: record.Pid}, nil
-	}
-	if !obsolete && verdict.Status == HealthUnknown {
-		return RunnerRepairOutcome{}, fmt.Errorf("steward freshness is unknown: %s", verdict.Reason)
-	}
-	cause := "dead"
-	if obsolete {
-		cause = "obsolete-engine"
-	}
-	return beginReplacement(top, pinned, previous, alive, cause, at, deps)
+	return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: report.Pid}, nil
 }
 
 func runnerExclusion(top string, allowFixture bool) (string, bool) {
@@ -1477,7 +1474,7 @@ func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string, clock
 
 // AwaitRunnerStart completes when the runner publishes its live process
 // announcement. The child's exit or its announcement bounds the wait;
-// elapsed time alone does not. The watcher owns tick freshness.
+// elapsed time alone does not. After that the runner is judged by its progress.
 func AwaitRunnerStart(repoRoot string, confirmed func() (RunnerRecord, bool), exited <-chan error, sleep func(time.Duration)) (RunnerRecord, error) {
 	for {
 		if rec, alive := confirmed(); alive {
@@ -1769,6 +1766,13 @@ func liveRunnerWithProber(repoRoot string, prober identity.Prober) (RunnerRecord
 	// A record with no identity at all proves nothing: treat the
 	// runner as absent rather than adopt a stranger.
 	return rec, false
+}
+
+// runningRunner is liveRunnerWithProber for a decision about the runner's work:
+// an exited, unreaped runner keeps its process table entry and does none.
+func runningRunner(repoRoot string, prober identity.Prober) (RunnerRecord, bool) {
+	record, alive := liveRunnerWithProber(repoRoot, prober)
+	return record, alive && identity.LiveRef(prober, runnerRecordRef(record)) != identity.Dead
 }
 
 // LiveRunner returns the runner only when its recorded kernel identity is

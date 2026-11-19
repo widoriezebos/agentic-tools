@@ -25,7 +25,7 @@ const (
 )
 
 // maxRunnerQuietMinutes is the largest threshold a time.Duration can hold.
-const maxRunnerQuietMinutes = int64(^uint64(0)>>1) / int64(time.Minute)
+const maxRunnerQuietMinutes = config.MaxRunnerQuietMinutes
 
 // RunnerLivenessReport is one reading of the steward runner.
 type RunnerLivenessReport struct {
@@ -38,26 +38,15 @@ type RunnerLivenessReport struct {
 }
 
 // RunnerLiveness reads the steward runner of repoRoot. now measures durations
-// only and may be older than the runner's latest publication.
+// and may be older than the runner's latest publication.
 func RunnerLiveness(repoRoot string, now time.Time) RunnerLivenessReport {
-	return runnerLiveness(repoRoot, now, runnerObservedAt(now), identity.KernelProber{})
-}
-
-// runnerObservedAt gives the time a progress record is checked against. A
-// caller's now can predate a record published while the caller waited for a
-// lock, so the clock is read again once the record is in hand.
-func runnerObservedAt(now time.Time) func() time.Time {
-	return func() time.Time {
-		if current := runnerNow(); current.After(now) {
-			return current
-		}
-		return now
-	}
+	return runnerLiveness(repoRoot, now, runnerNow, identity.KernelProber{})
 }
 
 // runnerLiveness decides in a fixed order and the first match ends it. observed
-// runs after the progress record is read, so only a clock that really moved
-// back can make the record look newer than the observation.
+// is the clock now came from, read once after the progress record. A record
+// newer than that reading, or a reading earlier than now, means the clock moved
+// back; a slow caller on a clock that only moves forward shows neither.
 func runnerLiveness(repoRoot string, now time.Time, observed func() time.Time, prober identity.Prober) RunnerLivenessReport {
 	var runner RunnerRecord
 	if err := readJSON(runnerRecordPath(repoRoot), &runner); err != nil {
@@ -99,7 +88,7 @@ func runnerLiveness(repoRoot string, now time.Time, observed func() time.Time, p
 		return conclude(RunnerStarting, "", fmt.Sprintf("runner pid %d has started and has not published yet", runner.Pid))
 	}
 	report.Progress = &record
-	if record.At.After(observed()) {
+	if current := observed(); record.At.After(current) || current.Before(now) {
 		return conclude(RunnerUnknown, CauseClockRegressed, "CLOCK_REGRESSED: runner progress is later than current UTC")
 	}
 	if record.State != "working" && record.State != "waiting" {

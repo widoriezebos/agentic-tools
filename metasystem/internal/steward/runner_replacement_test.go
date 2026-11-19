@@ -239,12 +239,8 @@ func TestAPendingTransitionGoesBeforeTheBreakerAndTheVerdict(t *testing.T) {
 			t.Parallel()
 			b := newReplacementBed(t)
 			if change == "verdict" {
-				exact := b.old
-				exact.Exe = b.replacement.Exe
-				b.processes[41] = exact
-				if _, err := beginComponentAttempt(b.root, "steward-tick", 148, runnerRecordRef(b.record(t, exact)), b.now.Add(-time.Hour)); err != nil {
-					t.Fatal(err)
-				}
+				b.runCurrentEngine(t)
+				b.publishProgress(t, func(r *RunnerProgress) { r.FailedTicks = 3 })
 			}
 			if got, err := b.step(t); err != nil || got.Status != RunnerRepairStopping {
 				t.Fatalf("begin: %+v %v", got, err)
@@ -274,11 +270,9 @@ func TestAPendingTransitionGoesBeforeTheBreakerAndTheVerdict(t *testing.T) {
 				}
 			} else {
 				before := replacementBytes(t, b.root)
-				if _, err := beginComponentAttempt(b.root, "steward-tick", 148, runnerRecordRef(b.record(t, b.processes[41])), b.now); err != nil {
-					t.Fatal(err)
-				}
-				if verdict := checkStewardRunner(b.root, b.now, b.processes); verdict.Status != HealthAlive {
-					t.Fatalf("fixture must have a fresh verdict: %+v", verdict)
+				b.publishProgress(t, func(r *RunnerProgress) { r.FailedTicks = 0 })
+				if verdict := checkStewardRunnerObserved(b.root, b.now, b.clock, b.processes); verdict.Status != HealthAlive {
+					t.Fatalf("fixture must have recovered: %+v", verdict)
 				}
 				if got, err := b.step(t); err != nil || got.Status != RunnerRepairStopping || !bytes.Equal(before, replacementBytes(t, b.root)) {
 					t.Fatalf("fresh verdict interrupted stop: %+v %v", got, err)

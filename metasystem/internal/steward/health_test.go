@@ -890,7 +890,7 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 	}
 }
 
-func TestAliveRunnerAttemptUsesMeasuredTickPatience(t *testing.T) {
+func TestAliveRunnerAttemptFarPastTheOldPatienceIsAlive(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
 	process := identity.Ref{Pid: 44300, StartedAtSec: 100, StartTicks: 900, BootID: "boot-a"}
@@ -910,31 +910,26 @@ func TestAliveRunnerAttemptUsesMeasuredTickPatience(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
-		Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID,
+		Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID, Capable: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	completed, err := beginComponentAttempt(root, "steward-tick", 3, process, now.Add(-time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := completeComponentAttempt(root, "steward-tick", 3, completed.AttemptSeq, ComponentOK, "PASS_COMPLETE", "slow", nil, now.Add(-10*time.Second)); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := beginComponentAttempt(root, "steward-tick", 3, process, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONAtomic(runnerProgressPath(root), RunnerProgress{
+		Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID, Generation: 3, Capable: 1,
+		Operation: "tick", OperationSince: now, State: "working", ProgressAt: now, At: now,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	probe := healthProbe{process.Pid: {
 		exact: identity.Exact{Pid: process.Pid, StartedAt: time.Unix(process.StartedAtSec, 0), StartTicks: process.StartTicks, BootID: process.BootID},
 		state: identity.Alive,
 	}}
-	within := checkStewardRunner(root, now.Add(149*time.Second), probe)
-	if within.Status != HealthAlive || !strings.Contains(within.Reason, "attempting") || !strings.Contains(within.Reason, "2m30s") {
-		t.Fatalf("three times the last 50-second tick protects the in-progress attempt: %+v", within)
-	}
-	overdue := checkStewardRunner(root, now.Add(150*time.Second), probe)
-	if overdue.Status != HealthDead || !strings.Contains(overdue.Reason, "stuck") {
-		t.Fatalf("an attempt at the measured patience boundary is stuck: %+v", overdue)
+	overdue := checkStewardRunner(root, now.Add(time.Hour), probe)
+	if overdue.Status != HealthAlive || !strings.Contains(overdue.Reason, "tick (working, 0 done) for 1h0m0s") {
+		t.Fatalf("an attempt an hour old is still a live runner at work: %+v", overdue)
 	}
 }
 
@@ -1310,7 +1305,7 @@ func TestFreshnessEqualityIsStale(t *testing.T) {
 	}
 }
 
-func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
+func TestRunnerProgressMustBelongToTheResidentIdentity(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	resident := identity.Ref{Pid: 44100, StartedAtSec: 100, StartTicks: 900, BootID: "boot-a"}
@@ -1328,7 +1323,7 @@ func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
-		Pid: resident.Pid, PidStartedAt: resident.StartedAtSec, StartTicks: resident.StartTicks, BootID: resident.BootID,
+		Pid: resident.Pid, PidStartedAt: resident.StartedAtSec, StartTicks: resident.StartTicks, BootID: resident.BootID, Capable: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1336,31 +1331,36 @@ func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := completeComponentAttempt(root, "steward-tick", 3, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "manual", nil, now.Add(time.Second)); err != nil {
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, attempt.AttemptSeq, ComponentError, "FAILED", "manual", nil, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
+	}
+	publish := func(writer identity.Ref, failedTicks int) {
+		t.Helper()
+		if err := writeJSONAtomic(runnerProgressPath(root), RunnerProgress{
+			Pid: writer.Pid, PidStartedAt: writer.StartedAtSec, StartTicks: writer.StartTicks, BootID: writer.BootID, Generation: 3, Capable: 1,
+			Operation: "tick", OperationSince: now, State: "working", ProgressAt: now, FailedTicks: failedTicks, At: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	probe := healthProbe{resident.Pid: {
 		exact: identity.Exact{Pid: resident.Pid, StartedAt: time.Unix(resident.StartedAtSec, 0), StartTicks: resident.StartTicks, BootID: resident.BootID},
 		state: identity.Alive,
 	}}
+	publish(manual, 3)
 	wrongWriter := checkStewardRunner(root, now.Add(2*time.Second), probe)
-	if wrongWriter.Status != HealthDead || !strings.Contains(wrongWriter.Reason, "not resident runner") {
-		t.Fatalf("a manual tick cannot satisfy resident-runner freshness: %+v", wrongWriter)
+	if wrongWriter.Status != HealthAlive || !strings.Contains(wrongWriter.Reason, "has not published yet") {
+		t.Fatalf("another process's failures and failed tick say nothing about the resident runner: %+v", wrongWriter)
 	}
-	residentAttempt, err := beginComponentAttempt(root, "steward-tick", 3, resident, now.Add(3*time.Second))
-	if err != nil {
-		t.Fatal(err)
+	publish(resident, 3)
+	failing := checkStewardRunner(root, now.Add(4*time.Second), probe)
+	if failing.Status != HealthDead || !strings.Contains(failing.Reason, "failed its last 3 ticks") {
+		t.Fatalf("the resident runner's own failures count: %+v", failing)
 	}
-	stillManual := checkStewardRunner(root, now.Add(4*time.Second), probe)
-	if stillManual.Status != HealthAlive || !strings.Contains(stillManual.Reason, "attempting") {
-		t.Fatalf("the resident runner's own in-progress attempt proves liveness without adopting the manual success: %+v", stillManual)
-	}
-	if _, err := completeComponentAttempt(root, "steward-tick", 3, residentAttempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "resident", nil, now.Add(5*time.Second)); err != nil {
-		t.Fatal(err)
-	}
+	publish(resident, 0)
 	current := checkStewardRunner(root, now.Add(6*time.Second), probe)
-	if current.Status != HealthAlive {
-		t.Fatalf("the resident runner's own completion satisfies freshness: %+v", current)
+	if current.Status != HealthAlive || !strings.Contains(current.Reason, "tick (working, 0 done)") {
+		t.Fatalf("the resident runner's own record says it works: %+v", current)
 	}
 }
 

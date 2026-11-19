@@ -12,6 +12,46 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/testdata/startfixture"
 )
 
+func buildRecoveryRunner(t *testing.T, directory, stamp string) string {
+	t.Helper()
+	binary := filepath.Join(directory, stamp)
+	cmd := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", binary, "../steward/testdata/fakerunner")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build recovery runner: %v\n%s", err, out)
+	}
+	return binary
+}
+
+func TestRecoveryLeavesACurrentRunnerAlone(t *testing.T) {
+	t.Parallel()
+	options := seatUpOptions(t)
+	options.RecoverOnly, options.IfDown = true, true
+	options.RepairStewardRunner = nil
+	t.Cleanup(func() {
+		if _, err := steward.Disarm(options.Root); err != nil {
+			t.Errorf("disarm recovery runner: %v", err)
+		}
+	})
+	options.Binary = buildRecoveryRunner(t, t.TempDir(), "current-source")
+	installed := stageEnrollment(t, options.Root, options.Binary, 1)
+	options.Executions = startfixture.Current(installed.InstallDigest)
+	if got := recovery(options); got.Outcome != "recovery-started" || component(got, "steward-runner").Outcome != "restored" {
+		t.Fatalf("first recovery: %+v", got)
+	}
+	before, alive := steward.LiveRunner(options.Root)
+	if !alive {
+		t.Fatalf("first recovery left no live runner: %+v", before)
+	}
+	got := recovery(options)
+	if got.Outcome != "recovery-not-needed" || component(got, "steward-runner").Outcome != "current" {
+		t.Fatalf("second recovery: %+v", got)
+	}
+	after, alive := steward.LiveRunner(options.Root)
+	if !alive || after != before {
+		t.Fatalf("second recovery changed the runner: before=%+v after=%+v alive=%t", before, after, alive)
+	}
+}
+
 func TestRecoveryReplacesALiveRunnerThroughTheRealRepair(t *testing.T) {
 	t.Parallel()
 	options := seatUpOptions(t)
@@ -25,11 +65,7 @@ func TestRecoveryReplacesALiveRunnerThroughTheRealRepair(t *testing.T) {
 	engines := t.TempDir()
 	var previous int64
 	for i, stamp := range []string{"old-source", "new-source"} {
-		binary := filepath.Join(engines, stamp)
-		cmd := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(stamp), "-o", binary, "../steward/testdata/fakerunner")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build recovery runner: %v\n%s", err, out)
-		}
+		binary := buildRecoveryRunner(t, engines, stamp)
 		installed := stageEnrollment(t, options.Root, binary, i+1)
 		options.Binary = binary
 		options.Executions = startfixture.Current(installed.InstallDigest)

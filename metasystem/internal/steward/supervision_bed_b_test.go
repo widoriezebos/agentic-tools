@@ -69,7 +69,7 @@ func TestSupBLandedRebuildReArmsWithMachineProvenance(t *testing.T) {
 	if got := EnrollmentProvenance(installed); got != wantProvenance {
 		t.Fatalf("enrollment provenance = %q, want %q", got, wantProvenance)
 	}
-	verdict := checkStewardRunnerWithCadence(bed.root, time.Now(), processidentity.KernelProber{}, func(string) int { return 600 })
+	verdict := checkStewardRunner(bed.root, time.Now(), processidentity.KernelProber{})
 	if !strings.Contains(verdict.Reason, wantProvenance) {
 		t.Fatalf("health hid the machine-minted provenance: %+v", verdict)
 	}

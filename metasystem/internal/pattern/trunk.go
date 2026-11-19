@@ -25,8 +25,7 @@ const LaneLineage = "landing-lane"
 type GitRunner func(dir string, args ...string) ([]byte, error)
 
 // gitTimeout bounds one git command of the pass; the fetch is the slow one.
-// It stays well inside the steward's tick patience (120 s), so a stalled
-// fetch is a stale trunk (Unknown), never a runner that reads as stuck.
+// A stalled fetch is a stale trunk (Unknown), and the tick goes on.
 const gitTimeout = 30 * time.Second
 
 // RunGit is the production GitRunner.

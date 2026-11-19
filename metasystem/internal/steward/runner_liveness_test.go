@@ -197,16 +197,31 @@ func TestRunnerLivenessReadsEachCase(t *testing.T) {
 
 func TestRunnerLivenessEntryAndObservationTime(t *testing.T) {
 	t.Parallel()
+	// The entries read the real clock and the kernel, so this process is the runner.
+	self, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("this process: %v %v", state, err)
+	}
 	b := newLivenessBed(t)
+	b.runner = RunnerRecord{Pid: self.Pid, PidStartedAt: self.StartedAt.Unix(), StartTicks: self.StartTicks, BootID: self.BootID, Capable: 1}
+	b.writeRunner()
+	b.publish(b.working())
+	if got := RunnerLiveness(b.root, b.now); got.Reading != RunnerProgressing {
+		t.Fatalf("a caller behind the clock: %+v", got)
+	}
+	// The clock reads earlier than a caller's time only after moving back.
+	ahead := time.Date(2999, 1, 1, 0, 0, 0, 0, time.UTC)
+	if got := RunnerLiveness(b.root, ahead); got.Reading != RunnerUnknown || got.Cause != CauseClockRegressed {
+		t.Fatalf("a clock behind the caller: %+v", got)
+	}
+	if got := checkStewardRunner(b.root, ahead, identity.KernelProber{}); got.Status != HealthUnknown || !strings.Contains(got.Reason, "CLOCK_REGRESSED") {
+		t.Fatalf("health with a clock behind the caller: %+v", got)
+	}
 	if err := os.Remove(runnerRecordPath(b.root)); err != nil {
 		t.Fatal(err)
 	}
 	if got := RunnerLiveness(b.root, b.now); got.Reading != RunnerDead || got.Cause != CauseUnavailable {
 		t.Fatalf("report=%+v", got)
-	}
-	later := time.Date(2999, 1, 1, 0, 0, 0, 0, time.UTC)
-	if got := runnerObservedAt(later)(); !got.Equal(later) {
-		t.Fatalf("observation %s fell behind the caller's time", got)
 	}
 }
 
@@ -351,14 +366,6 @@ func TestTicksThroughTheLoopDecideFailing(t *testing.T) {
 func TestTheHealthRowShowsTheReading(t *testing.T) {
 	t.Parallel()
 	b := newLivenessBed(t)
-	process := identity.Ref{Pid: b.runner.Pid, StartedAtSec: b.runner.PidStartedAt, StartTicks: b.runner.StartTicks, BootID: b.runner.BootID}
-	attempt, err := beginComponentAttempt(b.root, "steward-tick", livenessGeneration, process, b.now.Add(-time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := completeComponentAttempt(b.root, "steward-tick", livenessGeneration, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "fixture", nil, b.now.Add(-time.Minute)); err != nil {
-		t.Fatal(err)
-	}
 	unpublished := checkStewardRunner(b.root, b.now, b.probe)
 	if unpublished.Status != HealthAlive || !strings.Contains(unpublished.Reason, "has started and has not published yet") {
 		t.Fatalf("no progress record: %+v", unpublished)
@@ -376,7 +383,7 @@ func TestTheHealthRowShowsTheReading(t *testing.T) {
 	b.publish(record)
 	contents, modified := snapshot()
 	fresh := checkStewardRunner(b.root, b.now, b.probe)
-	if fresh.Status != unpublished.Status || !strings.Contains(fresh.Reason, "; tick (working, 3 done) for 2m0s") || strings.Contains(fresh.Reason, "quiet") {
+	if fresh.Status != unpublished.Status || !strings.HasPrefix(fresh.Reason, "tick (working, 3 done) for 2m0s;") || strings.Contains(fresh.Reason, "quiet") {
 		t.Fatalf("fresh runner: %+v", fresh)
 	}
 	if after, at := snapshot(); after != contents || !at.Equal(modified) {

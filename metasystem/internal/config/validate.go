@@ -27,6 +27,9 @@ import (
 // templateValue is an unfilled value of the shipped metasystem.conf (<model>, <runtime>).
 var templateValue = regexp.MustCompile(`^<[^<>]+>$`)
 
+// MaxRunnerQuietMinutes is the largest steward.runner-quiet-min a duration holds.
+const MaxRunnerQuietMinutes = int64(^uint64(0)>>1) / int64(time.Minute)
+
 func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, err error) {
 	return validateWithRunner(confPath, repoRoot, runGit)
 }
@@ -722,6 +725,11 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
 		if parsed, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && parsed > maxPatienceSeconds {
 			add("steward.tick-patience-sec must be no greater than %d seconds, got %s", maxPatienceSeconds, pyRepr(raw))
+		}
+	}
+	if raw, present := values["steward.runner-quiet-min"]; present {
+		if parsed, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && parsed > MaxRunnerQuietMinutes {
+			add("steward.runner-quiet-min must be no greater than %d minutes, got %s", MaxRunnerQuietMinutes, pyRepr(raw))
 		}
 	}
 	if raw, present := values["steward.stop-slow-sec"]; present {

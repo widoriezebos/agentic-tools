@@ -16,6 +16,7 @@ type runnerRecord struct {
 	BootID       string `json:"bootId"`
 	PidStartedAt int64  `json:"pidStartedAt"`
 	StartedAt    string `json:"startedAt"`
+	Capable      int    `json:"capable"`
 }
 
 func main() {
@@ -43,7 +44,7 @@ func main() {
 	}
 	record, _ := json.Marshal(runnerRecord{
 		Pid: int64(os.Getpid()), StartTicks: self.StartTicks, BootID: self.BootID,
-		PidStartedAt: self.StartedAt.Unix(), StartedAt: time.Now().UTC().Format(time.RFC3339),
+		PidStartedAt: self.StartedAt.Unix(), StartedAt: time.Now().UTC().Format(time.RFC3339), Capable: 1,
 	})
 	if err := os.WriteFile(filepath.Join(dir, "runner.json"), record, 0o644); err != nil {
 		os.Exit(1)
