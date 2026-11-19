@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -405,7 +406,7 @@ func WriteMarker(record Record) error {
 		return fmt.Errorf("store marker %s: %w", path, err)
 	}
 	_, writeErr := file.Write(append(data, '\n'))
-	return errors.Join(writeErr, file.Sync(), file.Close())
+	return errors.Join(writeErr, durable.Sync(file), file.Close())
 }
 
 type marker struct {

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -25,7 +26,7 @@ func syncDirectoryForHandoff(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := directory.Sync(); err != nil {
+	if err := durable.Sync(directory); err != nil {
 		directory.Close()
 		return err
 	}

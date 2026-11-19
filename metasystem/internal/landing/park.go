@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -376,7 +377,7 @@ func Park(params ParkParams) (ParkResult, error) {
 		temporary.Close()
 		return fail(err)
 	}
-	if err := temporary.Sync(); err != nil {
+	if err := durable.Sync(temporary); err != nil {
 		temporary.Close()
 		return fail(err)
 	}
@@ -394,7 +395,7 @@ func Park(params ParkParams) (ParkResult, error) {
 		return fail(fmt.Errorf("publish park record: %w", err))
 	}
 	if directory, err := os.Open(dir); err == nil {
-		if syncErr := directory.Sync(); syncErr != nil {
+		if syncErr := durable.Sync(directory); syncErr != nil {
 			directory.Close()
 			return fail(syncErr)
 		}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // The blob reference check and the per-blob sweep (3.12 "The blob store";
@@ -259,7 +260,7 @@ func (c BlobCheck) receipt(line BlobReceipt) error {
 		_ = file.Close()
 		return err
 	}
-	return errors.Join(file.Sync(), file.Close())
+	return errors.Join(durable.Sync(file), file.Close())
 }
 
 // sweep removes each blob whose references have been gone longer than the

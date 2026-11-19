@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -429,7 +430,7 @@ func writeGzip(source, stage string) error {
 	}
 	writer := gzip.NewWriter(out)
 	_, copyErr := io.Copy(writer, in)
-	return errors.Join(copyErr, writer.Close(), out.Sync(), out.Close())
+	return errors.Join(copyErr, writer.Close(), durable.Sync(out), out.Close())
 }
 
 func fileDigest(path string, gzipped bool) (string, error) {
@@ -456,7 +457,7 @@ func fileDigest(path string, gzipped bool) (string, error) {
 
 func syncDir(path string) {
 	if dir, err := os.Open(path); err == nil {
-		_ = dir.Sync()
+		_ = durable.Sync(dir)
 		_ = dir.Close()
 	}
 }

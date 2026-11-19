@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/markdown"
 )
@@ -216,7 +217,7 @@ func replace(root *os.Root, id, source string, mode os.FileMode) error {
 		if err := file.Chmod(mode.Perm()); err != nil {
 			return err
 		}
-		if err := file.Sync(); err != nil {
+		if err := durable.Sync(file); err != nil {
 			return err
 		}
 		return file.Close()
@@ -235,7 +236,7 @@ func replace(root *os.Root, id, source string, mode os.FileMode) error {
 	// not reported, because a committed write reported as a failure is the one
 	// divergence this model exists to prevent.
 	if directory, err := root.Open(pathOf(id)); err == nil {
-		_ = directory.Sync()
+		_ = durable.Sync(directory)
 		_ = directory.Close()
 	}
 	return nil

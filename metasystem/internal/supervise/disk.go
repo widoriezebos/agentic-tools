@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -274,7 +275,7 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 		temporary.Close()
 		return fmt.Errorf("state write: %w", err)
 	}
-	if err := temporary.Sync(); err != nil {
+	if err := durable.Sync(temporary); err != nil {
 		temporary.Close()
 		return fmt.Errorf("state sync: %w", err)
 	}

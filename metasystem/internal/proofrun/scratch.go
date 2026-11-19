@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -380,7 +381,7 @@ func writeScratchRecordFile(path string, record ScratchRecord) error {
 		return err
 	}
 	_, writeErr := temporary.Write(append(encoded, '\n'))
-	syncErr := temporary.Sync()
+	syncErr := durable.Sync(temporary)
 	closeErr := temporary.Close()
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
 		_ = os.Remove(temporary.Name())

@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -70,7 +71,7 @@ func writeAlternates(objects string, lines []string) error {
 		content += line + "\n"
 	}
 	_, writeErr := stage.WriteString(content)
-	if err := errors.Join(writeErr, stage.Sync(), stage.Close()); err != nil {
+	if err := errors.Join(writeErr, durable.Sync(stage), stage.Close()); err != nil {
 		_ = os.Remove(stage.Name())
 		return err
 	}
@@ -335,7 +336,7 @@ func copyFileSynced(source, destination string) error {
 		return err
 	}
 	_, copyErr := io.Copy(out, in)
-	return errors.Join(copyErr, out.Sync(), out.Close())
+	return errors.Join(copyErr, durable.Sync(out), out.Close())
 }
 
 // indexIDs reads the object ids of a version-2 pack index.

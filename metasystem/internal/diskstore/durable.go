@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // Syncer is the durability seam of the evidence path (3.5, 3.12 DL4E-05):
@@ -29,7 +31,7 @@ func (s Syncer) SyncFile(file *os.File) error {
 	if s.File != nil {
 		return s.File(file)
 	}
-	return file.Sync()
+	return durable.Sync(file)
 }
 
 // SyncDir syncs one directory.
@@ -45,7 +47,7 @@ func syncDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(directory.Sync(), directory.Close())
+	return errors.Join(durable.Sync(directory), directory.Close())
 }
 
 // PartialSuffix marks a staged file or directory of the evidence path: a
@@ -75,7 +77,7 @@ func (s Syncer) WriteDurable(path string, data []byte, stage string) error {
 		_ = os.Remove(partial)
 		return err
 	}
-	if err := errors.Join(file.Sync(), file.Close()); err != nil {
+	if err := errors.Join(durable.Sync(file), file.Close()); err != nil {
 		_ = os.Remove(partial)
 		return fmt.Errorf("sync %s: %w", partial, err)
 	}

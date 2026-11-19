@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // Export before delete (3.12 "The public actions"; R23; DL4E-01, DL4E-05,
@@ -292,7 +293,7 @@ func writeSynced(path string, data []byte) error {
 		_ = file.Close()
 		return err
 	}
-	return errors.Join(file.Sync(), file.Close())
+	return errors.Join(durable.Sync(file), file.Close())
 }
 
 func syncPath(path string) error {
@@ -300,7 +301,7 @@ func syncPath(path string) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(file.Sync(), file.Close())
+	return errors.Join(durable.Sync(file), file.Close())
 }
 
 // barrier is the durability barrier: the archive and manifest synced, every
@@ -388,7 +389,7 @@ func (r ExportRequest) write(ctx context.Context, path string, manifest ExportMa
 			return entries, errors.Join(err, archive.Close(), compressed.Close(), out.Close())
 		}
 	}
-	return entries, errors.Join(archive.Close(), compressed.Close(), out.Sync(), out.Close())
+	return entries, errors.Join(archive.Close(), compressed.Close(), durable.Sync(out), out.Close())
 }
 
 // verifyArchive reads an archive back: every entry inflated and hashed

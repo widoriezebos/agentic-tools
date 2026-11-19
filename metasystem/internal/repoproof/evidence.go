@@ -9,6 +9,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // TestOutput refers to the exact ordered output of one completed test.
@@ -92,7 +94,7 @@ func TestEvidence(log, unit string, tests []string, outcome string) (map[string]
 			return nil, err
 		} else {
 			_, writeErr := artifact.Write(data)
-			if err := errors.Join(writeErr, artifact.Sync(), artifact.Close()); err != nil {
+			if err := errors.Join(writeErr, durable.Sync(artifact), artifact.Close()); err != nil {
 				return nil, errors.Join(err, os.Remove(path))
 			}
 		}

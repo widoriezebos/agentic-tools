@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"golang.org/x/sys/unix"
 )
@@ -233,5 +234,5 @@ func copyFileNew(ctx context.Context, source, destination string, mode os.FileMo
 	if _, err := copyChunks(ctx, out, in); err != nil {
 		return errors.Join(err, out.Close())
 	}
-	return errors.Join(out.Sync(), out.Close())
+	return errors.Join(durable.Sync(out), out.Close())
 }

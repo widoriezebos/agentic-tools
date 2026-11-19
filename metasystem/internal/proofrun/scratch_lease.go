@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"golang.org/x/sys/unix"
 )
@@ -140,7 +141,7 @@ func writeLeaseOwner(file *os.File, owner string) error {
 	if _, err := file.WriteAt([]byte(owner), 0); err != nil {
 		return fmt.Errorf("scratch lease owner: %w", err)
 	}
-	return file.Sync()
+	return durable.Sync(file)
 }
 
 // leaseOwnedBy reports whether record's run still owns the slot at dir.

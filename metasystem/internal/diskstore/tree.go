@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // RemoveTree removes path entry by entry and stops at the context: every
@@ -198,5 +200,5 @@ func copyFile(ctx context.Context, source, destination string, mode os.FileMode)
 			break
 		}
 	}
-	return errors.Join(out.Sync(), out.Close())
+	return errors.Join(durable.Sync(out), out.Close())
 }

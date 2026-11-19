@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -398,7 +399,7 @@ func removeSessionStop(path string) error {
 		return fmt.Errorf("session stop marker removal durability is unknown: %w", err)
 	}
 	defer dir.Close()
-	if err := dir.Sync(); err != nil {
+	if err := durable.Sync(dir); err != nil {
 		return fmt.Errorf("session stop marker removal durability is unknown: %w", err)
 	}
 	return nil

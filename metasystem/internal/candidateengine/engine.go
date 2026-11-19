@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -356,7 +357,7 @@ func CopyArtifact(source, target string) error {
 		return err
 	}
 	_, copyErr := io.Copy(output, input)
-	syncErr := output.Sync()
+	syncErr := durable.Sync(output)
 	closeErr := output.Close()
 	return errors.Join(copyErr, syncErr, closeErr)
 }

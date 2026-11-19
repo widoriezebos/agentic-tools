@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -184,7 +185,7 @@ func appendTo(path string, value any) error {
 		_ = file.Close()
 		return err
 	}
-	if err := file.Sync(); err != nil {
+	if err := durable.Sync(file); err != nil {
 		_ = file.Close()
 		return err
 	}

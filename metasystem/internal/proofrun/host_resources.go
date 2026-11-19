@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -141,7 +142,7 @@ func setHostLeaseCleared(file *os.File, data []byte, cleared bool) error {
 	if _, err := file.WriteAt(state, int64(index)); err != nil {
 		return err
 	}
-	return file.Sync()
+	return durable.Sync(file)
 }
 
 func (lease *HostResourceLease) Files() []*os.File {

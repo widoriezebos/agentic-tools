@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receiptlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -657,7 +658,7 @@ func appendLine(path, line string) error {
 }
 
 // syncFile is the durability barrier, injectable so fault tests can fail it.
-var syncFile = func(handle *os.File) error { return handle.Sync() }
+var syncFile = func(handle *os.File) error { return durable.Sync(handle) }
 
 // leadingInt reads the integer prefix of a value the way awk coerces a
 // string to a number, so a malformed field degrades instead of erroring.

@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -44,7 +45,7 @@ func createLeaseCustody(lease string) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(file.Sync(), file.Close(), syncLeaseDirectory(filepath.Dir(path)))
+	return errors.Join(durable.Sync(file), file.Close(), syncLeaseDirectory(filepath.Dir(path)))
 }
 
 // recordLeaseCustodian appends a custodian to the custody record of every
@@ -76,7 +77,7 @@ func recordLeaseCustodian(files []*os.File, custodian identity.Ref, group int64)
 			return fmt.Errorf("lease custody record of %s: %w", filepath.Base(file.Name()), err)
 		}
 		_, writeErr := record.Write(append(line, '\n'))
-		if err := errors.Join(writeErr, record.Sync(), record.Close()); err != nil {
+		if err := errors.Join(writeErr, durable.Sync(record), record.Close()); err != nil {
 			return fmt.Errorf("lease custody record of %s: %w", filepath.Base(file.Name()), err)
 		}
 	}
@@ -124,7 +125,7 @@ func syncLeaseDirectory(directory string) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(dir.Sync(), dir.Close())
+	return errors.Join(durable.Sync(dir), dir.Close())
 }
 
 // removeOrphanCustody removes every custody record whose lease marker no

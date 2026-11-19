@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // TornEvent is the framing repair marker (REG-1). It carries no claim
@@ -106,7 +108,7 @@ func AppendFrame(path string, payload []byte) error {
 }
 
 // syncFile is the durability barrier, injectable so fault tests can fail it.
-var syncFile = func(file *os.File) error { return file.Sync() }
+var syncFile = func(file *os.File) error { return durable.Sync(file) }
 
 // inspectTail reports whether the file ends with a newline byte and
 // returns the final line: the trailing partial line when unterminated,

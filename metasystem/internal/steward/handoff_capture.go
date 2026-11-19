@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -807,7 +808,7 @@ func writeExclusiveHandoffFile(path string, data []byte) error {
 		file.Close()
 		return err
 	}
-	if err := file.Sync(); err != nil {
+	if err := durable.Sync(file); err != nil {
 		file.Close()
 		return err
 	}

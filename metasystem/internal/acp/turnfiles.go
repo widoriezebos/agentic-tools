@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // The file-driven prompt attempt: one ACP turn over already-created pipe
@@ -139,7 +141,7 @@ func RunFileTurn(ctx context.Context, cfg FileTurnConfig) (FileTurnOutcome, erro
 	case <-time.After(3 * time.Second):
 	}
 	journalIssue := conn.JournalErr()
-	if err := journal.Sync(); err != nil && journalIssue == nil {
+	if err := durable.Sync(journal); err != nil && journalIssue == nil {
 		journalIssue = err
 	}
 	if err := journal.Close(); err != nil && journalIssue == nil {

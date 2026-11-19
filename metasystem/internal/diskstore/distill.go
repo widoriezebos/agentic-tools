@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // The distiller (3.5; U5c): it never deletes unique bytes. Per file it runs
@@ -802,7 +804,7 @@ func gzipStage(ctx context.Context, source, stage, digest string) error {
 	if _, err := copyChunks(ctx, writer, in); err != nil {
 		return errors.Join(err, writer.Close(), out.Close())
 	}
-	if err := errors.Join(writer.Close(), out.Sync(), out.Close()); err != nil {
+	if err := errors.Join(writer.Close(), durable.Sync(out), out.Close()); err != nil {
 		return err
 	}
 	got, err := gzipDigest(ctx, stage)
@@ -940,7 +942,7 @@ func tarStage(ctx context.Context, source, stage, digest string) error {
 		}
 		return nil
 	})
-	if err := errors.Join(walkErr, archive.Close(), compressed.Close(), out.Sync(), out.Close()); err != nil {
+	if err := errors.Join(walkErr, archive.Close(), compressed.Close(), durable.Sync(out), out.Close()); err != nil {
 		return err
 	}
 	got, err := tarDigest(ctx, stage)

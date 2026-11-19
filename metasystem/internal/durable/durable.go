@@ -11,9 +11,10 @@
 //
 // Limitation of this unit: there is no way yet to ask for full in a test run.
 // A test process under testenv.Main or MainWithSetup is always kernel (unless
-// it synced before the opt-in); every other process is always full. Only
-// internal/atomicfile syncs through this package so far; every other call site
-// still calls File.Sync directly.
+// it synced before the opt-in); every other process is always full. Every
+// file and directory sync of the engine goes through this package; an audit in
+// internal/testenv refuses a call of (*os.File).Sync anywhere else in the
+// module's non-test code.
 package durable
 
 import (

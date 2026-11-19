@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -356,7 +357,7 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if _, err := io.Copy(temporary, b.file); err != nil {
 		return err
 	}
-	if err := temporary.Sync(); err != nil {
+	if err := durable.Sync(temporary); err != nil {
 		return err
 	}
 	if err := temporary.Chmod(0o500); err != nil {

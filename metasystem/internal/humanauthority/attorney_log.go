@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // AttorneyLogPath is the local, append-only record of what a general power
@@ -30,7 +32,7 @@ func appendAuthorityLine(path, line string) error {
 		file.Close()
 		return err
 	}
-	if err := file.Sync(); err != nil {
+	if err := durable.Sync(file); err != nil {
 		file.Close()
 		return err
 	}

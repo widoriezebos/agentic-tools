@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -953,7 +954,7 @@ func syncCallDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := directory.Sync(); err != nil {
+	if err := durable.Sync(directory); err != nil {
 		_ = directory.Close()
 		return err
 	}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -686,7 +687,7 @@ func publishRecertification(r *conformanceRun, record RecertificationRecord, pat
 			file.Close()
 			return err
 		}
-		if err := file.Sync(); err != nil {
+		if err := durable.Sync(file); err != nil {
 			file.Close()
 			return err
 		}
@@ -702,7 +703,7 @@ func publishRecertification(r *conformanceRun, record RecertificationRecord, pat
 	if err != nil {
 		return "", err
 	}
-	if err := temporaryHandle.Sync(); err != nil {
+	if err := durable.Sync(temporaryHandle); err != nil {
 		temporaryHandle.Close()
 		return "", err
 	}
@@ -721,7 +722,7 @@ func publishRecertification(r *conformanceRun, record RecertificationRecord, pat
 		return "", fmt.Errorf("recertification patch read-back failed")
 	}
 	if parentHandle, err := os.Open(parent); err == nil {
-		if syncErr := parentHandle.Sync(); syncErr != nil {
+		if syncErr := durable.Sync(parentHandle); syncErr != nil {
 			parentHandle.Close()
 			return "", syncErr
 		}

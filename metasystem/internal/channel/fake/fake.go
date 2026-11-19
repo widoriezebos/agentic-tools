@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/slack"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 func Provider(dir string) (channel.Provider, channel.DestinationConfig, error) {
@@ -355,7 +356,7 @@ func (s *server) journal(method, raw, listener string, form any) error {
 		row["raw"] = raw
 	}
 	if err = json.NewEncoder(f).Encode(row); err == nil {
-		err = f.Sync()
+		err = durable.Sync(f)
 	}
 	return err
 }

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -152,7 +153,7 @@ func exclusiveWriteJSON(path string, value any) error {
 		file.Close()
 		return err
 	}
-	if err := file.Sync(); err != nil {
+	if err := durable.Sync(file); err != nil {
 		file.Close()
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -79,7 +80,7 @@ func installDeployedEngineWithRename(installation string, engine steward.Deploye
 	if _, err := io.Copy(target, source); err != nil {
 		return err
 	}
-	for _, step := range []func() error{target.Sync, func() error { return target.Chmod(0o755) }, target.Close} {
+	for _, step := range []func() error{func() error { return durable.Sync(target) }, func() error { return target.Chmod(0o755) }, target.Close} {
 		if err := step(); err != nil {
 			return err
 		}

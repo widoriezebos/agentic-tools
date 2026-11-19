@@ -16,6 +16,7 @@ import (
 
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 const marker = "\n<!-- metasystem-stop-report-v1 "
@@ -166,7 +167,7 @@ func ReserveShortestAlias(root, reportID string) (Reservation, error) {
 				_ = file.Close()
 				return err
 			}
-			if err := file.Sync(); err != nil {
+			if err := durable.Sync(file); err != nil {
 				_ = file.Close()
 				return err
 			}
@@ -451,5 +452,5 @@ func syncDirectory(path string) error {
 		return err
 	}
 	defer dir.Close()
-	return dir.Sync()
+	return durable.Sync(dir)
 }

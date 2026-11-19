@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // RecordSituationRead appends the session, the time and the page's first
@@ -26,7 +28,7 @@ func RecordSituationRead(root, session string, at time.Time, first FirstThing) e
 		return err
 	}
 	if _, err = file.Write(append(line, '\n')); err == nil {
-		err = file.Sync()
+		err = durable.Sync(file)
 	}
 	return errors.Join(err, file.Close())
 }

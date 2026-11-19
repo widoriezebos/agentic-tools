@@ -27,6 +27,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -935,7 +936,7 @@ func copyFilePreservingTime(sourcePath, targetPath string) error {
 		temp.Close()
 		return err
 	}
-	if err := temp.Sync(); err != nil {
+	if err := durable.Sync(temp); err != nil {
 		temp.Close()
 		return err
 	}

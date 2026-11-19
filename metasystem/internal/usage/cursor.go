@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -645,7 +646,7 @@ func reconcileCallRows(path string, cursor CursorState, loaded bool) error {
 		_ = file.Close()
 		return fmt.Errorf("cannot truncate uncommitted call samples: %w", err)
 	}
-	if err := file.Sync(); err != nil {
+	if err := durable.Sync(file); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("cannot sync recovered call samples: %w", err)
 	}
@@ -690,7 +691,7 @@ func appendCallRows(path string, rows []any, committedBytes int64) (int64, error
 		writeErr = io.ErrShortWrite
 	}
 	if writeErr == nil {
-		writeErr = file.Sync()
+		writeErr = durable.Sync(file)
 	}
 	closeErr := file.Close()
 	if writeErr != nil {

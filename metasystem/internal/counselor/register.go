@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"golang.org/x/sys/unix"
@@ -290,7 +291,7 @@ func appendRegisterLine(root, relative, id string, value any) (returnErr error) 
 	if _, err = file.Write(append(encoded, '\n')); err != nil {
 		return err
 	}
-	return file.Sync()
+	return durable.Sync(file)
 }
 
 func acquireRegisterLock(lockPath string) (*os.File, error) {

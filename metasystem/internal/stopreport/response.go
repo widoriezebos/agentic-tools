@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"errors"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 const ResponseSchemaVersion = 1
@@ -85,7 +87,7 @@ func WriteResponse(root string, payload []byte, response Response) error {
 	}()
 	_, writeErr := file.Write(encoded)
 	if writeErr == nil {
-		writeErr = file.Sync()
+		writeErr = durable.Sync(file)
 	}
 	closeErr := file.Close()
 	if writeErr != nil {

@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // now is the wall clock, overridable in tests so a snapshot's dated sequence
@@ -64,7 +66,7 @@ func decodeJSONBytes(data []byte) (any, error) {
 
 func syncDir(directory string) {
 	if dir, err := os.Open(directory); err == nil {
-		_ = dir.Sync()
+		_ = durable.Sync(dir)
 		_ = dir.Close()
 	}
 }

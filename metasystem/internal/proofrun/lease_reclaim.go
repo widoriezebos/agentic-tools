@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -307,5 +308,5 @@ func appendLeaseReclaimRecord(directory string, entry leaseReclaimRecord) error 
 		return err
 	}
 	_, writeErr := file.Write(append(encoded, '\n'))
-	return errors.Join(writeErr, file.Sync(), file.Close())
+	return errors.Join(writeErr, durable.Sync(file), file.Close())
 }

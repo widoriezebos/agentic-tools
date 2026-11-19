@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // MessageSchemaVersion is the message schema this engine writes.
@@ -589,7 +590,7 @@ func conclude(home string, message Message, fact string, now time.Time) {
 	}
 	data, _ := json.Marshal(conclusion{At: now.UTC(), Goal: message.To.Goal, Fact: fact})
 	_, _ = file.Write(append(data, '\n'))
-	_ = file.Sync()
+	_ = durable.Sync(file)
 	_ = file.Close()
 }
 
@@ -856,7 +857,7 @@ func Mark(message Message, self, lineage, event string, now time.Time) error {
 	}
 	data, _ := json.Marshal(Marker{At: now.UTC(), Machine: self, Lineage: lineage, Event: event})
 	_, err = file.Write(append(data, '\n'))
-	if syncErr := file.Sync(); err == nil {
+	if syncErr := durable.Sync(file); err == nil {
 		err = syncErr
 	}
 	if closeErr := file.Close(); err == nil {
