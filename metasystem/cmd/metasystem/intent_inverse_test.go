@@ -151,7 +151,7 @@ func exerciseDeclarationInversePublicRevert(t *testing.T, scenarios []string) {
 			after := strings.Replace(before, "proof.cheap=true", "proof.cheap=printf cheap", 1)
 			latest := after + "# later independent content\nother=kept\n"
 			f := &inverseGit{t: t, b: b, head: b.head, content: latest, staged: []string{"records/unrelated.md"}, paths: []string{"metasystem.conf"}}
-			original := processchange.ProcessAct{ID: "original", Goal: b.id, Checkout: b.root(), Class: "declaration", Status: "applied", BeforeDeclaration: &processchange.Declaration{Values: [4]string{"true", "true", "15", "printf full"}, Content: before, Commit: "before"}, AfterDeclaration: &processchange.Declaration{Values: [4]string{"printf cheap", "true", "15", "printf full"}, Content: after, Branch: "goal/" + b.id, Commit: b.head}}
+			original := processchange.ProcessAct{ID: "original", Goal: b.id, Checkout: b.root(), Class: "declaration", Status: "applied", BeforeDeclaration: &processchange.Declaration{Values: [6]string{"true", "true", "15", "printf full"}, Content: before, Commit: "before"}, AfterDeclaration: &processchange.Declaration{Values: [6]string{"printf cheap", "true", "15", "printf full"}, Content: after, Branch: "goal/" + b.id, Commit: b.head}}
 			originalPath := filepath.Join(b.root(), "process", "acts", "original.json")
 			write := func(path string, v any) {
 				t.Helper()
@@ -182,7 +182,7 @@ func exerciseDeclarationInversePublicRevert(t *testing.T, scenarios []string) {
 				f.content = strings.Replace(latest, "proof.audits=true", "proof.audits=printf audits", 1)
 				original.AfterDeclaration.Values[1] = "printf audits"
 				original.AfterDeclaration.Content = strings.Replace(after, "proof.audits=true", "proof.audits=printf audits", 1)
-				original.InheritedDeclaration = &processchange.Declaration{Values: [4]string{"true", "printf audits", "15", "true"}}
+				original.InheritedDeclaration = &processchange.Declaration{Values: [6]string{"true", "printf audits", "15", "true"}}
 			}
 			if scenario == "inherited" {
 				original.InheritedDeclaration = original.AfterDeclaration
@@ -223,7 +223,7 @@ func exerciseDeclarationInversePublicRevert(t *testing.T, scenarios []string) {
 				}
 			}
 			otherBaseline := filepath.Join(b.root(), "process", fmt.Sprintf("declaration-%x.json", sha256.Sum256([]byte("another"))))
-			write(otherBaseline, map[string]any{"Goal": "another", "Seed": "different-seed", "Snapshot": processchange.Declaration{Values: [4]string{"other", "false", "20", "full-b"}}})
+			write(otherBaseline, map[string]any{"Goal": "another", "Seed": "different-seed", "Snapshot": processchange.Declaration{Values: [6]string{"other", "false", "20", "full-b"}}})
 			otherBefore, _ := os.ReadFile(otherBaseline)
 			q, _, err := channel.AskOrFind(channel.AskRequest{RepoRoot: b.root(), Goal: b.id, Kind: "other", Facts: []string{"inverse needed"}, Wants: "restore delta", Now: b.manager.Now()})
 			if err != nil {

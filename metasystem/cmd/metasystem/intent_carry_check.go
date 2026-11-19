@@ -77,6 +77,9 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	if inv.input.has("check") {
 		err = inv.admitUnitDeclaration(&plan, records, func() error { return nil }, subject)
 		if err == nil {
+			err = check.RequireSupportedKind()
+		}
+		if err == nil {
 			check.ProcessAct = ""
 			check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "metasystem test impact --publication-only", 15
 			err = inv.admitProcessCheck(plan, records, &check)
@@ -94,6 +97,9 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 			err = fmt.Errorf("%s\nrun: %s", held.Error(), shellCommand(held.remedy))
 		}
 		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: err}
+	}
+	if err := check.RequireSupportedKind(); err != nil {
+		return branch.GateObservation{}, err
 	}
 	gatePath := filepath.Join(records, "gate.json")
 	var execution, latest string

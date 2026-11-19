@@ -33,7 +33,7 @@ func ApplicableCheck(record *CheckEvidence, path string, readErr error, need Che
 		return CheckDecision{Field: "version (legacy evidence)"}
 	}
 	selected, current := record.Selection, need.Context
-	declared := record.Declaration == nil && need.Check.Declaration == nil || record.Declaration != nil && need.Check.Declaration != nil && record.Declaration.Values == need.Check.Declaration.Values && record.Declaration.SourceSHA256 == need.Check.Declaration.SourceSHA256
+	declared := record.Declaration == nil && need.Check.Declaration == nil || record.Declaration != nil && need.Check.Declaration != nil && record.Declaration.EffectiveValues() == need.Check.Declaration.EffectiveValues() && record.Declaration.SourceSHA256 == need.Check.Declaration.SourceSHA256
 	audited := record.Strength.Audited && !record.Manual && record.Declaration != nil && record.Commands[1] == record.Declaration.Values[1] && strings.TrimSpace(record.Commands[1]) != "true" && !strings.Contains(record.Commands[1], "--publication-only")
 	required := !slices.ContainsFunc(need.Requirements, func(id string) bool {
 		return !slices.Contains(selected.Groups, id)
@@ -44,6 +44,7 @@ func ApplicableCheck(record *CheckEvidence, path string, readErr error, need Che
 	}{
 		{"version", record.Version == 1},
 		{"outcome", record.Outcome == "" || record.Outcome == CheckPassed},
+		{"check kind", need.Check.RequireSupportedKind() == nil && (record.Declaration == nil || (UnitCheck{Declaration: record.Declaration}).RequireSupportedKind() == nil)},
 		{"completeness", record.Strength.Complete && record.Source != "" && selected.Version == 1 && record.Content.Before != "" && record.Content.Before == record.Content.After},
 		{"strength", need.Strength == "audited" && audited || need.Strength == "cheap" && record.Strength.Cheap},
 		{"tree", record.Content.Before == need.Tree},

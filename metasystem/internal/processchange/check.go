@@ -222,9 +222,12 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 		if c.Act == "" {
 			return act, nil
 		}
+		// Decode separately: reusing the caller's declaration pointer would
+		// replace the frozen values before comparing them to the act.
+		act = ProcessAct{}
 		actPath := filepath.Join(directory, "acts", c.Act+".json")
 		data, problem := os.ReadFile(actPath)
-		if filepath.Base(c.Act) != c.Act || problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != c.Act || act.Checkout != c.Checkout || (act.Unit != c.Unit || act.Operation != c.Operation) || (act.Class == "declaration" && (act.AfterDeclaration == nil || c.AfterDeclaration == nil || act.AfterDeclaration.Values != c.AfterDeclaration.Values)) || (act.Class != "declaration" && act.Class != "full-suite-exception" && act.Class != "added-check" && act.Class != "widened-check" && act.Class != "unchanged-check") || (act.Class == "full-suite-exception" && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.After}) && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.Audits})) || (act.Class == "declaration" && act.AfterDeclaration.Values[0] != c.After) || ((act.Class == "added-check" || act.Class == "widened-check" || act.Class == "unchanged-check") && act.After != c.After) || act.Status != "applied" {
+		if filepath.Base(c.Act) != c.Act || problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != c.Act || act.Checkout != c.Checkout || (act.Unit != c.Unit || act.Operation != c.Operation) || (act.Class == "declaration" && (act.AfterDeclaration == nil || c.AfterDeclaration == nil || act.AfterDeclaration.EffectiveValues() != c.AfterDeclaration.EffectiveValues())) || (act.Class != "declaration" && act.Class != "full-suite-exception" && act.Class != "added-check" && act.Class != "widened-check" && act.Class != "unchanged-check") || (act.Class == "full-suite-exception" && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.After}) && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.Audits})) || (act.Class == "declaration" && act.AfterDeclaration.Values[0] != c.After) || ((act.Class == "added-check" || act.Class == "widened-check" || act.Class == "unchanged-check") && act.After != c.After) || act.Status != "applied" {
 			return act, fmt.Errorf("the admitted declaration act is unavailable")
 		}
 		return act, save(c.Installation, actPath, act)
@@ -247,8 +250,8 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	act.BeforeDeclaration, act.AfterDeclaration, act.InheritedDeclaration = &previous.Snapshot, &candidate, &inherited
 	act.Predecessor, act.Class, act.Actor = previous.Act, "declaration", "unknown"
 	changed := false
-	for index, value := range candidate.Values {
-		changed = changed || value != previous.Snapshot.Values[index] && value != inherited.Values[index]
+	for index, value := range candidate.EffectiveValues() {
+		changed = changed || value != previous.Snapshot.EffectiveValues()[index] && value != inherited.EffectiveValues()[index]
 	}
 	defer func() {
 		if err != nil || act.Status == "proposed" || act.Status == "superseded" {
@@ -281,7 +284,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 		act.Reason += "; run the full suite for this admission"
 	}
 	if !changed && !full && c.Act == "" {
-		if candidate.Values != previous.Snapshot.Values {
+		if candidate.EffectiveValues() != previous.Snapshot.EffectiveValues() {
 			previous.Act = ""
 		}
 		act.ID, act.Status = previous.Act, "unchanged"
@@ -312,14 +315,14 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	retained, problem := os.ReadFile(actPath)
 	if problem == nil {
 		var proposal ProcessAct
-		if json.Unmarshal(retained, &proposal) != nil || proposal.Class != act.Class || proposal.ID != act.ID || proposal.Goal != c.Goal || proposal.Unit != c.Unit || proposal.Operation != c.Operation || proposal.AfterDeclaration == nil || !reflect.DeepEqual(proposal.AfterDeclaration, act.AfterDeclaration) {
+		if json.Unmarshal(retained, &proposal) != nil || proposal.Class != act.Class || proposal.ID != act.ID || proposal.Goal != c.Goal || proposal.Unit != c.Unit || proposal.Operation != c.Operation || proposal.AfterDeclaration == nil || !sameDeclaration(*proposal.AfterDeclaration, *act.AfterDeclaration) {
 			return act, fmt.Errorf("the act names a different declaration, tree or admission")
 		}
 		act = proposal
 	} else if !os.IsNotExist(problem) || c.Act != "" {
 		return act, fmt.Errorf("declaration act unavailable: %w", problem)
 	}
-	if previous.Operation != c.Operation && (act.BeforeDeclaration == nil || !reflect.DeepEqual(*act.BeforeDeclaration, previous.Snapshot) || act.Predecessor != previous.Act) {
+	if previous.Operation != c.Operation && (act.BeforeDeclaration == nil || !sameDeclaration(*act.BeforeDeclaration, previous.Snapshot) || act.Predecessor != previous.Act) {
 		act.Status = "superseded"
 		return act, save(c.Installation, actPath, act)
 	}
@@ -334,7 +337,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			if act.Question != "" {
 				return act, nil
 			}
-			q, _, problem := channel.AskOrFind(channel.AskRequest{Plain: &channel.Plain{Decision: "Goal " + act.Goal + " wants to change its committed checks", IfNothing: "the committed checks stay as they are"}, RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
+			q, _, problem := channel.AskOrFind(channel.AskRequest{Plain: &channel.Plain{Decision: "Goal " + act.Goal + " wants to change its committed checks", IfNothing: "the committed checks stay as they are"}, RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.EffectiveValues(), act.AfterDeclaration.EffectiveValues()), act.Reason}, Wants: c.Remedy(act.ID)})
 			if problem != nil {
 				return act, problem
 			}
@@ -351,4 +354,10 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 		}
 	}
 	return act, nil
+}
+
+// sameDeclaration preserves old records whose optional check settings were absent.
+func sameDeclaration(a, b Declaration) bool {
+	a.Values, b.Values = a.EffectiveValues(), b.EffectiveValues()
+	return reflect.DeepEqual(a, b)
 }

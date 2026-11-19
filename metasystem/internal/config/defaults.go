@@ -93,6 +93,8 @@ var coreSettings = []Setting{
 		Meaning: "the repository's merge gate command, declared in metasystem.conf"},
 	{Key: "proof.audits", CommittedOnly: true, ProofInput: true, Meaning: "the unit audit command; true explicitly declares no audits"},
 	{Key: "proof.deadline", CommittedOnly: true, ProofInput: true, Meaning: "positive minutes allowed for each declared unit check command"},
+	{Key: "proof.check-kind", Default: "legacy", CommittedOnly: true, ProofInput: true, Meaning: "unit check kind: legacy or bounded; bounded requires an engine with bounded execution support"},
+	{Key: "proof.check-budget", Default: "6", CommittedOnly: true, ProofInput: true, Meaning: "positive execution minutes for bounded feedback, excluding prerequisites and admission wait"},
 	// Installation shape.
 	{Key: "metasystem.engine-delivery", Default: "source", ProofInput: true,
 		Meaning: "how the engine ships (D17/D33): source, rebuilt by the target and by CI; declared, never inferred"},

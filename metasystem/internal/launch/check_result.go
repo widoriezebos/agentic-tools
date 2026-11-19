@@ -29,6 +29,9 @@ type CheckResult struct {
 // Those results must contain both successful commands; an explicit incomplete
 // outcome never falls back to exit codes.
 func (result CheckResult) RequirePassed() error {
+	if err := result.Check.RequireSupportedKind(); err != nil {
+		return err
+	}
 	if result.Version != 0 && result.Version != 1 {
 		return fmt.Errorf("the unit check result has an unsupported version")
 	}

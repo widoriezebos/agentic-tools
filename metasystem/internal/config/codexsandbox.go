@@ -59,10 +59,13 @@ func SettingValueProblem(key, value string) error {
 			return fmt.Errorf("host.load-max must be a positive finite number")
 		}
 	}
-	if key == "proof.deadline" {
+	if key == "proof.check-kind" && value != "legacy" && value != "bounded" {
+		return fmt.Errorf("proof.check-kind must be legacy or bounded")
+	}
+	if key == "proof.deadline" || key == "proof.check-budget" {
 		minutes, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || minutes <= 0 || minutes > int64((1<<63-1)/time.Minute) {
-			return fmt.Errorf("%s, the check deadline, must be positive minutes within the timer range", key)
+			return fmt.Errorf("%s must be positive minutes within the timer range", key)
 		}
 	}
 	if PolicyScope(key) != "" {

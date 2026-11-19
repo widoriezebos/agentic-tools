@@ -55,7 +55,11 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		return plan, fmt.Errorf("%s", problem.Summary)
 	}
 	if !inv.input.has("check") && plan.Check != nil && plan.Check.Declaration != nil && plan.Path == filepath.Join(directory, "plan.json") {
-		return plan, inv.admitUnitDeclaration(&plan, directory, nil)
+		err := inv.admitUnitDeclaration(&plan, directory, nil)
+		if err == nil {
+			err = plan.Check.RequireSupportedKind()
+		}
+		return plan, err
 	}
 	check := &launch.UnitCheck{Base: plan.Base, Directory: filepath.Join(plan.Worktree, inv.layout.InstallationRel),
 		Input: plan.Proof[0].Input}
@@ -90,6 +94,9 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		}
 		plan.Check = check
 		if err := inv.admitUnitDeclaration(&plan, directory, func() error { return nil }); err != nil {
+			return plan, err
+		}
+		if err := check.RequireSupportedKind(); err != nil {
 			return plan, err
 		}
 		check.ProcessAct = ""
@@ -134,6 +141,9 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		err = inv.admitUnitDeclaration(&plan, directory, publish)
 		if err == nil {
 			err = inv.admitProcessCheck(plan, directory, check)
+		}
+		if err == nil {
+			err = check.RequireSupportedKind()
 		}
 		return plan, err
 	}
@@ -343,7 +353,7 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 			snapshot.EnvironmentSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(check.EnvironmentValues(), "\x00"))))
 			snapshot.Content = readGit("show", commit+":"+filepath.ToSlash(filepath.Join(inv.layout.InstallationRel, "metasystem.conf")))
 			snapshot.SourceSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(snapshot.Content)))
-			for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline", "proof.full"} {
+			for i, key := range launch.UnitDeclarationKeys() {
 				if err != nil {
 					break
 				}
@@ -366,11 +376,11 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 		candidate, main, inherited = read(candidateCommit), read(mainCommit), read(base)
 		// A distinct explicit check bypasses full-suite classification only
 		// when the declared audits also differ from the full command.
-		if inv.input.has("check") && candidate.Values == main.Values && candidate.Values == inherited.Values && shellCommand(inv.input.values["check"]) != candidate.Values[3] && candidate.Values[1] != candidate.Values[3] {
+		if inv.input.has("check") && candidate.EffectiveValues() == main.EffectiveValues() && candidate.EffectiveValues() == inherited.EffectiveValues() && shellCommand(inv.input.values["check"]) != candidate.Values[3] && candidate.Values[1] != candidate.Values[3] {
 			candidate.FullArgv = nil
 		}
 		if err != nil {
-			err = fmt.Errorf("proof.cheap, proof.audits, proof.deadline or proof.full declaration unavailable: %w", err)
+			err = fmt.Errorf("committed proof.* declaration unavailable: %w", err)
 		}
 		check.Declaration = &candidate
 		check.Cheap, check.Audits, check.SourceTree = candidate.Values[0], candidate.Values[1], candidate.Tree
@@ -399,7 +409,7 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 			return nil
 		},
 		Impact: func() error {
-			return inv.recordUnitStopOverride(plan.Goal, "work-declarations", act.Reason, "Impact: this admission uses these committed checks, audits and deadline.\nExact full-suite selections run the full suite for this subject. Earlier rounds keep their frozen checks.", by)
+			return inv.recordUnitStopOverride(plan.Goal, "work-declarations", act.Reason, "Impact: this admission uses these committed checks, audits, deadline, kind and feedback budget.\nExact full-suite selections run the full suite for this subject. Earlier rounds keep their frozen checks.", by)
 		},
 		Publish: func(admitted processchange.ProcessAct) error { check.ProcessAct = admitted.ID; return publish() },
 		Subject: carrySubject,

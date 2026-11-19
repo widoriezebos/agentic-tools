@@ -179,7 +179,7 @@ func TestWholeCheckEvidenceIgnoresTheCheapCache(t *testing.T) {
 	helmMust(t, err)
 	check := launch.UnitCheck{Base: "base", Directory: root, Cheap: cheap, Audits: "printf audited", Minutes: 15,
 		Input: input}
-	check.Declaration = &launch.UnitDeclaration{Values: [4]string{cheap, check.Audits, "15", "full"}, SourceSHA256: "declaration"}
+	check.Declaration = &launch.UnitDeclaration{Values: [6]string{cheap, check.Audits, "15", "full"}, SourceSHA256: "declaration"}
 	execution, exits, err := check.Run(root, t.TempDir(), launch.CheckContext{Worktree: root,
 		Tree: func() (string, error) { return "candidate-tree", nil },
 		Now:  func() time.Time { return time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC) }})

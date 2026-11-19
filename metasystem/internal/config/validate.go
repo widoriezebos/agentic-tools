@@ -86,7 +86,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 	for key, value := range values {
-		if PolicyScope(key) != "" || key == "host.load-max" {
+		if PolicyScope(key) != "" || key == "host.load-max" || key == "proof.check-kind" || key == "proof.check-budget" {
 			if err := SettingValueProblem(key, value); err != nil {
 				add("%v", err)
 			}

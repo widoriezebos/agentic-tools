@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
@@ -227,9 +228,9 @@ func PrepareInverse(root string, installation roots.Installation, original, bran
 			return act, fmt.Errorf("inverse evidence unavailable; supply an explicit --patch FILE")
 		}
 		next := current
-		for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline", "proof.full"} {
-			before, after := source.BeforeDeclaration.Values[i], source.AfterDeclaration.Values[i]
-			if before == after || source.InheritedDeclaration != nil && after == source.InheritedDeclaration.Values[i] {
+		for i, key := range launch.UnitDeclarationKeys() {
+			before, after := source.BeforeDeclaration.EffectiveValues()[i], source.AfterDeclaration.EffectiveValues()[i]
+			if before == after || source.InheritedDeclaration != nil && after == source.InheritedDeclaration.EffectiveValues()[i] {
 				continue
 			}
 			value, _, err := config.CommittedContentLookup(current, key)
@@ -257,7 +258,7 @@ func PrepareInverse(root string, installation roots.Installation, original, bran
 		explicit = []byte(fmt.Sprintf("--- a/%s\n+++ b/%s\n@@ -1,%d +1,%d @@\n%s%s", path, path, strings.Count("\n"+patchSide("-", current), "\n-"), strings.Count("\n"+patchSide("+", next), "\n+"), patchSide("-", current), patchSide("+", next)))
 		restoredDeclaration := *source.AfterDeclaration
 		restoredDeclaration.Content, restoredDeclaration.SourceSHA256 = next, fmt.Sprintf("%x", sha256.Sum256([]byte(next)))
-		for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline", "proof.full"} {
+		for i, key := range launch.UnitDeclarationKeys() {
 			restoredDeclaration.Values[i], _, _ = config.CommittedContentLookup(next, key)
 		}
 		source.BeforeDeclaration = &restoredDeclaration

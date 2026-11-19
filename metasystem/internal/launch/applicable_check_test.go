@@ -14,7 +14,7 @@ import (
 func applicableCheckFixture(t *testing.T) (*CheckEvidence, CheckNeed) {
 	t.Helper()
 	check := UnitCheck{Cheap: "metasystem test impact --check", Audits: "declared audits", Minutes: 15,
-		Environment: []string{}, Declaration: &UnitDeclaration{Values: [4]string{"metasystem test impact --check", "declared audits", "15", "full"}, SourceSHA256: "declaration"}}
+		Environment: []string{}, Declaration: &UnitDeclaration{Values: [6]string{"metasystem test impact --check", "declared audits", "15", "full"}, SourceSHA256: "declaration"}}
 	current := CheckSelection{Version: 1, Base: "head", BaseTree: "base-tree", Groups: []string{"fast-static-build", "prerequisite", "unit/example"},
 		GroupDigests: map[string]string{"fast-static-build": "definition"}, PackageTests: map[string][]string{"example": {"TestExample"}},
 		Mode: "impact", ContractDigest: "contract", EngineDigest: "engine", GoVersion: "go fixture", GOOS: "darwin", GOARCH: "arm64",
@@ -36,7 +36,7 @@ func applicableCheckFixture(t *testing.T) (*CheckEvidence, CheckNeed) {
 }
 
 var applicabilityRows = []struct{ name, field string }{
-	{"match", ""}, {"tree", "tree"}, {"base", "base"}, {"base tree", "base"},
+	{"match", ""}, {"explicit legacy defaults", ""}, {"check kind", "check kind"}, {"check budget", "declaration"}, {"tree", "tree"}, {"base", "base"}, {"base tree", "base"},
 	{"declaration", "declaration"}, {"declaration digest", "declaration"}, {"commands", "commands"},
 	{"engine", "engine"}, {"toolchain", "toolchain"}, {"platform", "platform"}, {"architecture", "platform"}, {"build tags", "platform"},
 	{"environment", "environment"}, {"setting", "settings"}, {"workers", "settings"}, {"requirements", "requirements"}, {"closure", "requirements"},
@@ -49,6 +49,12 @@ var applicabilityRows = []struct{ name, field string }{
 
 func changeApplicableCheck(name string, e *CheckEvidence, n *CheckNeed) (*CheckEvidence, error) {
 	switch name {
+	case "explicit legacy defaults":
+		n.Check.Declaration.Values[4], n.Check.Declaration.Values[5] = "legacy", "6"
+	case "check kind":
+		n.Check.Declaration.Values[4] = "bounded"
+	case "check budget":
+		n.Check.Declaration.Values[5] = "7"
 	case "tree":
 		e.Content.Before, e.Content.After = "changed", "changed"
 	case "base":

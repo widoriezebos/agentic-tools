@@ -21,7 +21,7 @@ func TestAdmitDeclarationBaselineRequiresFullExceptCarry(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
-			snapshot := Declaration{Commit: "subject", Values: [4]string{"printf cheap", "true", "15", ""}}
+			snapshot := Declaration{Commit: "subject", Values: [6]string{"printf cheap", "true", "15", ""}}
 			if state == "ordinary complete" {
 				snapshot.Values[3] = "printf full"
 			}
@@ -208,7 +208,7 @@ func TestAdmitCheckAdmissionScope(t *testing.T) {
 func TestAdmitDeclarationAdmissionScope(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	main := Declaration{Commit: "main", Values: [4]string{"printf main", "true", "15", "printf full"}}
+	main := Declaration{Commit: "main", Values: [6]string{"printf main", "true", "15", "printf full"}}
 	candidate := main
 	candidate.Commit, candidate.Values[0] = "candidate", "printf changed"
 	c := DeclarationAdmission{Check: Check{Root: root, Installation: roots.Installation(root), Person: true, Now: time.Unix(1, 0),

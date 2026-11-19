@@ -74,7 +74,7 @@ func TestPublicationCheckThroughWorkReview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan.Check.Declaration = &launch.UnitDeclaration{Values: [4]string{plan.Check.Cheap, "declared audits", "15", "full"}, SourceSHA256: "declaration"}
+			plan.Check.Declaration = &launch.UnitDeclaration{Values: [6]string{plan.Check.Cheap, "declared audits", "15", "full"}, SourceSHA256: "declaration"}
 			plan.Check.Audits = "declared audits"
 			transferWriteJSON(t, planPath, plan)
 			current := launch.CheckSelection{Version: 1, Base: parent, ContractDigest: "contract", EngineDigest: "engine", GoVersion: "go fixture", GOOS: "fixture", GOARCH: "fixture", EnvironmentSHA256: "environment", Workers: 9, VerdictPolicyVersion: 1, Groups: []string{"fast-static-build", "prerequisite"}}

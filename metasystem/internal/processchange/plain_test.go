@@ -34,7 +34,7 @@ func TestProcessQuestionsSayWhatAndIfNothing(t *testing.T) {
 				}
 				want = channel.Plain{Decision: "Goal example wants to change a check it runs", IfNothing: "the check stays as it is"}
 			case "declaration":
-				main := Declaration{Commit: "main", Values: [4]string{"cheap", "audit", "15", "full"}}
+				main := Declaration{Commit: "main", Values: [6]string{"cheap", "audit", "15", "full"}}
 				candidate := main
 				candidate.Commit, candidate.Values[0] = "candidate", "different"
 				_, err := AdmitDeclaration(DeclarationAdmission{Check: c, Source: func() (Declaration, Declaration, Declaration, error) { return candidate, main, main, nil }})

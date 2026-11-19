@@ -21,7 +21,7 @@ import (
 )
 
 type UnitDeclaration struct {
-	Values                                                                    [4]string
+	Values                                                                    [6]string
 	Content, Commit, Tree, Branch, Directory, EnvironmentSHA256, SourceSHA256 string
 	FullArgv                                                                  []string
 }
@@ -136,6 +136,9 @@ func (output *outputProgress) Write(data []byte) (int, error) {
 }
 
 func (check UnitCheck) Run(directory, records string, context CheckContext) (string, []CheckExit, error) {
+	if err := check.RequireSupportedKind(); err != nil {
+		return "", nil, err
+	}
 	if check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Directory == "" || check.Environment == nil && check.Input == nil && check.DeclaredEnv == nil {
 		return "", nil, errors.New("the frozen unit check is incomplete")
 	}
