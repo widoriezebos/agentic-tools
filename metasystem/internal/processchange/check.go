@@ -219,6 +219,9 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	}
 	act = c.ProcessAct
 	if c.Resume {
+		if err := (launch.UnitCheck{Declaration: c.AfterDeclaration}).RequireSupportedKind(); err != nil {
+			return act, err
+		}
 		if c.Act == "" {
 			return act, nil
 		}
@@ -240,6 +243,10 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	candidate, main, inherited, problem := c.Source()
 	if problem != nil {
 		return act, problem
+	}
+	// Availability precedes every baseline, proposal and published snapshot.
+	if err := (launch.UnitCheck{Declaration: &candidate}).RequireSupportedKind(); err != nil {
+		return act, err
 	}
 	if os.IsNotExist(readErr) {
 		previous = declarationReference{Goal: c.Goal, Seed: main.Commit, Snapshot: main}

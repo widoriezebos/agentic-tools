@@ -43,8 +43,12 @@ func TestUnitCheckKindAndBudgetSettings(t *testing.T) {
 			}
 			_, problems, err := Validate(conf, filepath.Dir(conf))
 			invalid := false
+			prefix := row.key + " "
+			if row.key == "proof.check-kind" {
+				prefix = "the check kind "
+			}
 			for _, problem := range problems {
-				invalid = invalid || strings.HasPrefix(problem, row.key+" ")
+				invalid = invalid || strings.HasPrefix(problem, prefix)
 			}
 			if err != nil || invalid == row.valid {
 				t.Fatalf("validation did not distinguish the check setting: %v", err)

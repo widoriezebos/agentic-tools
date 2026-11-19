@@ -55,7 +55,7 @@ func (check UnitCheck) RequireSupportedKind() error {
 		}
 	}
 	if values[4] != "legacy" {
-		return fmt.Errorf("proof.check-kind selects bounded, but this engine does not support bounded execution; no legacy check was substituted")
+		return fmt.Errorf("bounded checks are not available in this engine yet; the tree must declare legacy")
 	}
 	return nil
 }

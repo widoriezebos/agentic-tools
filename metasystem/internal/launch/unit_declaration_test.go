@@ -60,7 +60,7 @@ func TestUnitDeclarationOldResultAndUnsupportedKind(t *testing.T) {
 		check.Directory, check.Environment = t.TempDir(), []string{}
 		records := filepath.Join(t.TempDir(), "executions")
 		execution, exits, err := check.Run(check.Directory, records, CheckContext{})
-		if err == nil || !strings.Contains(err.Error(), "proof.check-kind") || execution != "" || len(exits) != 0 {
+		if err == nil || !strings.Contains(err.Error(), "check") || execution != "" || len(exits) != 0 {
 			t.Fatal("unsupported check fell through to legacy execution")
 		}
 		if _, err := os.Stat(records); !os.IsNotExist(err) {

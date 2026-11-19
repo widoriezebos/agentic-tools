@@ -99,7 +99,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: err}
 	}
 	if err := check.RequireSupportedKind(); err != nil {
-		return branch.GateObservation{}, err
+		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: err}
 	}
 	gatePath := filepath.Join(records, "gate.json")
 	var execution, latest string

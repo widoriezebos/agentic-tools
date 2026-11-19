@@ -60,7 +60,7 @@ func SettingValueProblem(key, value string) error {
 		}
 	}
 	if key == "proof.check-kind" && value != "legacy" && value != "bounded" {
-		return fmt.Errorf("proof.check-kind must be legacy or bounded")
+		return fmt.Errorf("the check kind must be legacy or bounded")
 	}
 	if key == "proof.deadline" || key == "proof.check-budget" {
 		minutes, err := strconv.ParseInt(value, 10, 64)

@@ -48,6 +48,13 @@ func TestDeclarationCheckSettingsAdmission(t *testing.T) {
 			candidate.Values[index] = map[int]string{4: "bounded", 5: "9"}[index]
 			published = false
 			act, err = AdmitDeclaration(admission)
+			if index == 4 {
+				if err == nil || !strings.Contains(err.Error(), "bounded") || published || act.Status == "proposed" {
+					t.Fatal("unavailable kind was admitted or proposed")
+				}
+				candidate.Values[4], candidate.Values[5] = "legacy", "9"
+				act, err = AdmitDeclaration(admission)
+			}
 			if err != nil || act.Status != "proposed" || published || act.AfterDeclaration.Values[index] != candidate.Values[index] {
 				t.Fatalf("changed check setting bypassed admission: status=%s error=%v", act.Status, err)
 			}
@@ -60,7 +67,7 @@ func TestDeclarationCheckSettingsAdmission(t *testing.T) {
 			if _, err := AdmitDeclaration(admission); err != nil {
 				t.Fatal(err)
 			}
-			candidate.Values[index] = map[int]string{4: "legacy", 5: "10"}[index]
+			candidate.Values[index] = map[int]string{4: "bounded", 5: "10"}[index]
 			if _, err := AdmitDeclaration(admission); err == nil {
 				t.Fatal("an approved act authorized different frozen check settings")
 			}
