@@ -1,0 +1,146 @@
+{
+  "canonicalRead": {
+    "engine": "b172a6d022cac0f4761aad079c402a51bb35fe74",
+    "findings": [],
+    "id": "code-critic-f2fb2871e3b61a2dd01112b9",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-f2fb2871e3b61a2dd01112b9/rounds/1/return.md",
+    "subject": {
+      "commit": "d9ca7834ad49c1940fb9903b4953f8040bd48571",
+      "diffDigest": "d0e2fc52e7c9f784d00b9cb15576282ea9ea931909c40d9c2e9e87d3c2f929ce",
+      "kind": "commit",
+      "parent": "c09946c3a484145a936797036b6855c07f7624fc",
+      "tree": "4564dff4d4e4a17e8e5d22f9f75455a4f766c0ac"
+    }
+  },
+  "readDigest": "112f8fd4c7e042deb34b71d4adf7340e6a53cd4eb8ab4f1bf50cf97eb3ebe2b1",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U3b",
+  "subject": {
+    "commit": "d9ca7834ad49c1940fb9903b4953f8040bd48571",
+    "parent": "c09946c3a484145a936797036b6855c07f7624fc",
+    "tree": "4564dff4d4e4a17e8e5d22f9f75455a4f766c0ac",
+    "patchDigest": "d0e2fc52e7c9f784d00b9cb15576282ea9ea931909c40d9c2e9e87d3c2f929ce",
+    "unitDigest": "b795d169bc747ce7004ff107cfa82566fe21fe54a55202604dd97a8f14621fde"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-f2fb2871e3b61a2dd01112b9",
+    "round": 1,
+    "closureSha256": "35499574acff0dea158f3ff5ae341cb1274d9add58e69806c3f235ad21e5953a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4564dff4d4e4a17e8e5d22f9f75455a4f766c0ac",
+    "runId": "goal-read-gate-20261119t060051z-25edab762e573944"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    },
+    {
+      "kind": "read",
+      "commit": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "digest": "e3d4d07e631878bb31a3c84ad9ebcba9b4a38476e962dd1a1159a10518e874df"
+    },
+    {
+      "kind": "read",
+      "commit": "24c745d4df8f577aa6bceeb6ff7878b262236e90",
+      "digest": "4b43b55d52435a45317cffd98af0af15b8226ee137fedbc01da424ba8bfcfe3b"
+    },
+    {
+      "kind": "read",
+      "commit": "828852661c4495ffdca9209a88e9d5bd13737f44",
+      "digest": "dd8a600364be4fab797315ad4e5afa2a628b2108e179f0acefc51224574d9616"
+    },
+    {
+      "kind": "read",
+      "commit": "85ea36c3e7beb9ba9257242fc6fcf1bc079b8a73",
+      "digest": "ff2d20782615929733426169ffe2d754d309714dc92f5ae35025225f6bfc7ab6"
+    },
+    {
+      "kind": "read",
+      "commit": "c09946c3a484145a936797036b6855c07f7624fc",
+      "digest": "9ba55052c058a1158466baae249974a223356d6510bce1d1bf66d21448d518aa"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/machine_revive_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/config/validate_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/execution_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/health_bed_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/health_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/rearm_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_liveness_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_replacement_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_step_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/supervision_bed_b_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/steward/testdata/fakerunner/main.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    },
+    {
+      "path": "metasystem/internal/up/recovery_repair_test.go",
+      "readerWord": "reviewed by critic root code-critic-f2fb2871e3b61a2dd01112b9"
+    }
+  ],
+  "sha256": "1f6210abd583f8668795c3c323cc491f4ca8df2052a2934a213cd9bcedd44b87"
+}
