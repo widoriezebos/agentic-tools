@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -483,6 +484,89 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			}
 		}
 	})
+}
+
+type restartUnreadableFamily struct{ inventory func() }
+
+func (restartUnreadableFamily) Name() string { return "unreadable" }
+func (f restartUnreadableFamily) Inventory() ([]stoptransition.Item, error) {
+	f.inventory()
+	return nil, errors.New("cannot inventory runners")
+}
+func (restartUnreadableFamily) Stop(stoptransition.Item) (stoptransition.Outcome, error) {
+	return stoptransition.Outcome{}, errors.New("unexpected stop")
+}
+
+func TestSystemRestartClearsTheRepairRecords(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"restart", "stop fails", "arm refuses", "busy", "clear fails"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			b := newProcessBed(t)
+			dir := filepath.Dir(steward.RepoIdentityPath(b.root()))
+			paths := []string{filepath.Join(dir, "runner-replacement.json"), filepath.Join(dir, "runner-repairs.json")}
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range paths {
+				if err := os.WriteFile(path, []byte("retained repair record"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertRecords := func(present bool) {
+				t.Helper()
+				for _, path := range paths {
+					_, err := os.Stat(path)
+					if present && err != nil || !present && !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("record %s present=%t: %v", path, present, err)
+					}
+				}
+			}
+			switch mode {
+			case "stop fails":
+				b.families = []stoptransition.Family{restartUnreadableFamily{inventory: func() { assertRecords(true) }}}
+			case "arm refuses":
+				b.armErr = errors.New("arm refused")
+			case "busy":
+				held, err := lock.File(filepath.Join(dir, "arm.flock"), 0o600, lock.Exclusive)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = held.Release() })
+			case "clear fails":
+				if err := os.Remove(paths[1]); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(paths[1], 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			owners := b.owners()
+			arm := owners.processes.process.armSteps
+			owners.processes.process.armSteps = func(scope processScope, scale int, authority processArmAuthority) (processArmResult, error) {
+				assertRecords(false)
+				return arm(scope, scale, authority)
+			}
+			code, result := b.runJSON(owners, "system", "restart")
+			retained := mode == "stop fails" || mode == "busy" || mode == "clear fails"
+			assertRecords(retained)
+			if retained {
+				if code == 0 || result.Outcome != intentPartial || b.armCalls != 0 {
+					t.Fatalf("failed restart: %d %+v arms=%d", code, result, b.armCalls)
+				}
+				if mode != "stop fails" {
+					if result.Data.(map[string]any)["reached"] != "stopped" || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "system", "restart"}) {
+						t.Fatalf("clear failure remedy: %+v", result)
+					}
+					if mode == "busy" && !strings.Contains(result.Summary, "a runner repair holds its lock") || mode == "clear fails" && !strings.Contains(result.Summary, paths[1]) {
+						t.Fatalf("clear failure lost cause: %+v", result)
+					}
+				}
+			} else if b.armCalls != 1 || mode == "restart" && (code != 0 || result.Outcome != intentConfirmed) || mode == "arm refuses" && result.Outcome != intentPartial {
+				t.Fatalf("restart: %d %+v arms=%d", code, result, b.armCalls)
+			}
+		})
+	}
 }
 
 // parkedHostFailureMission writes a mission parked for a host failure with

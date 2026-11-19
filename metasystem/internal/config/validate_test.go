@@ -638,3 +638,25 @@ func TestStuckLimitsMustBePositive(t *testing.T) {
 		}
 	}
 }
+
+func TestRunnerRepairLimitMustBePositive(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"0", "-1", "bad", "1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			problems := validateRepo(t, validConf+"steward.runner-repair-limit="+value+"\n")
+			if hasProblem(problems, "steward.runner-repair-limit must be a positive integer") != (value != "1") {
+				t.Fatalf("repair limit validation: %v", problems)
+			}
+		})
+	}
+	for _, setting := range CompiledSettings() {
+		if setting.Key == "steward.runner-repair-limit" {
+			if setting.Default != "3" || !setting.ProofInput {
+				t.Fatalf("repair limit default: %+v", setting)
+			}
+			return
+		}
+	}
+	t.Fatal("repair limit default missing")
+}

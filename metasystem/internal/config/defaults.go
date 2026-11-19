@@ -186,6 +186,8 @@ var coreSettings = []Setting{
 		Meaning: "minutes without progress, or past a wait's deadline, after which the resident runner reads as quiet"},
 	{Key: "steward.runner-failed-ticks", Default: "3", ProofInput: true,
 		Meaning: "consecutive failed ticks after which the resident runner reads as failing"},
+	{Key: "steward.runner-repair-limit", Default: "3", ProofInput: true,
+		Meaning: "starts for dead or failing runners without a successful tick before healing ends"},
 	{Key: "steward.stop-slow-sec", Default: "15", ProofInput: true,
 		Meaning: "a Stop using this many seconds of its sixty-second budget is unhealthy"},
 	{Key: "steward.stuck.build-min", Default: "45", Meaning: "minutes a running unit build may take before its seat reports it stuck"},

@@ -431,39 +431,13 @@ func TestWatcherLeavesAliveRunnerWithOverdueAttempt(t *testing.T) {
 }
 
 func TestWatcherRepairStopsWhenTheStewardBreakerEndsHealing(t *testing.T) {
-	root := t.TempDir()
-	top := mustAbs(t, root)
-	trueBinary, err := exec.LookPath("true")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	trueDigest, err := installDigest(trueBinary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-		RepoIdentity: top, Generation: 3, InstallPath: trueBinary, InstallDigest: trueDigest, MintedAt: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	state := HealthObservationState{
-		Sequence: 5, ObservedAt: now, UnknownCounts: map[HealthRole]int{},
-		FailureCounts: map[HealthRole]int{RoleStewardRunner: healthFailureLimit},
-	}
-	verdict := HealthVerdict{Schema: 1, ObservedAt: now, Observation: 5, Aggregate: "unhealthy"}
-	if err := saveHealthRecord(root, HealthRecordPath(root), healthRecord{State: state, Verdict: verdict}); err != nil {
-		t.Fatal(err)
-	}
-	outcome, err := RepairEnrolledRunner(root)
-	if err != nil || outcome.Status != AutoHealEnded || outcome.Generation != 3 {
-		t.Fatalf("the watcher must not repair after failure five: %+v %v", outcome, err)
-	}
-	if _, alive := liveRunner(root); alive {
-		t.Fatal("the ended breaker still launched a runner")
+	t.Parallel()
+	b := newReplacementBed(t)
+	delete(b.processes, b.old.Pid)
+	b.endAutoHealing(t)
+	outcome, err := b.step(t)
+	if err != nil || outcome.Status != AutoHealEnded || outcome.Generation != 148 || b.launches != 0 {
+		t.Fatalf("the watcher must stop at the repair limit: %+v %v launches=%d", outcome, err, b.launches)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
@@ -11,6 +12,31 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/testdata/startfixture"
 )
+
+func TestRecoveryAtTheRepairLimitNamesSystemRestart(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{steward.AutoHealEnded, "NOT_ENROLLED", "ENROLLMENT_CHANGED"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+			options := seatUpOptions(t)
+			options.RecoverOnly, options.IfDown = true, true
+			if err := os.WriteFile(filepath.Join(options.Root, "metasystem.conf"), []byte("steward.runner-repair-limit=7\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			options.RepairStewardRunner = func(string) (steward.RunnerRepairOutcome, error) {
+				return steward.RunnerRepairOutcome{Status: status}, nil
+			}
+			got := recovery(options)
+			want := "run ordinary metasystem session start from a session to establish the steward generation"
+			if status == steward.AutoHealEnded {
+				want = "the steward runner was started 7 times without a successful tick; run metasystem system restart in this checkout, which starts the count afresh"
+			}
+			if got.Outcome != "recovery-partial" || got.Remedy != want || component(got, "steward-runner").Remedy != want || !strings.Contains(strings.Join(got.Lines(), "\n"), want) {
+				t.Fatalf("recovery %s: %+v", status, got)
+			}
+		})
+	}
+}
 
 func buildRecoveryRunner(t *testing.T, directory, stamp string) string {
 	t.Helper()

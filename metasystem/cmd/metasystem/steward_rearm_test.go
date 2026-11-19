@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,9 +26,19 @@ import (
 
 func TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers(t *testing.T) {
 	t.Parallel()
+	testRearmRefusalPass(t, false)
+}
+
+func TestARequestedStopEndsThePassAfterTheRearm(t *testing.T) {
+	t.Parallel()
+	testRearmRefusalPass(t, true)
+}
+
+func testRearmRefusalPass(t *testing.T, stopAtRearm bool) {
+	t.Helper()
 	report := os.Getenv("HOUSEKEEPING_REARM_REPORT")
 	if report == "" {
-		runIsolatedRearm(t, nil)
+		runIsolatedRearm(t, t.Name(), nil)
 		return
 	}
 	registryPath, err := registry.DefaultPath()
@@ -66,15 +78,45 @@ func TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers(t *testing.T)
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
-	clock := &steward.HandoffClock{Now: func() time.Time { return now }, Sleep: func(d time.Duration) { now = now.Add(d) }}
+	stop := func() {
+		if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward", "stop"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	readProgress := func() steward.RunnerProgress {
+		data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "runner-progress.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var progress steward.RunnerProgress
+		if err := json.Unmarshal(data, &progress); err != nil {
+			t.Fatal(err)
+		}
+		return progress
+	}
+	sleeps := 0
+	clock := &steward.HandoffClock{Now: func() time.Time { return now }, Sleep: func(d time.Duration) {
+		sleeps++
+		progress := readProgress()
+		if sleeps != 1 || progress.Operation != "wait" || progress.State != "waiting" || progress.Reason != "idle" {
+			t.Fatalf("first clock sleep must close the pass at its idle wait: sleeps=%d progress=%+v", sleeps, progress)
+		}
+		now = now.Add(d)
+		stop()
+	}}
 	refreshes := 0
+	var pendingAtRearm []steward.PendingNotification
 	refresh := func() (bool, error) {
 		refreshes++
 		if err := steward.MintIntent(root, steward.Intent{Nonce: "prepared", RepoIdentity: "fixture", InstallGen: 1, Goal: "fix-it", Runtime: "fake", Model: "fixture"}); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward", "stop"), nil, 0o644); err != nil {
-			t.Fatal(err)
+		if stopAtRearm {
+			pendingAtRearm, err = steward.PendingNotifications(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stop()
 		}
 		return false, errors.New("this checkout's engine is behind the landing branch, and its source has local edits")
 	}
@@ -95,8 +137,29 @@ func TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers(t *testing.T)
 		t.Fatal("runner verb called Git")
 		return "", nil
 	})
-	// The queue is worked off: its notice is kept in the journal, from a person.
 	log, err := os.ReadFile(steward.NotificationJournalPath(root))
+	if stopAtRearm {
+		if code != 0 || refreshes != 1 || sleeps != 0 || err != nil || strings.Contains(string(log), `"ref":"pending"`) {
+			t.Fatalf("stop at rearm: exit=%d refreshes=%d sleeps=%d journal=%q error=%v stderr=%s", code, refreshes, sleeps, log, err, stderr.String())
+		}
+		if progress := readProgress(); progress.Operation != "rearm" {
+			t.Fatalf("stop at rearm began another duty: %+v", progress)
+		}
+		if nonce, live, err := steward.ResumableIntent(root); err != nil || !live || nonce != "prepared" {
+			t.Fatalf("stop at rearm revived the prepared intent: nonce=%q live=%t error=%v", nonce, live, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "steward", "cancelled", "prepared.json")); !os.IsNotExist(err) {
+			t.Fatalf("stop at rearm cancelled the prepared intent: %v", err)
+		}
+		if pending, err := steward.PendingNotifications(root); err != nil || !slices.Equal(pending, pendingAtRearm) || !slices.Contains(pending, steward.PendingNotification{Nonce: "pending", Message: "pending before refresh"}) {
+			t.Fatalf("stop at rearm did not retain the notice for the next runner: %+v %v", pending, err)
+		}
+		return
+	}
+	if sleeps != 1 {
+		t.Fatalf("runner did not end at its closing idle wait: sleeps=%d", sleeps)
+	}
+	// The queue is worked off: its notice is kept in the journal, from a person.
 	if code != 0 || refreshes != 1 || err != nil || !strings.Contains(string(log), `"message":"pending before refresh","source":"steward","ref":"pending","delivered":false,"withheld":"unknown"`) {
 		t.Fatalf("exit=%d refreshes=%d journal=%q error=%v stderr=%s", code, refreshes, log, err, stderr.String())
 	}
@@ -126,10 +189,10 @@ func TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers(t *testing.T)
 // runIsolatedRearm keeps the actual runner in a TestMain-owned child home.
 // The readiness pipe holds the child before its apply pass until live work
 // in the parent has established its findings and named owner record.
-func runIsolatedRearm(t *testing.T, overlap func(*testutil.HeldProcess)) {
+func runIsolatedRearm(t *testing.T, testName string, overlap func(*testutil.HeldProcess)) {
 	t.Helper()
 	report := t.TempDir()
-	command := exec.Command(os.Args[0], "-test.run=^TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers$", "-test.count=1", "-test.timeout=30m")
+	command := exec.Command(os.Args[0], "-test.run=^"+testName+"$", "-test.count=1", "-test.timeout=30m")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if name != "METASYSTEM_SUPERVISION_REGISTRY_HOME" && name != "METASYSTEM_TESTENV_REGISTRY_NONCE" {
@@ -208,7 +271,7 @@ func TestHousekeepingFixtureOwnership(t *testing.T) {
 	if err := os.WriteFile(findings, []byte("retained findings"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runIsolatedRearm(t, func(child *testutil.HeldProcess) {
+	runIsolatedRearm(t, "TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers", func(child *testutil.HeldProcess) {
 		if data, err := os.ReadFile(findings); err != nil || string(data) != "retained findings" {
 			t.Fatalf("live findings before sweep: %q %v", data, err)
 		}

@@ -36,10 +36,7 @@ func (b *executionBed) publishProgress(t *testing.T, change func(*RunnerProgress
 
 func (b *executionBed) endAutoHealing(t *testing.T) {
 	t.Helper()
-	if err := saveHealthRecord(b.root, HealthRecordPath(b.root), healthRecord{
-		State:   HealthObservationState{Sequence: 5, ObservedAt: b.now, UnknownCounts: map[HealthRole]int{}, FailureCounts: map[HealthRole]int{RoleStewardRunner: healthFailureLimit}},
-		Verdict: HealthVerdict{Schema: 1, ObservedAt: b.now, Observation: 5, Aggregate: "unhealthy"},
-	}); err != nil {
+	if err := writeJSONAtomic(runnerRepairsPath(b.root), runnerRepairs{SinceSuccess: 3, Since: b.now}); err != nil {
 		t.Fatal(err)
 	}
 }

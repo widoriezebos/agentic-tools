@@ -1058,24 +1058,42 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 }
 
 func repairEnrolledRunnerWithClock(repoRoot string, beforeLock func(), now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
-	return repairPreparedEnrolledRunner(repoRoot, (*EnrolledBinary).PrepareForExecution, func(top string, pinned *EnrolledBinary) (RunnerRepairOutcome, error) {
-		return repairPinnedRunnerWithClock(top, pinned, beforeLock, now, sleep)
-	})
+	top, pinned, outcome, err := openEnrolledRunnerForRepair(repoRoot)
+	if err != nil || pinned == nil {
+		return outcome, err
+	}
+	defer pinned.Close()
+	if err := pinned.PrepareForExecution(); err != nil {
+		if errors.Is(err, ErrPreparationBusy) {
+			return RunnerRepairOutcome{Status: RunnerRepairBusy, Generation: pinned.Install.Generation}, nil
+		}
+		return RunnerRepairOutcome{}, err
+	}
+	return repairPinnedRunnerWithClock(top, pinned, beforeLock, now, sleep)
 }
 
 // RepairStep takes one repair step without waiting for a held repair lock.
 func RepairStep(repoRoot string) (RunnerRepairOutcome, error) {
-	return repairPreparedEnrolledRunner(repoRoot, (*EnrolledBinary).TryPrepareForExecution, func(top string, pinned *EnrolledBinary) (RunnerRepairOutcome, error) {
-		deps := defaultRearmResolverDeps()
-		deps.launch = nil
-		return repairPinnedStep(top, pinned, runnerNow, deps)
-	})
+	top, pinned, outcome, err := openEnrolledRunnerForRepair(repoRoot)
+	if err != nil || pinned == nil {
+		return outcome, err
+	}
+	defer pinned.Close()
+	if err := pinned.TryPrepareForExecution(); err != nil {
+		if errors.Is(err, ErrPreparationBusy) {
+			return RunnerRepairOutcome{Status: RunnerRepairBusy, Generation: pinned.Install.Generation}, nil
+		}
+		return RunnerRepairOutcome{}, err
+	}
+	deps := defaultRearmResolverDeps()
+	deps.launch = nil
+	return repairPinnedStep(top, pinned, runnerNow, deps)
 }
 
-func repairPreparedEnrolledRunner(repoRoot string, prepare func(*EnrolledBinary) error, repair func(string, *EnrolledBinary) (RunnerRepairOutcome, error)) (RunnerRepairOutcome, error) {
+func openEnrolledRunnerForRepair(repoRoot string) (string, *EnrolledBinary, RunnerRepairOutcome, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
-		return RunnerRepairOutcome{}, err
+		return "", nil, RunnerRepairOutcome{}, err
 	}
 	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
 		top = resolved
@@ -1083,25 +1101,18 @@ func repairPreparedEnrolledRunner(repoRoot string, prepare func(*EnrolledBinary)
 	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
 		var stopped *StoppedError
 		if errors.As(err, &stopped) {
-			return RunnerRepairOutcome{Status: "FENCED", Generation: int(fence.Generation)}, nil
+			return "", nil, RunnerRepairOutcome{Status: "FENCED", Generation: int(fence.Generation)}, nil
 		}
-		return RunnerRepairOutcome{}, err
+		return "", nil, RunnerRepairOutcome{}, err
 	}
 	if _, err := os.Stat(RepoIdentityPath(top)); errors.Is(err, os.ErrNotExist) {
-		return RunnerRepairOutcome{Status: "NOT_ENROLLED"}, nil
+		return "", nil, RunnerRepairOutcome{Status: "NOT_ENROLLED"}, nil
 	}
 	pinned, err := OpenEnrolledBinary(top)
 	if err != nil {
-		return RunnerRepairOutcome{}, err
+		return "", nil, RunnerRepairOutcome{}, err
 	}
-	defer pinned.Close()
-	if err := prepare(pinned); err != nil {
-		if errors.Is(err, ErrPreparationBusy) {
-			return RunnerRepairOutcome{Status: RunnerRepairBusy, Generation: pinned.Install.Generation}, nil
-		}
-		return RunnerRepairOutcome{}, err
-	}
-	return repair(top, pinned)
+	return top, pinned, RunnerRepairOutcome{}, nil
 }
 
 func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func()) (RunnerRepairOutcome, error) {
@@ -1159,6 +1170,16 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 		return RunnerRepairOutcome{Status: "ENROLLMENT_CHANGED", Generation: installed.Generation}, nil
 	}
 	at := now()
+	count, limit, succeeded, err := runnerRepairsState(top)
+	if err != nil {
+		return RunnerRepairOutcome{}, fmt.Errorf("read steward repair count: %w", err)
+	}
+	if succeeded {
+		if err := os.Remove(runnerRepairsPath(top)); err != nil {
+			return RunnerRepairOutcome{}, err
+		}
+		count = runnerRepairs{}
+	}
 	pending, err := readRunnerReplacement(top)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
@@ -1185,11 +1206,7 @@ func repairPinnedStep(top string, pinned *EnrolledBinary, now func() time.Time, 
 	if running && execution.Digest != installed.InstallDigest {
 		return beginReplacement(top, pinned, previous, running, "obsolete-engine", at, deps)
 	}
-	ended, err := AutoHealingEnded(top, RoleStewardRunner)
-	if err != nil {
-		return RunnerRepairOutcome{}, fmt.Errorf("read steward health breaker: %w", err)
-	}
-	if ended {
+	if count.SinceSuccess >= limit {
 		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
 	}
 	// No elapsed time replaces a live runner: only a dead or failing reading does.

@@ -1483,6 +1483,12 @@ func runIntentSystemRestart(inv *intentInvocation) int {
 			Decision: "resolve the survivors listed above, then run metasystem system restart again",
 			Data:     map[string]any{"reached": "stopping", "stop": map[string]any{"lines": nonNilLines(stopped.Lines), "exitCode": stopped.ExitCode}}})
 	}
+	if err := steward.ClearRunnerRepairs(scope.Installation.Path()); err != nil {
+		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, text: stopped.Lines,
+			Summary: "restart stopped the checkout, but could not clear the runner repair records: " + err.Error(),
+			next:    inv.publicArgv(append([]string{"system", "restart"}, inv.forward("installation", "temporary-human-word", "review-by")...)...), nextReason: "retry once the runner repair records can be cleared",
+			Data: map[string]any{"reached": "stopped", "stop": map[string]any{"lines": nonNilLines(stopped.Lines), "exitCode": stopped.ExitCode}}})
+	}
 	armed, refusal := owners.arm(scope, scale, inv.input.text("temporary-human-word"), inv.input.text("review-by"))
 	lines := append(append([]string(nil), stopped.Lines...), armed.Lines...)
 	if refusal != nil {

@@ -246,12 +246,7 @@ func TestAPendingTransitionGoesBeforeTheBreakerAndTheVerdict(t *testing.T) {
 				t.Fatalf("begin: %+v %v", got, err)
 			}
 			if change == "breaker" {
-				if err := saveHealthRecord(b.root, HealthRecordPath(b.root), healthRecord{
-					State:   HealthObservationState{Sequence: 5, ObservedAt: b.now, FailureCounts: map[HealthRole]int{RoleStewardRunner: healthFailureLimit}},
-					Verdict: HealthVerdict{Schema: 1, ObservedAt: b.now, Observation: 5, Aggregate: "unhealthy"},
-				}); err != nil {
-					t.Fatal(err)
-				}
+				b.endAutoHealing(t)
 				launch := b.deps.launch
 				b.deps.launch = func(root string, pinned *EnrolledBinary, lineage string) (RunnerRecord, error) {
 					pending, err := readRunnerReplacement(root)

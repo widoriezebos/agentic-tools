@@ -1222,8 +1222,18 @@ func recovery(options Options) (result Result) {
 		return result
 	}
 	if repair.Status == "NOT_ENROLLED" || repair.Status == "ENROLLMENT_CHANGED" || repair.Status == steward.AutoHealEnded {
+		remedy := "run ordinary metasystem session start from a session to establish the steward generation"
+		if repair.Status == steward.AutoHealEnded {
+			limit, err := steward.RunnerRepairLimit(options.Root)
+			if err != nil {
+				result := failure(components, "steward-runner", err, "check steward.runner-repair-limit in metasystem.conf")
+				result.Outcome = "recovery-partial"
+				return result
+			}
+			remedy = fmt.Sprintf("the steward runner was started %d times without a successful tick; run metasystem system restart in this checkout, which starts the count afresh", limit)
+		}
 		result := failure(components, "steward-runner", fmt.Errorf("recovery stopped with %s", repair.Status),
-			"run ordinary metasystem session start from a session to establish the steward generation")
+			remedy)
 		result.Outcome = "recovery-partial"
 		return result
 	}

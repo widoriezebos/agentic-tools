@@ -91,7 +91,7 @@ func beginReplacement(root string, pinned *EnrolledBinary, previous RunnerRecord
 		}
 	}
 	if pending.Phase == "launching" {
-		return launchReplacement(root, pinned, pending, deps)
+		return launchReplacement(root, pinned, pending, now, deps)
 	}
 	if err := writeJSONAtomic(runnerReplacementPath(root), pending); err != nil {
 		return RunnerRepairOutcome{}, err
@@ -136,7 +136,7 @@ func continueReplacement(root string, pinned *EnrolledBinary, pending runnerRepl
 		pending.Phase, pending.PhaseSince = "launching", now
 	}
 	if pending.Launched.Pid == 0 {
-		return launchReplacement(root, pinned, pending, deps)
+		return launchReplacement(root, pinned, pending, now, deps)
 	}
 	replacement, alive := liveRunnerWithProber(root, deps.prober)
 	if alive && replacement.Pid == pending.Launched.Pid && identity.LiveRef(deps.prober, runnerRecordRef(replacement)) == identity.Alive {
@@ -159,11 +159,16 @@ func continueReplacement(root string, pinned *EnrolledBinary, pending runnerRepl
 	return RunnerRepairOutcome{Status: RunnerRepairLaunching, Generation: pending.Generation, PreviousPid: pending.Runner.Pid}, nil
 }
 
-func launchReplacement(root string, pinned *EnrolledBinary, pending runnerReplacement, deps rearmResolverDeps) (RunnerRepairOutcome, error) {
+func launchReplacement(root string, pinned *EnrolledBinary, pending runnerReplacement, now time.Time, deps rearmResolverDeps) (RunnerRepairOutcome, error) {
 	if err := writeJSONAtomic(runnerReplacementPath(root), pending); err != nil {
 		return RunnerRepairOutcome{}, err
 	}
 	// Repairs have no arming caller; the new runner reports no-lease.
+	if pending.Cause == "dead" || pending.Cause == "failing" {
+		if err := chargeRunnerRepair(root, now); err != nil {
+			return RunnerRepairOutcome{}, err
+		}
+	}
 	var err error
 	if deps.launch == nil {
 		pending.Launched, err = startRunner(root, pinned, "")

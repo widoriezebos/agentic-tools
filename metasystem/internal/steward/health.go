@@ -2318,20 +2318,6 @@ func loadHealthRecord(path string) (healthRecord, error) {
 	return record, nil
 }
 
-// AutoHealingEnded reports the durable five-observation breaker for one role.
-// A missing record means no observation has ended healing yet; unreadable
-// state never authorizes a repair.
-func AutoHealingEnded(repoRoot string, role HealthRole) (bool, error) {
-	record, err := loadHealthRecord(HealthRecordPath(repoRoot))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return record.State.FailureCounts[role] >= healthFailureLimit, nil
-}
-
 func saveHealthRecord(repoRoot, path string, record healthRecord) error {
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
