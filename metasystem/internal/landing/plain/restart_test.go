@@ -730,12 +730,12 @@ func TestRestartCannotReopenUntilTerminationIsConfirmed(t *testing.T) {
 	}
 	_ = child.Process.Kill()
 	_ = child.Wait()
+	<-done
 	seams.Alive = nil
 	selected, err := SelectBatch(install, install, batch.Lane, seams)
 	if err != nil || !selected.Open {
 		t.Fatalf("confirmed retry: %+v %v", selected, err)
 	}
-	<-done
 }
 
 func TestRestartCannotLaunchAfterCancellationOrLossOfOwnership(t *testing.T) {

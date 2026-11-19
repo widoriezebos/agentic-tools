@@ -1,9 +1,7 @@
 package identity
 
 import (
-	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -15,18 +13,10 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 		t.Fatalf("an empty tag scans nothing: %v %v", alive, certain)
 	}
 
-	// A real child carrying the tag in its argv IS a survivor —
-	// exactly the orphaned `util hold` shape the kill-less reapers
-	// must defer on. The tag rides argv[0] via a symlink: a shell
-	// wrapper's trailing argument is NOT durable (bash exec-optimizes
-	// `-c 'sleep 30'` into a bare sleep and the tag vanishes — this
-	// leg went red exactly that way inside an adopted target's gate).
+	// The shell carries the tag in $0. The trailing exit keeps the shell
+	// from replacing itself with sleep, which would lose the tag.
 	tag := "metasystem-survivor-scan-fixture"
-	link := filepath.Join(t.TempDir(), tag)
-	if err := os.Symlink("/bin/sleep", link); err != nil {
-		t.Fatal(err)
-	}
-	child := exec.Command(link, "30")
+	child := exec.Command("/bin/sh", "-c", "sleep 30; exit 0", tag)
 	// Its own process group: the indeterminacy scope the reapers
 	// pass is the recorded group, and the test's assertions must not
 	// depend on whatever else this machine runs under go test's
@@ -39,15 +29,36 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	// The scan reads only the test's own child: no other process of the
 	// host (another test's, or a pid reused into childGroup) decides it.
 	processes := ListedProcessTable{childGroup}
+	reaped := false
 	defer func() {
-		_ = child.Process.Kill()
-		_, _ = child.Process.Wait()
+		if !reaped {
+			_ = syscall.Kill(-child.Process.Pid, syscall.SIGKILL)
+			_ = child.Wait()
+		}
 	}()
-	// The scan reads the kernel; the wait ends on the fact, and only the
-	// test binary's deadline ends a wait for a fact that never comes.
-	for alive, certain := TaggedSurvivors(processes, tag, 0, childGroup); !alive || !certain; alive, certain = TaggedSurvivors(processes, tag, 0, childGroup) {
-		time.Sleep(50 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	if testDeadline, ok := t.Deadline(); ok && testDeadline.Before(deadline) {
+		deadline = testDeadline.Add(-100 * time.Millisecond)
 	}
+	waitForSurvivor := func(wantAlive bool) {
+		t.Helper()
+		for {
+			alive, certain := TaggedSurvivors(processes, tag, 0, childGroup)
+			if alive == wantAlive && certain {
+				return
+			}
+			if wantAlive {
+				if _, state, err := (KernelProber{}).Probe(childGroup); err == nil && state == Dead {
+					t.Fatal("tagged child exited before it could be observed")
+				}
+			}
+			if !time.Now().Before(deadline) {
+				t.Fatalf("survivor scan did not settle: alive=%t certain=%t, want alive=%t", alive, certain, wantAlive)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	waitForSurvivor(true)
 
 	// The recorded custodian itself is excluded: a scan that counted
 	// the dead-but-probed custodian would defer forever.
@@ -57,9 +68,10 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 
 	// With the child gone the scan comes back clear and the verdict
 	// may conclude.
-	_ = child.Process.Kill()
-	_, _ = child.Process.Wait()
-	for alive, certain := TaggedSurvivors(processes, tag, 0, childGroup); alive || !certain; alive, certain = TaggedSurvivors(processes, tag, 0, childGroup) {
-		time.Sleep(50 * time.Millisecond)
+	if err := syscall.Kill(-child.Process.Pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
 	}
+	_ = child.Wait()
+	reaped = true
+	waitForSurvivor(false)
 }

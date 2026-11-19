@@ -3,12 +3,14 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func TestGateArgumentRefusals(t *testing.T) {
@@ -288,7 +290,7 @@ func TestGateCoverageHandoffClaimsAndPublishesAsTheProducer(t *testing.T) {
 		t.Fatalf("exit %d:\n%s", code, w.output())
 	}
 	pid := strconv.Itoa(os.Getpid())
-	suffix := " producer=" + pid + " caller=" + pid + " attempt=attempt-7 baseline=testing-coverage-floors.json root=" + w.root
+	suffix := " producer=" + pid + " caller=" + pid + " attempt=attempt-7 baseline=" + testpolicy.CoverageFloorsFile(runtime.GOOS) + " root=" + w.root
 	if want := []string{"coverage-eligible" + suffix, "coverage-begin" + suffix, "coverage-complete" + suffix}; !slices.Equal(w.coverage, want) {
 		t.Fatalf("coverage custody = %q, want %q", w.coverage, want)
 	}

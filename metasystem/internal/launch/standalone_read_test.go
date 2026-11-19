@@ -707,8 +707,8 @@ func TestStandaloneReadDeclaredBriefGitAdapter(t *testing.T) {
 // edited file, and only the index time tells Git to read the contents. The
 // production capture must still see the same-size edit, and must change
 // nothing in the source.
-func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
-	t.Parallel()
+func racyCleanIndexGitAdapter(t *testing.T) (string, string) {
+	t.Helper()
 	repo := t.TempDir()
 	runGit(t, repo, "init", "--object-format=sha1")
 	for _, setting := range [][]string{{"user.email", "test@example.invalid"}, {"user.name", "Test"}, {"index.skipHash", "false"}, {"feature.manyFiles", "false"}, {"index.version", "2"}} {
@@ -727,6 +727,12 @@ func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
 	runGit(t, repo, "add", "main.go")
 	runGit(t, repo, "update-index", "--index-version", "2")
 	newBlob := strings.TrimSpace(runGit(t, repo, "rev-parse", ":main.go"))
+	newID, err := hex.DecodeString(newBlob)
+	if err != nil || len(newID) != 20 {
+		t.Fatalf("new blob=%q err=%v", newBlob, err)
+	}
+	treeData := append([]byte("100644 main.go\x00"), newID...)
+	editedTree := fmt.Sprintf("%x", sha1.Sum(append(fmt.Appendf(nil, "tree %d\x00", len(treeData)), treeData...)))
 	indexPath := filepath.Join(strings.TrimSpace(runGit(t, repo, "rev-parse", "--absolute-git-dir")), "index")
 	index, err := os.ReadFile(indexPath)
 	if err != nil {
@@ -760,6 +766,29 @@ func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
 	}
 	head := runGit(t, repo, "rev-parse", "HEAD")
 	indexInfo, _ := os.Stat(indexPath)
+	t.Cleanup(func() {
+		after, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afterInfo, err := os.Stat(indexPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if runGit(t, repo, "rev-parse", "HEAD") != head || string(after) != string(index) || !afterInfo.ModTime().Equal(indexInfo.ModTime()) || string(data) != "new\n" {
+			t.Fatal("source HEAD, index or file changed")
+		}
+	})
+	return repo, editedTree
+}
+
+func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
+	t.Parallel()
+	repo, _ := racyCleanIndexGitAdapter(t)
 	runner := UnitRunner{Git: OSGitRunner{}}
 	diff, err := runner.WorktreeDiff(repo, "HEAD")
 	if err != nil {
@@ -768,11 +797,25 @@ func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
 	if !strings.Contains(string(diff), "-old\n+new\n") {
 		t.Fatalf("racily clean edit lost from capture: %q", diff)
 	}
-	after, _ := os.ReadFile(indexPath)
-	afterInfo, _ := os.Stat(indexPath)
-	data, _ := os.ReadFile(file)
-	if runGit(t, repo, "rev-parse", "HEAD") != head || string(after) != string(index) || !afterInfo.ModTime().Equal(indexInfo.ModTime()) || string(data) != "new\n" {
-		t.Fatal("source HEAD, index or file changed")
+}
+
+// Git's cached stat comparison and racy-clean rule require the real adapter;
+// a stub cannot prove that the copied index still discovers the edited blob.
+func TestSnapshotWorktreeRacyCleanIndexGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, sharedRefs := range []bool{false, true} {
+		t.Run(fmt.Sprint(sharedRefs), func(t *testing.T) {
+			t.Parallel()
+			repo, editedTree := racyCleanIndexGitAdapter(t)
+			runner := UnitRunner{Git: OSGitRunner{}}
+			snapshot, err := runner.snapshotWorktree(repo, sharedRefs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if snapshot.TreeID != editedTree {
+				t.Fatalf("snapshot lost the same-size edit: tree %s, want %s", snapshot.TreeID, editedTree)
+			}
+		})
 	}
 }
 

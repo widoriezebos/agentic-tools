@@ -58,9 +58,16 @@ func TestWitnessRefusalsReachTheFullProof(t *testing.T) {
 		{name: "wrong-start-identity", scope: "ENGINE", refusal: "witness consumer is not descended from its exact live controller identity",
 			setup: func(t *testing.T, w *gateWorld, wit *witness) {
 				editWitness(t, wit.path, func(s string) string {
-					started := regexp.MustCompile(`"startedAtSec":([0-9]+)`).FindStringSubmatch(s)[1]
-					value, _ := strconv.ParseInt(started, 10, 64)
-					return strings.Replace(s, `"startedAtSec":`+started, `"startedAtSec":`+strconv.FormatInt(value+1, 10), 1)
+					field := "startedAtSec"
+					if ticks := regexp.MustCompile(`"startTicks":([0-9]+)`).FindStringSubmatch(s); len(ticks) > 0 && ticks[1] != "0" {
+						field = "startTicks"
+					}
+					started := regexp.MustCompile(`"` + field + `":([0-9]+)`).FindStringSubmatch(s)[1]
+					value, err := strconv.ParseUint(started, 10, 64)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return strings.Replace(s, `"`+field+`":`+started, `"`+field+`":`+strconv.FormatUint(value+1, 10), 1)
 				})
 			}},
 		{name: "changed-payload", scope: "ENGINE", refusal: "full-tree manifest digest mismatch between witness and consumer",

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -1486,7 +1487,16 @@ func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (re
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	indexData, err := os.ReadFile(strings.TrimSpace(string(indexPath)))
+	sourceIndex, err := os.Open(strings.TrimSpace(string(indexPath)))
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	defer sourceIndex.Close()
+	indexInfo, err := sourceIndex.Stat()
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	indexData, err := io.ReadAll(sourceIndex)
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
@@ -1501,6 +1511,12 @@ func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (re
 	defer done()
 	index := filepath.Join(temporary, "index")
 	if err := os.WriteFile(index, indexData, 0o600); err != nil {
+		return repositorySnapshot{}, err
+	}
+	// Git rehashes racily clean entries using the index's modification time.
+	// Read that time and the bytes from the same open file: replacing the
+	// source index must not give old entries a newer, falsely clean time.
+	if err := os.Chtimes(index, indexInfo.ModTime(), indexInfo.ModTime()); err != nil {
 		return repositorySnapshot{}, err
 	}
 	objectDir := filepath.Join(temporary, "objects")
