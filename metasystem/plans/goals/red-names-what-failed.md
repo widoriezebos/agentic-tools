@@ -10,13 +10,14 @@
 - Next step: U1 brief, Astra to zero or stop rule, Codex by hand after steward-duties-run-on-every-tick, Opus read, land by hand Struggle program item 7 (2026-11-10, /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/struggle-program-2026-11-10.md): a unit keeping package + test + candidate identity through the report boundary for grouped checks (internal/landing/plain/report.go:52,59); test TestGroupedFailureRetainsPackageAndTest. The diagnostic-green integration goes to the-carry-check-classifies-a-flake at its next safe boundary. Program the-route-holds-when-something-deviates (2026-11-12, D8): build first U-a (90) the classifier keeps failed tests of every check section (unit_attribution.go:87), U-b (80) verdict inputs carry how a run ended (cancelled, unavailable, deadline, exit), U-c (50) no comparison when it cannot change the verdict, U-d (90) the deadline classified at checkCause with phase and progress including queued-for-admission (amends a-unit-check-ends-on-progress); then the flake units as designed.; WITHDRAWN 5FYARWVMSSH4RJAP0HN3N439X6: stale: it offers work revise for unit Ub on run 20261116t190200-9b52fa787b, which was stopped as Wido on 17 Nov 04:04 and whose unit is cancelled; a rebuild takes a new unit; ASKED HYB8RANKS0NGQ2C79Q772RXPVX (other): red-names-what-failed: a review found a real bug in unit Ua, and new unit Ua2 fixes it (reviewed clean). The engine still will not close Ua's review without a person accepting that finding. Will you accept it, given that the fix is already on the same branch?
 - OpenedAt: 2026-10-15T06:37:02Z
 - FirstClaimAt: 2026-11-16T07:24:13Z
-- Revision: 234
+- Revision: 235
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=N7JQMBSJYY7B3GF90CJBNNZW4D-m1e-faead29d minutes=2400 reviewRounds=20 goalRevision=216
 - Approved: by=human:Wido at=2026-11-15T08:50:17Z revision=217 opid=N7JQMBSJYY7B3GF90CJBNNZW4D-m1e-faead29d authority=proven digest=fd67de4311bd7e4ba4b761fb41b20d6e7ebd9d5e204cb1d64eac21de02b2e2d7 episode=217
 - Sliced: machine=ui lineage=steward-seat revision=227 at=2026-11-16T09:30:20Z
+- AcceptedRisk: finding=code-critic-e4c5e7de20d7f56bf80dac9d:1 chain=code-critic-e4c5e7de20d7f56bf80dac9d by=Wido opid=0ZHSFZN003QDRK9Y7MRB149SW1-ui-72278554
 - Claimed: machine=ui lineage=steward-seat at=2026-11-16T07:24:13Z areas="null" areas-source="01M4Z2REDNAMES000000000000A1@aeccb5c9fd93eb038f9949153ed991ba13afe0a729498ac0fa6ca94e1bd859fc" areas-known=false areas-warnings="[\"areas unknown for goal red-names-what-failed in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/red-names-what-failed.md\"]" revision=227 accountingRevision=227 episodeAt=2026-11-16T07:24:13Z episodeRevision=227
 - StopCapability: generation=227 revision=227 machine=ui claimEpoch=11 fenceEpoch=0
 
@@ -255,4 +256,5 @@ History:
 - 2026-11-18T10:01:30Z ZCKYPVV3DJ6YMJ6D83XJR3SJ11-ui-76faa029 withdraw-question actor=ui+steward targets=red-names-what-failed reason=question 5FYARWVMSSH4RJAP0HN3N439X6
 - 2026-11-18T11:05:27Z B6S3A6QYN1AE3WHT5XV1291TXF-ui-71c5cb39 rebase actor=ui+steward-seat targets=red-names-what-failed reason=rebased 20d7dbd594ef onto main 00c42fc48019; needs review: Ua
 - 2026-11-18T13:27:46Z 1XWACPGFK1GACGGNHKP15EEHQB-ui-71c5cb39 ask actor=ui+steward-seat targets=red-names-what-failed
-Integrity: sha256=9b329bcc790cd8204a67499d82c4e31e51e6b22a614587f879798b8e22eaad36
+- 2026-11-19T07:05:23Z 0ZHSFZN003QDRK9Y7MRB149SW1-ui-72278554 accept-risk actor=human:Wido targets=red-names-what-failed reason=fixed by unit Ua2 (baef0640e, clean read 03d5632cd); both land on the same goal branch (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-ui-red-names-what-failed/metasystem)
+Integrity: sha256=383faae6329d80615c06883f568489fd63fc86b93293118babd2ceadd7d1b0c4
