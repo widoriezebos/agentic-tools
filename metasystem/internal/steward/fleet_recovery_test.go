@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
@@ -81,8 +82,17 @@ func TestFleetRearmPreservesContinuation(t *testing.T) {
 	runnerSleep = func(d time.Duration) {
 		now = now.Add(d)
 		// The fake clock cannot advance kernel teardown or the launcher's Wait.
-		// Give both real time before the next process probe (200ms per 2s stop wait).
-		time.Sleep(5 * time.Millisecond)
+		// Pace one liveness recheck, then let the stop loop own escalation and
+		// failure. Each fake sleep requests at most one testenv.AwaitPause.
+		rechecked := false
+		testenv.Await(t, "the fixture runner to exit or yield to the next stop probe", func() bool {
+			_, alive := liveRunner(root)
+			if !alive || rechecked {
+				return true
+			}
+			rechecked = true
+			return false
+		})
 	}
 	home, err := HomeStateRoot()
 	if err != nil {
