@@ -1345,7 +1345,6 @@ func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, signal func(
 }
 
 func stopRunnerForReplacementWithClock(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error, now func() time.Time, sleep func(time.Duration), prober identity.Prober) error {
-	prober = replacementStopProber{prober}
 	if signal == nil {
 		signal = syscall.Kill
 	}
@@ -1378,18 +1377,6 @@ func stopRunnerForReplacementWithClock(repoRoot string, runner RunnerRecord, sig
 		sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("runner pid %d remained alive after replacement stop", runner.Pid)
-}
-
-// Replacement needs execution to end, not the parent's collection of the
-// exit status. Keep that distinction local to replacement stops.
-type replacementStopProber struct{ identity.Prober }
-
-func (p replacementStopProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
-	exact, state, err := p.Prober.Probe(pid)
-	if err == nil && state == identity.Alive && exact.Zombie {
-		state = identity.Dead
-	}
-	return exact, state, err
 }
 
 func shortCommit(commit string) string {

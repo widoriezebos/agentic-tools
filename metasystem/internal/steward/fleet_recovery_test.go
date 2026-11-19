@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +78,12 @@ func TestFleetRearmPreservesContinuation(t *testing.T) {
 	}
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
 	runnerNow = func() time.Time { return now }
-	runnerSleep = func(d time.Duration) { now = now.Add(d); runtime.Gosched() }
+	runnerSleep = func(d time.Duration) {
+		now = now.Add(d)
+		// The fake clock cannot advance kernel teardown or the launcher's Wait.
+		// Give both real time before the next process probe (200ms per 2s stop wait).
+		time.Sleep(5 * time.Millisecond)
+	}
 	home, err := HomeStateRoot()
 	if err != nil {
 		t.Fatal(err)
