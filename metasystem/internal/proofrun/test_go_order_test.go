@@ -78,8 +78,8 @@ func TestGoWorkerOrderProfilePacking(t *testing.T) {
 		executions = append(executions, PackageExecution{Package: partitions[i].Packages[0], Shard: i + 1, Mode: PackageExecuted, Status: "ok", ElapsedMS: &durations[i]})
 	}
 	root := t.TempDir()
-	loadGoLaunchHistory(roots.Installation(root), "profile", testpolicy.Group{}, partitions).save(partitions, executions)
-	history := loadGoLaunchHistory(roots.Installation(root), "profile", testpolicy.Group{}, partitions)
+	loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions).save(partitions, executions)
+	history := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions)
 	q := newGoWorkerOrder(ctx, history.weights(make([]int64, len(durations))), dependencies)
 	type job struct {
 		index   int

@@ -200,7 +200,7 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byP
 	if historyRoot == "" {
 		historyRoot = roots.Installation(request.Root)
 	}
-	nativeRequest.nativeHistory = loadGoLaunchHistory(historyRoot, goHistoryTree(request.Root, discovery), group, partitions, environment)
+	nativeRequest.nativeHistory = loadGoLaunchHistory(historyRoot, group, partitions, environment)
 	outcome, closeErr, coverageMerge, executions, launchErr := runGoPartitions(ctx, nativeRequest, group, request.Root, environment, expected,
 		partitions, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
 	result.Execution = executions

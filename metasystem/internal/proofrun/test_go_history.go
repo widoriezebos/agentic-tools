@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,17 +22,20 @@ import (
 const NativeHistoryRootEnvironment = "METASYSTEM_NATIVE_HISTORY_ROOT"
 
 type goLaunchHistory struct {
-	path      string
-	tree      string
-	keys      []string
-	durations map[string]int64
+	path        string
+	scope       string
+	packageKeys []string
+	packages    map[string]string
+	keys        []string
+	durations   map[string]int64
 }
 
 type goLaunchRecord struct {
-	Schema    int              `json:"schema"`
-	Tree      string           `json:"tree"`
-	Written   time.Time        `json:"written"`
-	Durations map[string]int64 `json:"durations"`
+	Schema    int               `json:"schema"`
+	Scope     string            `json:"scope"`
+	Packages  map[string]string `json:"packages"`
+	Written   time.Time         `json:"written"`
+	Durations map[string]int64  `json:"durations"`
 }
 
 func goHistoryDigest(value any) string {
@@ -39,31 +43,9 @@ func goHistoryDigest(value any) string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
-// The source closure is known from discovery, without Git or a completed
-// launch. An unreadable input disables this optimization, never the proof.
-func goHistoryTree(root string, discovery goDiscovery) string {
-	hash := sha256.New()
-	for _, name := range discovery.Inputs {
-		// Local configuration is neither a source input nor advisory evidence.
-		if strings.HasSuffix(name, ".local") {
-			return ""
-		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
-		if os.IsNotExist(err) && name == "go.sum" {
-			fmt.Fprintln(hash, "go.sum absent")
-			continue
-		}
-		if err != nil {
-			return ""
-		}
-		fmt.Fprintf(hash, "%s\x00%x\n", name, sha256.Sum256(data))
-	}
-	return fmt.Sprintf("%x", hash.Sum(nil))
-}
-
-func loadGoLaunchHistory(installation roots.Installation, tree string, group testpolicy.Group, partitions []goTestPartition, environments ...[]string) *goLaunchHistory {
-	h := &goLaunchHistory{tree: tree, durations: map[string]int64{}}
-	if installation == "" || tree == "" {
+func loadGoLaunchHistory(installation roots.Installation, group testpolicy.Group, partitions []goTestPartition, environments ...[]string) *goLaunchHistory {
+	h := &goLaunchHistory{durations: map[string]int64{}, packages: map[string]string{}}
+	if installation == "" {
 		return h
 	}
 	tags := slices.Clone(group.BuildTags)
@@ -84,12 +66,14 @@ func loadGoLaunchHistory(installation roots.Installation, tree string, group tes
 		OS, Arch, Go   string
 		Environment    map[string]string
 	}{tags, group.Race, group.Coverage, runtime.GOOS, runtime.GOARCH, runtime.Version(), buildEnvironment})
+	h.scope = goHistoryDigest([]string{filepath.Clean(string(installation)), variant})
 	// Keep variants apart: the tagged batch pass must not erase the suite.
 	h.path = installation.Path("artifacts", "agents", "proof-runs", "advisory", "native-"+variant+".json")
 	for _, partition := range partitions {
 		packages, names := slices.Clone(partition.Packages), slices.Clone(partition.Names)
 		slices.Sort(packages)
 		slices.Sort(names)
+		h.packageKeys = append(h.packageKeys, goHistoryDigest(packages))
 		h.keys = append(h.keys, goHistoryDigest(struct {
 			Packages, Names []string
 			Variant         string
@@ -97,16 +81,17 @@ func loadGoLaunchHistory(installation roots.Installation, tree string, group tes
 	}
 	data, err := os.ReadFile(h.path)
 	var record goLaunchRecord
-	if err != nil || json.Unmarshal(data, &record) != nil || record.Schema != 1 || record.Tree != tree || record.Written.IsZero() || time.Since(record.Written) < 0 || time.Since(record.Written) > 7*24*time.Hour {
+	if err != nil || json.Unmarshal(data, &record) != nil || record.Schema != 2 || record.Scope != h.scope || record.Written.IsZero() || time.Since(record.Written) < 0 || time.Since(record.Written) > 7*24*time.Hour {
 		return h
 	}
-	for _, duration := range record.Durations {
-		if duration <= 0 {
+	for key, duration := range record.Durations {
+		if duration <= 0 || record.Packages[key] == "" {
 			return h
 		}
 	}
 	if record.Durations != nil {
 		h.durations = record.Durations
+		h.packages = record.Packages
 	}
 	return h
 }
@@ -116,9 +101,30 @@ func (h *goLaunchHistory) weights(fallback []int64) []int64 {
 	if h == nil {
 		return weights
 	}
+	// Unknown costs lead measured work, retaining the relative static order.
+	// Durations and package means are milliseconds; add the static weight to
+	// the largest observation so test counts cannot masquerade as durations.
+	var largest int64
+	packageDurations := map[string][]int64{}
+	for key, duration := range h.durations {
+		largest = max(largest, duration)
+		pkg := h.packages[key]
+		packageDurations[pkg] = append(packageDurations[pkg], duration)
+	}
 	for i, key := range h.keys {
 		if duration := h.durations[key]; duration > 0 {
 			weights[i] = duration
+		} else if durations := packageDurations[h.packageKeys[i]]; len(durations) > 0 {
+			// Divide before summing to keep even large valid observations in range.
+			count := int64(len(durations))
+			var mean, remainder int64
+			for _, duration := range durations {
+				mean += duration / count
+				remainder += duration % count
+			}
+			weights[i] = mean + remainder/count
+		} else if largest > 0 {
+			weights[i] = largest + min(max(1, fallback[i]), math.MaxInt64-largest)
 		}
 	}
 	return weights
@@ -131,6 +137,7 @@ func (h *goLaunchHistory) save(partitions []goTestPartition, executions []Packag
 		return
 	}
 	durations := map[string]int64{}
+	packages := map[string]string{}
 	for i, key := range h.keys {
 		if old := h.durations[key]; old > 0 {
 			durations[key] = old
@@ -153,8 +160,11 @@ func (h *goLaunchHistory) save(partitions []goTestPartition, executions []Packag
 		if complete && elapsed > 0 {
 			durations[key] = elapsed
 		}
+		if durations[key] > 0 {
+			packages[key] = h.packageKeys[i]
+		}
 	}
-	data, err := json.Marshal(goLaunchRecord{Schema: 1, Tree: h.tree, Written: time.Now().UTC(), Durations: durations})
+	data, err := json.Marshal(goLaunchRecord{Schema: 2, Scope: h.scope, Written: time.Now().UTC(), Durations: durations, Packages: packages})
 	if err == nil {
 		_ = atomicfile.WriteVolatile(h.path, string(data)+"\n")
 	}
