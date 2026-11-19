@@ -1,6 +1,6 @@
 // Package durable owns the durability level of file and directory syncs.
 //
-// Every process starts at level full: Sync is File.Sync, which on macOS asks
+// Every process starts at level full: File.Sync on macOS asks
 // the drive to flush its cache. Only a Go test process can lower its own level
 // to kernel (plain fsync(2) on macOS, File.Sync elsewhere), and only by the
 // explicit call UseKernelInThisTestProcess, which testenv.MainWithSetup makes
@@ -15,6 +15,20 @@
 // file and directory sync of the engine goes through this package; an audit in
 // internal/testenv refuses a call of (*os.File).Sync anywhere else in the
 // module's non-test code.
+//
+// On macOS, each sync checks the open descriptor's filesystem. If its exact
+// mount name is MemoryVolumeRoot, the mount root is a directory owned by the
+// effective user, and its regular .mst-ram-backed file is owned by that user
+// (neither entry a symlink), that sync uses plain fsync regardless of the
+// process level. Every sync checks afresh; any failure keeps the process level.
+// State on this attested test memory volume is not flushed to a drive because
+// there is none under it. Production state does not live there.
+//
+// RAM backing is a cooperative attestation, not independently verified here.
+// The mounter writes .mst-ram-backed only after creating and mounting a RAM
+// device, before publishing readiness. A same-user process forging or copying
+// that marker onto a file-backed volume at the admitted mount name is outside
+// this guarantee. No subprocess or test-harness dependency checks the backing.
 package durable
 
 import (
@@ -87,6 +101,13 @@ func Sync(f *os.File) error {
 }
 
 func syncAt(level string, f *os.File, full, kernel func(*os.File) error) error {
+	return syncAtWith(level, f, full, kernel, memoryVolume)
+}
+
+func syncAtWith(level string, f *os.File, full, kernel func(*os.File) error, onMemoryVolume func(*os.File) bool) error {
+	if onMemoryVolume(f) {
+		level = levelKernel
+	}
 	if level == levelKernel {
 		return kernel(f)
 	}
