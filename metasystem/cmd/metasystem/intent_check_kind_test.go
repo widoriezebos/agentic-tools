@@ -17,7 +17,7 @@ func TestIntentUnitCheckKindFreezeAndExecution(t *testing.T) {
 	for _, row := range []struct{ name, settings, kind, budget string }{
 		{"absent", "", "legacy", "6"},
 		{"explicit legacy", "proof.check-kind=legacy\nproof.check-budget=9\n", "legacy", "9"},
-		{"bounded", "proof.check-kind=bounded\n", "bounded", "6"},
+
 		{"invalid kind", "proof.check-kind=unknown\n", "unknown", "6"},
 		{"invalid budget", "proof.check-budget=0\n", "legacy", "0"},
 	} {
@@ -76,23 +76,17 @@ func TestDeclaredCheckKindAndBudgetChangesHoldBeforeBuild(t *testing.T) {
 			}
 			code, _, _ := b.work("work", "build", b.id, "changed-kind", "--brief", b.brief("changed-kind.md", "Build.\n"), "--lines", "100")
 			acts := checkActs(t, b)
-			if setting == "proof.check-kind=bounded" {
-				if code == 0 || len(b.starter.launched()) != 0 || len(acts) != 0 {
-					t.Fatal("unavailable kind launched work or proposed approval")
-				}
-				return
-			}
 			if code == 0 || len(b.starter.launched()) != 0 || len(acts) != 1 || acts[0].Status != "proposed" || acts[0].Class != "declaration" {
 				t.Fatal("changed kind or budget bypassed declaration admission")
 			}
-			if acts[0].AfterDeclaration.Values[5] != "9" {
+			if acts[0].AfterDeclaration.Values[5] != "9" && acts[0].AfterDeclaration.Values[4] != "bounded" {
 				t.Fatal("declaration proposal lost the changed setting")
 			}
 		})
 	}
 }
 
-func TestBoundedBuildRefusesBeforeSavingAndLegacyRecovers(t *testing.T) {
+func TestUnknownBuildRefusesBeforeSavingAndLegacyRecovers(t *testing.T) {
 	t.Parallel()
 	for _, inherited := range []bool{false, true} {
 		t.Run(map[bool]string{false: "changed", true: "inherited"}[inherited], func(t *testing.T) {
@@ -100,15 +94,15 @@ func TestBoundedBuildRefusesBeforeSavingAndLegacyRecovers(t *testing.T) {
 			body := "proof.cheap=printf cheap\nproof.audits=printf audits\nproof.deadline=15\nproof.full=true # full\n"
 			b := declaredCheckBed(t, strings.Replace(body, "proof.full=true # full\n", "", 1))
 			b.head = "candidate-commit"
-			bounded := true
+			unknown := true
 			hook := b.workOwnersHook
 			b.workOwnersHook = func(work *intentWorkOwners) {
 				hook(work)
 				git := work.git
 				work.git = func(root string, args ...string) ([]byte, error) {
 					if len(args) == 2 && args[0] == "show" && (args[1] == "candidate-commit:metasystem.conf" || inherited && args[1] == "base-commit:metasystem.conf") {
-						if bounded {
-							return []byte(body + "proof.check-kind=bounded\n"), nil
+						if unknown {
+							return []byte(body + "proof.check-kind=unknown\n"), nil
 						}
 						return []byte(body + "proof.check-kind=legacy\n"), nil
 					}
@@ -118,7 +112,7 @@ func TestBoundedBuildRefusesBeforeSavingAndLegacyRecovers(t *testing.T) {
 			brief := b.brief("recover-kind.md", "Build.\n")
 			code, result, _ := b.work("work", "build", b.id, "recover-kind", "--brief", brief, "--lines", "100")
 			if code == 0 || len(b.starter.launched()) != 0 {
-				t.Fatal("bounded declaration launched a builder")
+				t.Fatal("unknown declaration launched a builder")
 			}
 			for _, pattern := range []string{
 				filepath.Join(b.root(), "process", "declaration-*.json"),
@@ -128,13 +122,13 @@ func TestBoundedBuildRefusesBeforeSavingAndLegacyRecovers(t *testing.T) {
 			} {
 				matches, err := filepath.Glob(pattern)
 				if err != nil || len(matches) != 0 {
-					t.Errorf("bounded refusal saved state matching %s", pattern)
+					t.Errorf("unknown refusal saved state matching %s", pattern)
 				}
 			}
-			if !strings.Contains(result.Summary, "bounded") {
+			if !strings.Contains(result.Summary, "the check kind must be legacy or bounded") {
 				t.Fatal("refusal did not explain the unavailable kind")
 			}
-			bounded = false
+			unknown = false
 			code, built, _ := b.work("work", "build", b.id, "recover-kind", "--brief", brief, "--lines", "100")
 			if code != 0 || len(b.starter.launched()) == 0 {
 				t.Fatalf("legacy did not recover without repair: %s", built.Summary)
@@ -148,17 +142,17 @@ func TestBoundedBuildRefusesBeforeSavingAndLegacyRecovers(t *testing.T) {
 	}
 }
 
-func TestBoundedCarryFlagsUnitAndContinues(t *testing.T) {
+func TestUnknownCarryFlagsUnitAndContinues(t *testing.T) {
 	t.Parallel()
 	for _, inherited := range []bool{false, true} {
 		t.Run(map[bool]string{false: "changed", true: "inherited"}[inherited], func(t *testing.T) {
 			t.Parallel()
 			declaration := "proof.cheap=true\nproof.audits=true\nproof.deadline=15\nproof.check-kind=legacy\n"
-			bounded := strings.Replace(declaration, "=legacy", "=bounded", 1)
+			unknown := strings.Replace(declaration, "=legacy", "=unknown", 1)
 			if inherited {
-				declaration = bounded
+				declaration = unknown
 			}
-			b, owners, main, _ := declaredCarryBed(t, declaration, false, bounded+"proof.full=printf full-suite\n")
+			b, owners, main, _ := declaredCarryBed(t, declaration, false, unknown+"proof.full=printf full-suite\n")
 			// The second unit returns to the inherited declaration.
 			writeUnitCarryFile(t, filepath.Join(b.worktree, "metasystem.conf"), declaration+"proof.full=printf full-suite\n")
 			writeUnitCarryFile(t, filepath.Join(b.worktree, "second.go"), "second change\n")
@@ -184,11 +178,11 @@ func TestBoundedCarryFlagsUnitAndContinues(t *testing.T) {
 			if err != nil || json.Unmarshal(data, &rebased) != nil {
 				t.Fatal("cannot read carry result")
 			}
-			if code != 0 || !slices.Contains(rebased.NeedsReview, "u1") || !strings.Contains(rebased.ReviewReasons["u1"], "bounded") {
+			if code != 0 || !slices.Contains(rebased.NeedsReview, "u1") || !strings.Contains(rebased.ReviewReasons["u1"], "the check kind must be legacy or bounded") {
 				t.Fatalf("unavailable first unit stopped carry: code=%d summary=%s", code, result.Summary)
 			}
 			if inherited {
-				if !slices.Equal(rebased.NeedsReview, []string{"u1", "u2"}) || !strings.Contains(rebased.ReviewReasons["u2"], "bounded") {
+				if !slices.Equal(rebased.NeedsReview, []string{"u1", "u2"}) || !strings.Contains(rebased.ReviewReasons["u2"], "the check kind must be legacy or bounded") {
 					t.Fatal("carry did not flag the second unavailable unit")
 				}
 			} else if !slices.Equal(rebased.Carried, []string{"u2"}) {
@@ -207,7 +201,7 @@ func TestBoundedCarryFlagsUnitAndContinues(t *testing.T) {
 				if err != nil || json.Unmarshal(data, &check) != nil {
 					t.Fatal("cannot read carry snapshot")
 				}
-				if check.Declaration != nil && check.Declaration.EffectiveValues()[4] == "bounded" {
+				if check.Declaration != nil && check.Declaration.EffectiveValues()[4] == "unknown" {
 					t.Fatal("carry saved an unavailable declaration")
 				}
 			}

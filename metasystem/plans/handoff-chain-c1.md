@@ -1,11 +1,11 @@
 # Bounded unit checks
 
-- Owner: Astra, branch `chain-c1b`, direct build requested by Wido.
-- Status: declaration lifecycle implemented; bounded execution is unavailable and refused before admission writes a baseline, proposal or snapshot. Returning to legacy permits the same build to proceed; carry flags unavailable units and continues. The default remains legacy.
-- Contract: `proof.check-kind` accepts `legacy` or `bounded`; `proof.check-budget` is positive execution minutes, default six. Both travel with admission, frozen rounds and inverse restoration. Default legacy declarations keep their old serialized form for carried-gate digests.
-- Correction 1: the capability decision remains in `UnitCheck.RequireSupportedKind`; admission invokes it before saving. The owner states nobody ran the original declaration build, so no persisted-record migration is needed.
-- Review first: `internal/launch/unit_declaration.go` and the resume comparison in `internal/processchange/check.go`. Resume must decode an act separately from the caller's frozen declaration.
-- Next build: connect prerequisites and nomination-first/changed-package feedback to these settings; implement the execution budget, process-tree settlement, admission-wait recording, ordinary-round continuation and status. Publication and carry must obtain their own sufficient gate when feedback is incomplete.
-- Still owed: builder and reader nomination transport, builder instructions, bounded mixed-version record safety, all bounded execution/continuation fixtures, and the two additional carry route fixtures from the first independent critique. No lane changes or default switch belong in this slice.
-- External brief and report: `lane-test-20261009/briefs/chain-C1-slice2-brief.md` and `lane-test-20261009/panes/chain-c1b-report.txt` in the shared evidence directory. The report owns exact verification results and timing.
-- Waiting: no user decision is needed for this partial build. Independent review, the remaining implementation and the owner's complete proof remain separate work; no push is authorized.
+- Owner: Astra, branch `chain-c1-run`, direct build requested by Wido.
+- Status: a committed bounded declaration now admits and executes static and audits, then builder nominations and changed packages under its frozen execution budget. Budget exhaustion proceeds to read and is never publication or carry coverage. Default remains legacy.
+- Contract: kind and positive execution-minute budget remain frozen, approved and inversely restored. A person’s manual repair also admits a bounded declaration before executing an explicitly manual legacy check.
+- Evidence: bounded results use version 2; only complete feedback writes named feedback evidence, which is weaker than the independent publication/carry gate. Old complete gate records retain their old interpretation.
+- Ownership: existing unit check owns selection and outcomes; existing resource custodian settles descendants, including observed session escapees; existing round/status/publication/carry owners interpret outcomes.
+- Deferred by the adopted brief: reader nominations, concurrent reads (C2), lane changes and switching the default.
+- External brief, independent acceptance table and report: `lane-test-20261009/briefs/chain-C1-run-brief.md`, `lane-test-20261009/panes/chain-c1-run-acceptance.md`, and `lane-test-20261009/panes/chain-c1-run-report.txt` in the shared evidence directory. The report owns exact checks, coverage limits and timing.
+- Review limits: the external report challenges the appended branch-read/remainder-gate rulings; a Linux kernel OOM-record adapter is not implemented. Full acceptance-table closure is not claimed.
+- No push is authorized. Independent review remains separate work.

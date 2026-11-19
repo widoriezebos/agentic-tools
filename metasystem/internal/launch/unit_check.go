@@ -2,6 +2,7 @@ package launch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +48,7 @@ type UnitCheck struct {
 	Declaration *UnitDeclaration `json:"declaration,omitempty"`
 }
 type CheckExit struct {
+	Cut     bool    `json:"cut,omitempty"`
 	Name    string  `json:"name"`
 	Exit    int     `json:"exit"`
 	Output  string  `json:"output"`
@@ -55,11 +57,18 @@ type CheckExit struct {
 }
 
 type CheckExecution struct {
+	Kind                                                           string `json:",omitempty"`
 	ExecutionID, Goal, Run, Round, Role, BriefSHA256, SourceSHA256 string
 	Steps                                                          []processmeasure.Step
 	Outcome                                                        CheckOutcome `json:",omitempty"`
 }
 type CheckContext struct {
+	Context       context.Context
+	RunCommand    func(context.Context, *exec.Cmd) error
+	Complete      bool
+	AdmissionWait time.Duration
+	Nominations   CheckNominations
+	ChangedPaths  func(string, string) ([]string, error)
 	CheckExecution
 	Parent   string
 	Worktree string
@@ -75,6 +84,7 @@ type CheckContext struct {
 // CheckEvidence binds completed commands to the content and selection they proved.
 // Base and execution context are retained unchanged in Selection.
 type CheckEvidence struct {
+	Tests                        []string `json:",omitempty"`
 	Version                      int
 	Outcome                      CheckOutcome `json:",omitempty"`
 	Content                      struct{ Before, After string }
@@ -141,6 +151,9 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	}
 	if check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Directory == "" || check.Environment == nil && check.Input == nil && check.DeclaredEnv == nil {
 		return "", nil, errors.New("the frozen unit check is incomplete")
+	}
+	if check.Kind() == "bounded" && !context.Complete {
+		return check.runBounded(directory, records, context)
 	}
 	if err := check.admit(); err != nil {
 		return "", nil, err

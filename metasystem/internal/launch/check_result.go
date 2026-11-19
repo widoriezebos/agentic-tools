@@ -8,6 +8,7 @@ import (
 type CheckOutcome string
 
 const (
+	CheckCancelled          CheckOutcome = "cancelled"
 	CheckPassed             CheckOutcome = "passed"
 	CheckFailed             CheckOutcome = "failed"
 	CheckBudgetExhausted    CheckOutcome = "budget-exhausted"
@@ -17,12 +18,20 @@ const (
 // CheckResult records execution, independently of whether its evidence applies
 // to a later tree. Only a complete pass can authorize publication or carry.
 type CheckResult struct {
-	Version     int          `json:"version,omitempty"`
-	Outcome     CheckOutcome `json:"outcome,omitempty"`
-	ExecutionID string       `json:"executionId"`
-	Directory   string       `json:"runDirectory,omitempty"`
-	Check       UnitCheck    `json:"check"`
-	Exits       []CheckExit  `json:"exits"`
+	Kind                 string       `json:"kind,omitempty"`
+	Selected             []string     `json:"selected,omitempty"`
+	Ran                  []string     `json:"ran,omitempty"`
+	NotRun               []string     `json:"notRun,omitempty"`
+	Skipped              []string     `json:"skipped,omitempty"`
+	AdmissionWaitSeconds float64      `json:"admissionWaitSeconds,omitempty"`
+	PrerequisiteSeconds  float64      `json:"prerequisiteSeconds,omitempty"`
+	FeedbackSeconds      float64      `json:"feedbackSeconds,omitempty"`
+	Version              int          `json:"version,omitempty"`
+	Outcome              CheckOutcome `json:"outcome,omitempty"`
+	ExecutionID          string       `json:"executionId"`
+	Directory            string       `json:"runDirectory,omitempty"`
+	Check                UnitCheck    `json:"check"`
+	Exits                []CheckExit  `json:"exits"`
 }
 
 // RequirePassed also reads retained results from before outcomes were recorded.
@@ -31,6 +40,17 @@ type CheckResult struct {
 func (result CheckResult) RequirePassed() error {
 	if err := result.Check.RequireSupportedKind(); err != nil {
 		return err
+	}
+	if result.Version == 2 && result.Check.Kind() == "bounded" {
+		if result.Outcome != CheckPassed || result.ExecutionID == "" || len(result.NotRun) != 0 || len(result.Exits) < 2 || result.Exits[0].Name != "static" || result.Exits[1].Name != "audits" {
+			return fmt.Errorf("the bounded check is not a complete pass")
+		}
+		for _, exit := range result.Exits {
+			if exit.Exit != 0 || exit.Error != "" || exit.Cut {
+				return fmt.Errorf("the bounded check has an incomplete command")
+			}
+		}
+		return nil
 	}
 	if result.Version != 0 && result.Version != 1 {
 		return fmt.Errorf("the unit check result has an unsupported version")
@@ -61,6 +81,9 @@ func ReadCheckResult(execution string) (CheckResult, error) {
 // outcome also owns round attribution: only a deadline with no other failure
 // is an environment failure. A signal kill keeps the failed-round consequence.
 func (execution CheckExecution) outcome() CheckOutcome {
+	if execution.Kind == "bounded" && execution.Outcome != "" {
+		return execution.Outcome
+	}
 	outcome := CheckPassed
 	complete := len(execution.Steps) == 2
 	for _, step := range execution.Steps {

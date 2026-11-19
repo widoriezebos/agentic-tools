@@ -1066,6 +1066,14 @@ func (runner *UnitRunner) judgeBuildResult(record *UnitRunRecord, round *UnitRou
 		data = []byte(strings.ReplaceAll(launch.Measurement.ResultTail, " | ", "\n"))
 	}
 	word, open := parseBuildResult(string(data))
+	nominationPath := filepath.Join(round.Directory, "nominations.json")
+	if _, err := os.Stat(nominationPath); os.IsNotExist(err) {
+		if err := writeUnitJSON(nominationPath, ParseCheckNominations(string(data)), runner.root()); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
 	if word == "PARTIAL" || word == "FAILED" {
 		if open != "" {
 			if _, err := atomicfile.WriteText(filepath.Join(round.Directory, "open.md"), open, runner.root()); err != nil {

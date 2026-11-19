@@ -5,14 +5,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -128,7 +132,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		for _, path := range landing.WorkspaceExclusions() {
 			exclusions = append(exclusions, "metasystem/"+path)
 		}
-		if _, err := atomicfile.WriteText(plan.Build.Brief, enginePreface(directory, exclusions)+string(withoutEnginePreface(brief, enginePreface(directory, exclusions))), directory); err != nil {
+		if _, err := atomicfile.WriteText(plan.Build.Brief, enginePreface(directory, exclusions)+boundedBuildInstructions(check)+string(withoutEnginePreface(brief, enginePreface(directory, exclusions))), directory); err != nil {
 			return err
 		}
 		data, err := json.Marshal(plan)
@@ -188,6 +192,34 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				body, briefErr := os.ReadFile(brief)
 				checkContext := launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: record.Goal, Run: record.ID, Round: filepath.Base(round), Role: role, BriefSHA256: fmt.Sprintf("%x", sha256.Sum256(body))}, Parent: parent, Now: inv.unitRunner().Manager.Now}
 				checkContext.Worktree = strings.TrimSpace(string(top))
+				checkContext.ChangedPaths = func(directory, base string) ([]string, error) {
+					data, err := inv.work().git(directory, "diff", "--name-only", "-z", "--no-renames", "--relative", base, "--")
+					if err != nil {
+						return nil, err
+					}
+					untracked, err := inv.work().git(directory, "ls-files", "--others", "--exclude-standard", "-z", "--")
+					if err != nil {
+						return nil, err
+					}
+					return strings.FieldsFunc(string(append(data, untracked...)), func(r rune) bool { return r == 0 }), nil
+				}
+				if plan.Check.Kind() == "bounded" {
+					path := filepath.Join(round, "nominations.json")
+					if data, readErr := os.ReadFile(path); readErr == nil {
+						if decodeErr := json.Unmarshal(data, &checkContext.Nominations); decodeErr != nil {
+							return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the frozen test nominations could not be read"})
+						}
+					} else if !os.IsNotExist(readErr) {
+						return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the frozen test nominations could not be read"})
+					}
+				}
+				_, checkContext.Complete = lookup("METASYSTEM_PUBLICATION_BASE")
+				cancelled, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+				defer stopSignals()
+				checkContext.Context = cancelled
+				if inv.work().checkContext != nil {
+					inv.work().checkContext(&checkContext)
+				}
 				checkContext.Tree = func() (string, error) { return inv.unitRunner().CheckTree(checkContext.Worktree) }
 				if briefErr != nil {
 					checkContext.BriefSHA256 = ""
@@ -201,6 +233,11 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				}
 				install := inv.layout.InstallationRoot.Path()
 				var lease *proofrun.HostResourceLease
+				now := checkContext.Now
+				if now == nil {
+					now = time.Now
+				}
+				admissionStarted := now()
 				unmark := func() {}
 				if os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") != "" || !fixtureauth.FixtureModeRoot(install) {
 					var admissionErr error
@@ -218,6 +255,14 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 						fmt.Fprintf(inv.stderr, "unit check: the host's test admission could not be read (%v); the check runs without a slot\n", admissionErr)
 					}
 				}
+				checkContext.AdmissionWait = now().Sub(admissionStarted)
+				checkContext.RunCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+					err := proofrun.RunResourceTreeCommand(ctx, cmd, lease)
+					if errors.Is(err, proofrun.ErrResourceUnsettled) {
+						return fmt.Errorf("%w: %v", launch.ErrCheckUnsettled, err)
+					}
+					return err
+				}
 				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records, checkContext)
 				if execution != "" {
 					completed, readErr := launch.ReadCheckResult(execution)
@@ -225,7 +270,9 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					if err == nil {
 						err = readErr
 						if err == nil {
-							err = completed.RequirePassed()
+							if completed.Outcome != launch.CheckBudgetExhausted || checkContext.Complete {
+								err = completed.RequirePassed()
+							}
 						}
 					}
 				}
@@ -243,8 +290,15 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: "the frozen cheap check and audits passed", Data: map[string]any{"execution": execution, "exits": exits, "checkOutcome": outcome}}
+	if outcome == launch.CheckBudgetExhausted {
+		result.Summary = "the feedback budget ended; the round may proceed"
+	}
+	if outcome == launch.CheckPassed && plan.Check != nil && plan.Check.Kind() == "bounded" {
+		result.Summary = "the bounded check passed"
+	}
 	if err != nil {
-		result.Outcome, result.code, result.Summary = intentFailed, 1, "the unit check failed: "+err.Error()
+		result.Details = []string{err.Error()}
+		result.Outcome, result.code, result.Summary = intentFailed, 1, "the unit check did not pass"
 	}
 	return inv.render(result)
 }
@@ -280,7 +334,14 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 		}
 		// A person's explicit command repairs even unavailable declaration history.
 		if person {
-			return nil
+			content, readErr := inv.work().git(plan.Worktree, "show", "HEAD:"+filepath.ToSlash(filepath.Join(inv.layout.InstallationRel, "metasystem.conf")))
+			kind, _, kindErr := config.CommittedContentLookup(string(content), "proof.check-kind")
+			if readErr == nil && kindErr == nil && kind == "bounded" {
+				// A manual command may replace execution, never silently admit
+				// a bounded declaration into a goal's history.
+			} else {
+				return nil
+			}
 		}
 	} else {
 		actor, proof, refusal := inv.actingAs("committed unit checks", plan.Goal, actorHuman)
@@ -500,4 +561,11 @@ func publicationCheckEnvironment(check launch.UnitCheck, parent string) (environ
 		}
 	}
 	return environment, digest, workers
+}
+
+func boundedBuildInstructions(check *launch.UnitCheck) string {
+	if check == nil || check.Kind() != "bounded" {
+		return ""
+	}
+	return "Run static checks and the audits in your own verification, then your nominated tests and changed packages. Do not run unrelated packages.\nIn your final RESULT block, nominate tests with one line each: NOMINATE: ./package, TestName or -run pattern, reason. No nominations is allowed.\n\n"
 }

@@ -44,7 +44,7 @@ func ApplicableCheck(record *CheckEvidence, path string, readErr error, need Che
 	}{
 		{"version", record.Version == 1},
 		{"outcome", record.Outcome == "" || record.Outcome == CheckPassed},
-		{"check kind", need.Check.RequireSupportedKind() == nil && (record.Declaration == nil || (UnitCheck{Declaration: record.Declaration}).RequireSupportedKind() == nil)},
+		{"check kind", (UnitCheck{Declaration: record.Declaration}).Kind() == need.Check.Kind() && need.Check.RequireSupportedKind() == nil && (record.Declaration == nil || (UnitCheck{Declaration: record.Declaration}).RequireSupportedKind() == nil)},
 		{"completeness", record.Strength.Complete && record.Source != "" && selected.Version == 1 && record.Content.Before != "" && record.Content.Before == record.Content.After},
 		{"strength", need.Strength == "audited" && audited || need.Strength == "cheap" && record.Strength.Cheap},
 		{"tree", record.Content.Before == need.Tree},

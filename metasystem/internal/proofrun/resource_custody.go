@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ type ResourceCustodyOptions struct {
 }
 
 type resourceCustodyEngineKey struct{}
+type resourceTreeKey struct{}
 
 // WithResourceCustodyExecutable supplies an already-built engine for direct
 // callers. Ordinary CLI calls use their own executable and identical custody.
@@ -50,8 +52,9 @@ func resourceCustodyExecutable(ctx context.Context) (string, error) {
 }
 
 type resourceCustodyMessage struct {
-	Kind  string       `json:"kind"`
-	Suite identity.Ref `json:"suite,omitempty"`
+	Kind   string       `json:"kind"`
+	Suite  identity.Ref `json:"suite,omitempty"`
+	Marker string       `json:"marker,omitempty"`
 }
 
 type resourceCustodyEvent struct {
@@ -82,7 +85,7 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 	if _, err := io.WriteString(ready, "ready\n"); err != nil {
 		return err
 	}
-	_ = ready.Close()
+	// Keep the readiness pipe for the terminal settlement acknowledgement.
 	// One channel preserves the order of bind, done, and terminal EOF. Two
 	// channels let a fast command's EOF race ahead of its queued bind.
 	events := make(chan resourceCustodyEvent, 3)
@@ -100,6 +103,8 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	var suite identity.Ref
+	var marker string
+	descendants := map[int64]identity.Ref{}
 	var watched <-chan error
 	var policyError error
 	var reason error
@@ -121,6 +126,10 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 					break
 				}
 				suite = event.message.Suite
+				marker = event.message.Marker
+				if marker != "" {
+					descendants[suite.Pid] = suite
+				}
 				if options.Watchdog.Suite != "" {
 					options.Watchdog.SuiteIdentity = suite
 					options.Watchdog.CustodyGroup = int64(self)
@@ -138,6 +147,12 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 			watched = nil
 			reason = io.EOF
 		case <-ticker.C:
+			if marker != "" {
+				if err := observeResourceDescendants(identity.KernelProcessTable{}, prober, descendants, ""); err != nil {
+					reason = err
+					break
+				}
+			}
 			if options.Launcher.Pid > 0 && identity.AliveRef(prober, options.Launcher) != identity.Alive {
 				reason = fmt.Errorf("resource launcher exact identity was lost")
 			} else if suite.Pid > 0 {
@@ -159,7 +174,13 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 	watchdogBound := 35*time.Second + options.Watchdog.EvidenceTimeout + options.Watchdog.TermGrace + options.Watchdog.KillGrace
 	watcherSettled, settleErr := settleResourceWatchdog(watched, options.Watchdog.DonePath, watchdogBound)
 	policyError = errors.Join(policyError, settleErr)
+	var escaped bool
+	var descendantErr error
+	if marker != "" {
+		escaped, descendantErr = settleResourceDescendants(identity.KernelProcessTable{}, prober, descendants, int64(self), marker)
+	}
 	survivors, drainErr := drainResourceGroup(int64(self), prober, 2*time.Second)
+	drainErr = errors.Join(drainErr, descendantErr)
 	fixtureSurvivors := false
 	var fixtureErr error
 	if drainErr == nil && options.ConfPath != "" {
@@ -174,10 +195,13 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 			_ = marker.Close()
 		}
 	}
+	if watcherSettled && drainErr == nil && fixtureErr == nil {
+		_, _ = io.WriteString(ready, "settled\n")
+	}
 	if reason == io.EOF {
 		reason = nil
 	}
-	if survivors {
+	if survivors || escaped {
 		reason = errors.Join(reason, fmt.Errorf("native descendants survived direct worker completion"))
 	}
 	if fixtureSurvivors {
@@ -344,13 +368,17 @@ func drainResourceGroupWith(group int64, prober identity.Prober, limit time.Dura
 	return observed, fmt.Errorf("resource group %d did not drain within %s", group, limit)
 }
 
+var ErrResourceUnsettled = errors.New("resource custody did not confirm settlement")
+
 type resourceCustody struct {
-	command    *exec.Cmd
-	control    *os.File
-	group      int
-	leader     identity.Ref
-	spools     *custodySpools
-	diagnostic *bytes.Buffer
+	completion        *os.File
+	requireSettlement bool
+	command           *exec.Cmd
+	control           *os.File
+	group             int
+	leader            identity.Ref
+	spools            *custodySpools
+	diagnostic        *bytes.Buffer
 }
 
 type custodySpools struct {
@@ -508,9 +536,9 @@ func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath s
 		_ = command.Wait()
 		return nil, err
 	}
-	readyRead.Close()
 	leader, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
 	if probeErr != nil || state != identity.Alive {
+		readyRead.Close()
 		controlWrite.Close()
 		_ = command.Process.Kill()
 		_ = command.Wait()
@@ -520,7 +548,7 @@ func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath s
 	if buffer, ok := command.Stderr.(*bytes.Buffer); ok {
 		diagnostic = buffer
 	}
-	return &resourceCustody{command: command, control: controlWrite, group: command.Process.Pid,
+	return &resourceCustody{command: command, control: controlWrite, completion: readyRead, group: command.Process.Pid,
 		leader: leader.Ref(), spools: spools, diagnostic: diagnostic}, nil
 }
 
@@ -633,6 +661,15 @@ func (custody *resourceCustody) finish() error {
 	_ = json.NewEncoder(custody.control).Encode(resourceCustodyMessage{Kind: "done"})
 	_ = custody.control.Close()
 	err := custody.command.Wait()
+	if custody.completion != nil {
+		confirmation, readErr := io.ReadAll(custody.completion)
+		_ = custody.completion.Close()
+		if custody.requireSettlement && (readErr != nil || string(confirmation) != "settled\n") {
+			err = errors.Join(err, ErrResourceUnsettled)
+		}
+	} else if custody.requireSettlement {
+		err = errors.Join(err, ErrResourceUnsettled)
+	}
 	if err != nil && custody.diagnostic != nil && strings.TrimSpace(custody.diagnostic.String()) != "" {
 		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(custody.diagnostic.String()))
 	}
@@ -687,6 +724,12 @@ func (barrier *custodyBarrier) close() {
 // output writers; this call returns only after ordinary descendants drain.
 func RunResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease) error {
 	return runResourceCommand(ctx, command, lease, nil)
+}
+
+// RunResourceTreeCommand also finds inherited descendants that reparent before
+// a census. The bounded check requires this stronger settlement at its cutoff.
+func RunResourceTreeCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease) error {
+	return runResourceCommand(context.WithValue(ctx, resourceTreeKey{}, true), command, lease, nil)
 }
 
 type resourceCommandCompletion string
@@ -781,6 +824,16 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 		}
 		return nil, nil, identity.Ref{}, err
 	}
+	marker := ""
+	originalEnvironment := command.Env
+	if track, _ := ctx.Value(resourceTreeKey{}).(bool); track {
+		marker = rand.Text()
+		custody.requireSettlement = true
+		if command.Env == nil {
+			command.Env = os.Environ()
+		}
+		command.Env = append(append([]string(nil), command.Env...), resourceTreeMarker+"="+marker)
+	}
 	originalPath, originalArgs := command.Path, append([]string(nil), command.Args...)
 	originalExtra := append([]*os.File(nil), command.ExtraFiles...)
 	if scratch != nil && scratch.Writer() != nil {
@@ -789,6 +842,7 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 	barrier, err := prepareCustodyExec(command, engine)
 	finish := func() error {
 		command.Path, command.Args, command.ExtraFiles = originalPath, originalArgs, originalExtra
+		command.Env = originalEnvironment
 		if barrier != nil {
 			barrier.close()
 		}
@@ -841,7 +895,7 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 	if err != nil || state != identity.Alive {
 		return abort(fmt.Errorf("resource worker exact identity unavailable: %v", err))
 	}
-	if err := custody.bind(exact.Ref()); err != nil {
+	if err := json.NewEncoder(custody.control).Encode(resourceCustodyMessage{Kind: "bind", Suite: exact.Ref(), Marker: marker}); err != nil {
 		return abort(err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -883,4 +937,90 @@ func tableGroupMembers(table identity.ProcessTable, group int64) ([]int64, error
 		}
 	}
 	return members, nil
+}
+
+const resourceTreeMarker = "METASYSTEM_RESOURCE_TREE"
+
+// observeResourceDescendants retains exact identities across session changes.
+// The bound worker is known before its startup barrier is released.
+func observeResourceDescendants(table identity.ProcessTable, prober identity.Prober, owned map[int64]identity.Ref, marker string) error {
+	census, err := identity.CensusOf(table)
+	if err != nil {
+		return err
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, pid := range census.Pids() {
+			if _, ok := owned[pid]; ok {
+				continue
+			}
+			parent, ok := census.Parent(pid)
+			if !ok {
+				continue
+			}
+			ref, ok := owned[parent]
+			descendant := ok && identity.LiveRef(prober, ref) == identity.Alive
+			if !descendant && marker == "" {
+				continue
+			}
+			exact, state, err := prober.Probe(pid)
+			if !descendant && !(exact.EnvironKnown && containsExactEnvironmentEntry(exact.Environ, resourceTreeMarker+"="+marker)) {
+				continue
+			}
+			if err != nil || state == identity.Unknown {
+				return fmt.Errorf("a check child could not be identified")
+			}
+			if exact.EnvironKnown && containsExactEnvironmentEntry(exact.Environ, identity.FixtureCustodianEnv+"=1") {
+				continue // This owner must finish its own recorded fixture cleanup.
+			}
+			if state == identity.Alive && !exact.Zombie {
+				owned[pid] = exact.Ref()
+				changed = true
+			}
+		}
+	}
+	return nil
+}
+
+// Freeze parents before the final census so a child cannot fork across the
+// settlement boundary. Group draining remains responsible for ordinary
+// reparented members; the exact set also includes children in new sessions.
+func settleResourceDescendants(table identity.ProcessTable, prober identity.Prober, owned map[int64]identity.Ref, group int64, marker string) (bool, error) {
+	for {
+		for _, ref := range owned {
+			_ = identity.SignalExact(prober, ref, syscall.SIGSTOP)
+		}
+		n := len(owned)
+		if err := observeResourceDescendants(table, prober, owned, marker); err != nil {
+			return false, err
+		}
+		if len(owned) == n {
+			break
+		}
+	}
+	var escaped []identity.Ref
+	for _, ref := range owned {
+		if identity.LiveRef(prober, ref) != identity.Alive {
+			continue
+		}
+		observed, err := table.Group(ref.Pid)
+		if errors.Is(err, syscall.ESRCH) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if observed != group {
+			escaped = append(escaped, ref)
+			if err := identity.SignalExact(prober, ref, syscall.SIGKILL); err != nil && !errors.Is(err, identity.ErrGone) {
+				return true, err
+			}
+		}
+	}
+	for _, ref := range escaped {
+		for identity.LiveRef(prober, ref) == identity.Alive {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	return len(escaped) > 0, nil
 }

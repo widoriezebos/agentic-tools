@@ -50,7 +50,7 @@ func TestUnitDeclarationOldResultAndUnsupportedKind(t *testing.T) {
 	if values := result.Check.Declaration.EffectiveValues(); values[4] != "legacy" || values[5] != "6" {
 		t.Fatal("old declaration lost its kind or budget default")
 	}
-	for _, kind := range []string{"bounded", "unknown"} {
+	for _, kind := range []string{"unknown"} {
 		result.Check.Declaration.Values[4] = kind
 		if result.RequirePassed() == nil {
 			t.Fatal("unsupported declaration authorized complete coverage")

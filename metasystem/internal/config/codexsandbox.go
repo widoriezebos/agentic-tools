@@ -65,6 +65,9 @@ func SettingValueProblem(key, value string) error {
 	if key == "proof.deadline" || key == "proof.check-budget" {
 		minutes, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || minutes <= 0 || minutes > int64((1<<63-1)/time.Minute) {
+			if key == "proof.check-budget" {
+				return fmt.Errorf("the feedback budget must be positive minutes within the timer range")
+			}
 			return fmt.Errorf("%s must be positive minutes within the timer range", key)
 		}
 	}

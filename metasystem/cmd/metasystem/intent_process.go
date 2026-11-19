@@ -1341,6 +1341,12 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 				line += "; " + round.SizeSummary()
 			}
 			lines = append(lines, line)
+			paths, _ := filepath.Glob(filepath.Join(round.Directory, "check-*", "result.json"))
+			for _, path := range paths {
+				if result, err := launch.ReadCheckResult(filepath.Dir(path)); err == nil {
+					lines = append(lines, result.StatusLines()...)
+				}
+			}
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
 			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record, "processReport": report}})

@@ -134,6 +134,9 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 			}
 		}
 		if prior.Check.ProcessAct == check.ProcessAct && prior.Check.Cheap == check.Cheap && prior.Check.Audits == check.Audits && prior.Check.SourceTree == subject.Tree {
+			if prior.Outcome == launch.CheckBudgetExhausted && prior.Check.Kind() == "bounded" {
+				return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: fmt.Errorf("the feedback budget ended; this unit needs its own complete check")}
+			}
 			if prior.RequirePassed() != nil {
 				rerun := inv.publicArgv("work", "review", "--commit", subject.Commit, "--goal", goalID, "--repo", inv.layout.InstallationRoot.Path(), "--check-only", "--rerun")
 				if check.ProcessAct != "" {
@@ -164,7 +167,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 	}
 	if execution == "" {
-		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now, EngineDirectory: filepath.Join(inv.layout.InstallationRoot.Path(), "bin"),
+		execution, _, err = check.Run(directory, records, launch.CheckContext{Complete: true, CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now, EngineDirectory: filepath.Join(inv.layout.InstallationRoot.Path(), "bin"),
 			Worktree: directory, Tree: func() (string, error) {
 				tree, err := inv.work().git(directory, "rev-parse", "HEAD^{tree}")
 				return strings.TrimSpace(string(tree)), err

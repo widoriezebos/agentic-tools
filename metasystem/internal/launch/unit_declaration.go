@@ -2,7 +2,6 @@ package launch
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
@@ -40,8 +39,7 @@ func (declaration UnitDeclaration) MarshalJSON() ([]byte, error) {
 	}{values, (*wire)(&declaration)})
 }
 
-// RequireSupportedKind prevents a declared bounded check from silently running
-// the legacy commands on an engine without the bounded executor.
+// RequireSupportedKind validates the declaration before any admission is saved.
 func (check UnitCheck) RequireSupportedKind() error {
 	if check.Declaration == nil {
 		return nil
@@ -53,9 +51,6 @@ func (check UnitCheck) RequireSupportedKind() error {
 				return err
 			}
 		}
-	}
-	if values[4] != "legacy" {
-		return fmt.Errorf("bounded checks are not available in this engine yet; the tree must declare legacy")
 	}
 	return nil
 }

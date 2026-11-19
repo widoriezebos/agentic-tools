@@ -23,6 +23,7 @@ type detachedHelperAllowance struct {
 }
 
 var detachedHelperAllowances = map[string]detachedHelperAllowance{
+	"cmd/metasystem/testdata/bounded-child/main.go":           {1, custodyWitness},
 	"cmd/metasystem/fleet_boundary_test.go":                   {1, detachedBeforeTheAudit},
 	"cmd/metasystem/goal_landing_workers_public_test.go":      {1, detachedBeforeTheAudit},
 	"cmd/metasystem/helm_admits_e2e_test.go":                  {2, detachedBeforeTheAudit},

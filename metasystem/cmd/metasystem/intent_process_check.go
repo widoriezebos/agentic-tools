@@ -19,7 +19,7 @@ type processCheckHeld struct {
 
 func (h *processCheckHeld) Error() string {
 	if h.problem != "" {
-		return "the check was not admitted: " + h.problem
+		return "the check was not admitted\n" + h.problem
 	}
 	if h.act.Class == "full-suite-exception" {
 		return "the full suite needs a person's exception for this admission; nothing was launched"

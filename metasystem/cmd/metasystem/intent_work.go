@@ -75,6 +75,7 @@ var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
+	checkContext func(*launch.CheckContext)
 	criticDeath  dispatchcore.CustodyDeathDependencies
 	cancelCritic func(string, string) (map[string]any, int, error)
 	engineStamp  string
