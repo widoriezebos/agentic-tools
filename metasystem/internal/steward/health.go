@@ -1144,6 +1144,12 @@ func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identi
 		if installationErr != nil {
 			return verdict
 		}
+		if verdict.Status == HealthAlive {
+			switch report := runnerLiveness(repoRoot, now, runnerObservedAt(now), prober); report.Reading {
+			case RunnerStarting, RunnerWaiting, RunnerProgressing:
+				verdict.Reason += "; " + report.Detail
+			}
+		}
 		provenance := EnrollmentProvenance(installed)
 		if line := RearmDeferredLine(repoRoot); line != "" {
 			provenance += "; " + line

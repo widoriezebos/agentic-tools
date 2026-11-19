@@ -431,6 +431,8 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
 		{"zero steward tick patience", "steward.tick-patience-sec=0\n", "steward.tick-patience-sec must be a positive integer"},
 		{"overflowing steward tick patience", "steward.tick-patience-sec=9223372037\n", "steward.tick-patience-sec must be no greater than"},
+		{"zero runner quiet threshold", "steward.runner-quiet-min=0\n", "steward.runner-quiet-min must be a positive integer"},
+		{"zero runner failed ticks", "steward.runner-failed-ticks=0\n", "steward.runner-failed-ticks must be a positive integer"},
 		{"zero Stop slow threshold", "steward.stop-slow-sec=0\n", "steward.stop-slow-sec must be a positive integer"},
 		{"Stop slow threshold reaches budget", "steward.stop-slow-sec=60\n", "steward.stop-slow-sec must be below the sixty-second Stop budget"},
 		{"Stop slow threshold exceeds budget", "steward.stop-slow-sec=61\n", "steward.stop-slow-sec must be below the sixty-second Stop budget"},

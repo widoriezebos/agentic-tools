@@ -638,7 +638,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
-		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey, BoardKeepHoursKey, BoardPollSecKey, BoardMailboxKeepDaysKey, BoardHandoverLockWaitSecKey,
+		"steward.tick-patience-sec", "steward.runner-quiet-min", "steward.runner-failed-ticks",
+		"steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey, BoardKeepHoursKey, BoardPollSecKey, BoardMailboxKeepDaysKey, BoardHandoverLockWaitSecKey,
 		"steward.stuck.build-min", "steward.stuck.proof-min", "steward.stuck.read-min", "steward.stuck.rounds",
 		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey, DiskCacheMinKeepMinutesKey,
 	} {

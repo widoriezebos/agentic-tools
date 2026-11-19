@@ -147,15 +147,30 @@ func (c *itemCounter) done() {
 
 // RunnerActivity describes only progress belonging to this live runner.
 func RunnerActivity(root string, runner RunnerRecord) (activity string, since time.Time, ok bool) {
-	var record RunnerProgress
-	if err := readJSON(runnerProgressPath(root), &record); err != nil ||
-		record.Pid != runner.Pid || record.PidStartedAt != runner.PidStartedAt ||
-		record.StartTicks != runner.StartTicks || record.BootID != runner.BootID {
+	record, own, err := ownRunnerProgress(root, runner)
+	if err != nil || !own {
 		return "", time.Time{}, false
 	}
+	return runnerActivityText(record), record.OperationSince, true
+}
+
+// ownRunnerProgress reads the progress record and reports whether this runner
+// process wrote it. A missing record is no error and belongs to nobody.
+func ownRunnerProgress(root string, runner RunnerRecord) (record RunnerProgress, own bool, err error) {
+	if err := readJSON(runnerProgressPath(root), &record); err != nil {
+		if os.IsNotExist(err) {
+			return RunnerProgress{}, false, nil
+		}
+		return RunnerProgress{}, false, err
+	}
+	return record, record.Pid == runner.Pid && record.PidStartedAt == runner.PidStartedAt &&
+		record.StartTicks == runner.StartTicks && record.BootID == runner.BootID, nil
+}
+
+func runnerActivityText(record RunnerProgress) string {
 	state := record.State
 	if record.State == "waiting" {
 		state += " " + record.Reason
 	}
-	return fmt.Sprintf("%s (%s, %d done)", record.Operation, state, record.Done), record.OperationSince, true
+	return fmt.Sprintf("%s (%s, %d done)", record.Operation, state, record.Done)
 }
