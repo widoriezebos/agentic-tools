@@ -1,0 +1,101 @@
+{
+  "canonicalRead": {
+    "engine": "ad56ee0a08e5f3625d4adb6d7e9a72b7981e06ca",
+    "findings": [
+      {
+        "change": "Optional, and best placed on the design's later list or folded into U3b: add an upper-bound check for steward.runner-quiet-min beside the one for steward.tick-patience-sec, with one row in TestValidateNumericKnobs.",
+        "claim": "The settings validator accepts a quiet threshold that the runner reading then refuses as invalid. A value of steward.runner-quiet-min above 153,722,867 minutes (about 292 years) passes validation, yet the reading reports 'the steward runner settings are invalid'. The remedy for that cause tells a person to correct the setting and run the system check, and that check would report nothing wrong. This does not block the unit: the brief asks only for the positive-integer check, the value is absurd, and in this unit the only effect is that the health row omits the reading. It matters slightly more after unit U3b, when an unknown reading stops the repair step.",
+        "class": "other",
+        "evidence": "metasystem/internal/steward/runner_liveness.go, runnerLivenessSettings, refuses values above maxRunnerQuietMinutes. metasystem/internal/config/validate.go adds the key only to the positive-integer list, while steward.tick-patience-sec also has its own upper-bound check at about line 721. A temporary overlay test validating steward.runner-quiet-min=153722868 returned no problems, while steward.tick-patience-sec=9223372037 returned 'must be no greater than 9223372036 seconds'. metasystem/internal/steward/remedy.go:80 gives the 'corrects the setting ... then runs metasystem system check' remedy.",
+        "id": "code-critic-012bf206c02cfe8940d860cb:1",
+        "material": false,
+        "relation": "R-135-m1e: a refusal a human can hit states exactly what to change",
+        "severity": "low",
+        "where": "metasystem/internal/config/validate.go"
+      }
+    ],
+    "id": "code-critic-012bf206c02cfe8940d860cb",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-012bf206c02cfe8940d860cb/rounds/1/return.md",
+    "subject": {
+      "commit": "2f916613f61f95852c9731d28c11cab363291a16",
+      "diffDigest": "77175f6bddf999d0d35bf0b1ce40800ab9a39c9192c300b29e73d47255f4fc3a",
+      "kind": "commit",
+      "parent": "85ea36c3e7beb9ba9257242fc6fcf1bc079b8a73",
+      "tree": "181ef68ce4ddd4d705442a4de1fb45032eddc222"
+    }
+  },
+  "readDigest": "58c6d1d11f3e9b0877e4678360adf9d0ddbfdf97dc72bac552798d1a9e7c7604",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U3a",
+  "subject": {
+    "commit": "2f916613f61f95852c9731d28c11cab363291a16",
+    "parent": "85ea36c3e7beb9ba9257242fc6fcf1bc079b8a73",
+    "tree": "181ef68ce4ddd4d705442a4de1fb45032eddc222",
+    "patchDigest": "77175f6bddf999d0d35bf0b1ce40800ab9a39c9192c300b29e73d47255f4fc3a",
+    "unitDigest": "2d5d5bc5ff31a21d82000cfc8e8da969a4a10e47698ae951d15af5ed9712a59e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-012bf206c02cfe8940d860cb",
+    "round": 1,
+    "closureSha256": "ffd7997399f08626e85e8c61ec652ee2222e3dd9b70fb00b4f78e39c19f7a40f"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "181ef68ce4ddd4d705442a4de1fb45032eddc222",
+    "runId": "goal-read-gate-20261119t014513z-507826f7a2589db4"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    },
+    {
+      "kind": "read",
+      "commit": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "digest": "e3d4d07e631878bb31a3c84ad9ebcba9b4a38476e962dd1a1159a10518e874df"
+    },
+    {
+      "kind": "read",
+      "commit": "24c745d4df8f577aa6bceeb6ff7878b262236e90",
+      "digest": "4b43b55d52435a45317cffd98af0af15b8226ee137fedbc01da424ba8bfcfe3b"
+    },
+    {
+      "kind": "read",
+      "commit": "828852661c4495ffdca9209a88e9d5bd13737f44",
+      "digest": "dd8a600364be4fab797315ad4e5afa2a628b2108e179f0acefc51224574d9616"
+    },
+    {
+      "kind": "read",
+      "commit": "85ea36c3e7beb9ba9257242fc6fcf1bc079b8a73",
+      "digest": "ff2d20782615929733426169ffe2d754d309714dc92f5ae35025225f6bfc7ab6"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/config/validate_test.go",
+      "readerWord": "reviewed by critic root code-critic-012bf206c02cfe8940d860cb"
+    }
+  ],
+  "sha256": "7ddd0e9458ab69415c0ad328b09391a1c988330c99e330c9c98c21ca9ca046be"
+}
