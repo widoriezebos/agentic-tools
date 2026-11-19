@@ -3,6 +3,9 @@ package steward
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,16 +200,121 @@ func TestRunnerLivenessReadsEachCase(t *testing.T) {
 
 func TestRunnerLivenessEntryAndObservationTime(t *testing.T) {
 	t.Parallel()
+	// The entries read the real clock and the kernel, so this process is the runner.
+	self, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("this process: %v %v", state, err)
+	}
 	b := newLivenessBed(t)
+	b.runner = RunnerRecord{Pid: self.Pid, PidStartedAt: self.StartedAt.Unix(), StartTicks: self.StartTicks, BootID: self.BootID, Capable: 1}
+	b.writeRunner()
+	b.publish(b.working())
+	if got := RunnerLiveness(b.root, b.now); got.Reading != RunnerProgressing {
+		t.Fatalf("a caller behind the clock: %+v", got)
+	}
+	// The clock reads earlier than a caller's time only after moving back.
+	ahead := time.Date(2999, 1, 1, 0, 0, 0, 0, time.UTC)
+	if got := RunnerLiveness(b.root, ahead); got.Reading != RunnerUnknown || got.Cause != CauseClockRegressed {
+		t.Fatalf("a clock behind the caller: %+v", got)
+	}
+	if got := checkStewardRunner(b.root, ahead, identity.KernelProber{}); got.Status != HealthUnknown || !strings.Contains(got.Reason, "CLOCK_REGRESSED") {
+		t.Fatalf("health with a clock behind the caller: %+v", got)
+	}
 	if err := os.Remove(runnerRecordPath(b.root)); err != nil {
 		t.Fatal(err)
 	}
 	if got := RunnerLiveness(b.root, b.now); got.Reading != RunnerDead || got.Cause != CauseUnavailable {
 		t.Fatalf("report=%+v", got)
 	}
-	later := time.Date(2999, 1, 1, 0, 0, 0, 0, time.UTC)
-	if got := runnerObservedAt(later)(); !got.Equal(later) {
-		t.Fatalf("observation %s fell behind the caller's time", got)
+}
+
+func TestClockMovedBackComparesWallTimes(t *testing.T) {
+	t.Parallel()
+	noon := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+	// Both carry a monotonic reading, and Add moves it with the wall time.
+	started := time.Now()
+	moved := started.Add(time.Second)
+	for _, test := range []struct {
+		name           string
+		earlier, later time.Time
+		want           bool
+	}{
+		{"a later reading with an earlier wall time", noon, noon.Add(-time.Minute), true},
+		{"a later wall time", noon, noon.Add(time.Minute), false},
+		{"the same wall time", noon, noon, false},
+		{"two clock readings in their order", started, moved, false},
+		{"two clock readings in the other order", moved, started, true},
+	} {
+		if got := clockMovedBack(test.earlier, test.later); got != test.want {
+			t.Errorf("%s: clockMovedBack(%s, %s)=%t, want %t", test.name, test.earlier, test.later, got, test.want)
+		}
+	}
+}
+
+// No public API builds two times that both carry a monotonic reading in the
+// reverse order of their wall times, so the shape of the comparison is checked
+// in the source.
+func TestTheRunnerReadingComparesOnlyWallTimes(t *testing.T) {
+	t.Parallel()
+	const rule = "the runner reading compares times only through clockMovedBack, which compares wall times, because a clock that was set back shows only in wall times"
+	files := token.NewFileSet()
+	file, err := parser.ParseFile(files, "runner_liveness.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies := map[string]*ast.BlockStmt{}
+	for _, decl := range file.Decls {
+		if function, ok := decl.(*ast.FuncDecl); ok && function.Recv == nil {
+			bodies[function.Name.Name] = function.Body
+		}
+	}
+	// calls returns the time comparisons in a body and whether it calls clockMovedBack.
+	calls := func(name string) (comparisons []*ast.CallExpr, movedBack bool) {
+		body := bodies[name]
+		if body == nil {
+			t.Fatalf("runner_liveness.go has no function %s: %s", name, rule)
+		}
+		ast.Inspect(body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch fun := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				if method := fun.Sel.Name; method == "Before" || method == "After" || method == "Compare" || method == "Equal" {
+					comparisons = append(comparisons, call)
+				}
+			case *ast.Ident:
+				movedBack = movedBack || fun.Name == "clockMovedBack"
+			}
+			return true
+		})
+		return comparisons, movedBack
+	}
+	roundZero := func(expr ast.Expr) bool {
+		call, ok := expr.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return false
+		}
+		selector, isSelector := call.Fun.(*ast.SelectorExpr)
+		zero, isLiteral := call.Args[0].(*ast.BasicLit)
+		return isSelector && selector.Sel.Name == "Round" && isLiteral && zero.Value == "0"
+	}
+	wall, _ := calls("clockMovedBack")
+	if len(wall) == 0 {
+		t.Errorf("clockMovedBack compares nothing: %s", rule)
+	}
+	for _, call := range wall {
+		if !roundZero(call.Fun.(*ast.SelectorExpr).X) || len(call.Args) != 1 || !roundZero(call.Args[0]) {
+			t.Errorf("%s: clockMovedBack compares a side that is not a Round(0) call: %s", files.Position(call.Pos()), rule)
+		}
+	}
+	direct, movedBack := calls("runnerLiveness")
+	for _, call := range direct {
+		t.Errorf("%s: runnerLiveness compares times directly: %s", files.Position(call.Pos()), rule)
+	}
+	if !movedBack {
+		t.Errorf("runnerLiveness does not call clockMovedBack: %s", rule)
 	}
 }
 
@@ -351,14 +459,6 @@ func TestTicksThroughTheLoopDecideFailing(t *testing.T) {
 func TestTheHealthRowShowsTheReading(t *testing.T) {
 	t.Parallel()
 	b := newLivenessBed(t)
-	process := identity.Ref{Pid: b.runner.Pid, StartedAtSec: b.runner.PidStartedAt, StartTicks: b.runner.StartTicks, BootID: b.runner.BootID}
-	attempt, err := beginComponentAttempt(b.root, "steward-tick", livenessGeneration, process, b.now.Add(-time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := completeComponentAttempt(b.root, "steward-tick", livenessGeneration, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "fixture", nil, b.now.Add(-time.Minute)); err != nil {
-		t.Fatal(err)
-	}
 	unpublished := checkStewardRunner(b.root, b.now, b.probe)
 	if unpublished.Status != HealthAlive || !strings.Contains(unpublished.Reason, "has started and has not published yet") {
 		t.Fatalf("no progress record: %+v", unpublished)
@@ -376,7 +476,7 @@ func TestTheHealthRowShowsTheReading(t *testing.T) {
 	b.publish(record)
 	contents, modified := snapshot()
 	fresh := checkStewardRunner(b.root, b.now, b.probe)
-	if fresh.Status != unpublished.Status || !strings.Contains(fresh.Reason, "; tick (working, 3 done) for 2m0s") || strings.Contains(fresh.Reason, "quiet") {
+	if fresh.Status != unpublished.Status || !strings.HasPrefix(fresh.Reason, "tick (working, 3 done) for 2m0s;") || strings.Contains(fresh.Reason, "quiet") {
 		t.Fatalf("fresh runner: %+v", fresh)
 	}
 	if after, at := snapshot(); after != contents || !at.Equal(modified) {

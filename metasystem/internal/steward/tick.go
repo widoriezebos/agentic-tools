@@ -416,7 +416,7 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	}
 	// The reports run under the helm, because the person at the helm is who
 	// needs them; a report decides nothing. They run after the attempt
-	// completed, so a slow fetch never reads as a stuck tick.
+	// completed, so a slow fetch does not lengthen the recorded tick.
 	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
 		presenceErr = patternErr
 	}

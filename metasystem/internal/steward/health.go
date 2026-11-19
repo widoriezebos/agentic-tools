@@ -1135,106 +1135,39 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 }
 
 func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) RoleVerdict {
-	return checkStewardRunnerWithCadence(repoRoot, now, prober, TickSeconds)
+	return checkStewardRunnerObserved(repoRoot, now, runnerNow, prober)
 }
 
-func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identity.Prober, tickSeconds func(string) int) RoleVerdict {
-	installed, durabilityPending, installationErr := installedEnrollment(repoRoot)
-	withEnrollment := func(verdict RoleVerdict) RoleVerdict {
-		if installationErr != nil {
-			return verdict
-		}
-		if verdict.Status == HealthAlive {
-			switch report := runnerLiveness(repoRoot, now, runnerObservedAt(now), prober); report.Reading {
-			case RunnerStarting, RunnerWaiting, RunnerProgressing:
-				verdict.Reason += "; " + report.Detail
-			}
-		}
-		provenance := EnrollmentProvenance(installed)
-		if line := RearmDeferredLine(repoRoot); line != "" {
-			provenance += "; " + line
-		}
-		if durabilityPending {
-			provenance += " (durability pending)"
-		}
-		if verdict.Reason == "" {
-			verdict.Reason = provenance
-		} else {
-			verdict.Reason += "; " + provenance
-		}
+// checkStewardRunnerObserved judges the runner by its reading. observed is the
+// clock now was read from.
+func checkStewardRunnerObserved(repoRoot string, now time.Time, observed func() time.Time, prober identity.Prober) RoleVerdict {
+	report := runnerLiveness(repoRoot, now, observed, prober)
+	var verdict RoleVerdict
+	switch report.Reading {
+	case RunnerDead, RunnerFailing:
+		verdict = roleDead(RoleStewardRunner, report.Detail, "", RemedyFact{Cause: report.Cause})
+	case RunnerUnknown:
+		verdict = roleUnknown(RoleStewardRunner, report.Detail, "", RemedyFact{Cause: report.Cause})
+	default:
+		verdict = roleAlive(RoleStewardRunner, report.Detail)
+	}
+	installed, durabilityPending, err := installedEnrollment(repoRoot)
+	if err != nil {
 		return verdict
 	}
-	path := runnerRecordPath(repoRoot)
-	var runner RunnerRecord
-	if err := readJSON(path, &runner); err != nil {
-		if os.IsNotExist(err) {
-			return withEnrollment(roleDead(RoleStewardRunner, "no steward runner is recorded", "", RemedyFact{Cause: CauseUnavailable}))
-		}
-		return withEnrollment(roleUnknown(RoleStewardRunner, "the steward runner record is unreadable", "", RemedyFact{Cause: CauseUnreadable}))
+	provenance := EnrollmentProvenance(installed)
+	if line := RearmDeferredLine(repoRoot); line != "" {
+		provenance += "; " + line
 	}
-	process := identity.Ref{Pid: runner.Pid, StartedAtSec: runner.PidStartedAt, StartTicks: runner.StartTicks, BootID: runner.BootID}
-	switch identity.AliveRef(prober, process) {
-	case identity.Dead:
-		return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d is dead", runner.Pid), "", RemedyFact{Cause: CauseUnavailable}))
-	case identity.Unknown:
-		return withEnrollment(roleUnknown(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d cannot be inspected", runner.Pid), "", RemedyFact{Cause: CauseUnreadable}))
+	if durabilityPending {
+		provenance += " (durability pending)"
 	}
-	if installationErr != nil {
-		return roleUnknown(RoleStewardRunner, "the steward installation generation is unreadable", "", RemedyFact{Cause: CauseUnreadable})
+	if verdict.Reason == "" {
+		verdict.Reason = provenance
+	} else {
+		verdict.Reason += "; " + provenance
 	}
-	generation := installed.Generation
-	record, _, evidenceErr := loadComponentEvidenceForHealth(repoRoot, "steward-tick")
-	var busy *ComponentEvidenceBusyError
-	if errors.As(evidenceErr, &busy) {
-		return withEnrollment(roleUnknown(RoleStewardRunner, busy.Error(), "", RemedyFact{Cause: CauseObservationPending}))
-	}
-	if evidenceErr == nil && record.Generation == generation && record.Outcome == "ATTEMPTING" {
-		attemptProcess := identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt, StartTicks: record.PidStartTicks, BootID: record.BootID}
-		if sameComponentProcess(attemptProcess, process) {
-			if record.LastAttempt.After(now) {
-				return withEnrollment(roleUnknown(RoleStewardRunner, "CLOCK_REGRESSED: tick attempt evidence is later than current UTC", "", RemedyFact{Cause: CauseClockRegressed}))
-			}
-			patience, patienceErr := runnerTickPatience(repoRoot, record.LastDurationMillis)
-			if patienceErr != nil {
-				return withEnrollment(roleUnknown(RoleStewardRunner, "the steward tick patience is invalid: "+patienceErr.Error(), "", RemedyFact{Cause: CauseSettingsInvalid}))
-			}
-			age := now.Sub(record.LastAttempt)
-			if age < patience {
-				return withEnrollment(roleAlive(RoleStewardRunner, fmt.Sprintf("runner pid %d is attempting generation %d (age %s, patience %s)", runner.Pid, generation, age.Round(time.Second), patience)))
-			}
-			return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), "", RemedyFact{Cause: CauseUnavailable}))
-		}
-	}
-	return withEnrollment(componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, "", &process,
-		fmt.Sprintf("runner pid %d and generation %d success are current", runner.Pid, generation)))
-}
-
-func runnerTickPatience(repoRoot string, lastDurationMillis int64) (time.Duration, error) {
-	floorSeconds := config.MustIntDefault("steward.tick-patience-sec")
-	if _, statErr := os.Stat(filepath.Join(repoRoot, "metasystem.conf")); statErr == nil || !os.IsNotExist(statErr) {
-		configured, err := boundedConfig(repoRoot, "steward.tick-patience-sec", floorSeconds, 1)
-		if err != nil {
-			return 0, err
-		}
-		floorSeconds = configured
-	}
-	const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
-	if int64(floorSeconds) > maxPatienceSeconds {
-		return 0, fmt.Errorf("steward.tick-patience-sec must be no greater than %d", maxPatienceSeconds)
-	}
-	patience := time.Duration(floorSeconds) * time.Second
-	if lastDurationMillis <= 0 {
-		return patience, nil
-	}
-	const maxDurationMillis = int64(^uint64(0)>>1) / int64(time.Millisecond)
-	if lastDurationMillis > maxDurationMillis/3 {
-		return time.Duration(1<<63 - 1), nil
-	}
-	measured := 3 * time.Duration(lastDurationMillis) * time.Millisecond
-	if measured > patience {
-		patience = measured
-	}
-	return patience, nil
+	return verdict
 }
 
 func checkSupervisionOwner(repoRoot string, prober identity.Prober) RoleVerdict {

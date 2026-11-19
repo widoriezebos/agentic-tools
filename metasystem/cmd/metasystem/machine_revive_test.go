@@ -609,7 +609,7 @@ func enrollReviveRunner(t *testing.T, root string, now time.Time) {
 	if err != nil || state != identity.Alive {
 		t.Fatalf("fixture process: %v %v", state, err)
 	}
-	runner := steward.RunnerRecord{Pid: process.Pid, PidStartedAt: process.StartedAt.Unix(), StartTicks: process.StartTicks, BootID: process.BootID}
+	runner := steward.RunnerRecord{Pid: process.Pid, PidStartedAt: process.StartedAt.Unix(), StartTicks: process.StartTicks, BootID: process.BootID, Capable: 1}
 	runnerData, _ := json.Marshal(runner)
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward", "runner.json"), runnerData, 0600); err != nil {
 		t.Fatal(err)

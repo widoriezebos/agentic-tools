@@ -73,7 +73,7 @@ func newExecutionBed(t *testing.T) *executionBed {
 
 func (b *executionBed) record(t *testing.T, exact identity.Exact) RunnerRecord {
 	t.Helper()
-	record := RunnerRecord{Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), StartedAt: b.now.UTC().Format(time.RFC3339)}
+	record := RunnerRecord{Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), StartedAt: b.now.UTC().Format(time.RFC3339), Capable: 1}
 	if err := writeJSONAtomic(runnerRecordPath(b.root), record); err != nil {
 		t.Fatal(err)
 	}

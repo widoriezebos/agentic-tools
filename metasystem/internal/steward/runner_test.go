@@ -384,6 +384,9 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 	if err != nil || attempt.AttemptSeq != 1 || attempt.Outcome != "ATTEMPTING" || attempt.Generation != 148 || attempt.Pid != self.Pid || !attempt.LastAttempt.Equal(bed.now.Add(-11*time.Second)) {
 		t.Fatalf("the first attempt must be recorded before ensure: %+v %v", attempt, err)
 	}
+	if got := runnerLiveness(bed.root, bed.now, bed.clock, bed.processes); got.Reading != RunnerStarting {
+		t.Fatalf("a runner in its first attempt has published nothing: %+v", got)
+	}
 	noSleep := func(d time.Duration) { t.Fatalf("slow attempt waited for %s", d) }
 	ensured, err := ensureRunnerWithDependencies(bed.root, bed.pinned, bed.deps, bed.clock, noSleep)
 	if err != nil || ensured.Action != "verified" || ensured.Pid != self.Pid || ensured.Generation != 148 {
@@ -407,13 +410,14 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 	}
 }
 
-func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
+func TestWatcherLeavesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	t.Parallel()
 	bed := newExecutionBed(t)
 	self := bed.old
 	self.Exe = bed.replacement.Exe
 	bed.processes[self.Pid] = self
 	bed.record(t, self)
+	// The retired patience setting stays accepted and changes nothing.
 	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("steward.tick-patience-sec=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -421,8 +425,8 @@ func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	repaired, err := repairPinnedRunnerWithDependencies(bed.root, bed.pinned, nil, bed.clock, bed.sleep, bed.deps)
-	if err != nil || repaired.Status != "RESTORED" || repaired.PreviousPid != self.Pid || repaired.ReplacementPid == self.Pid || bed.stops != 1 || bed.launches != 1 {
-		t.Fatalf("the watcher must replace an alive runner past its configured patience: %+v %v (stops=%d launches=%d)", repaired, err, bed.stops, bed.launches)
+	if err != nil || repaired.Status != "CURRENT" || repaired.ReplacementPid != self.Pid || bed.stops != 0 || bed.launches != 0 {
+		t.Fatalf("an overdue attempt is no reason to replace a live runner: %+v %v (stops=%d launches=%d)", repaired, err, bed.stops, bed.launches)
 	}
 }
 

@@ -125,13 +125,9 @@ func TestTheBlockingEntryReturnsEachOutcomeFromOneCall(t *testing.T) {
 				process.Exe = bed.replacement.Exe
 				bed.processes[process.Pid] = process
 			case AutoHealEnded:
-				err := saveHealthRecord(bed.root, HealthRecordPath(bed.root), healthRecord{
-					State:   HealthObservationState{Sequence: 5, ObservedAt: bed.now, UnknownCounts: map[HealthRole]int{}, FailureCounts: map[HealthRole]int{RoleStewardRunner: healthFailureLimit}},
-					Verdict: HealthVerdict{Schema: 1, ObservedAt: bed.now, Observation: 5, Aggregate: "unhealthy"},
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
+				bed.runCurrentEngine(t)
+				bed.publishProgress(t, func(r *RunnerProgress) { r.FailedTicks = 3 })
+				bed.endAutoHealing(t)
 			case "EXCLUDED":
 				bed.deps.runnerExcluded = func(string, bool) (string, bool) { return "fixture", true }
 			case "ENROLLMENT_CHANGED":

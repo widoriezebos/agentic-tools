@@ -372,7 +372,7 @@ func TestDoctorSeparatedRootsReportsTheStewardRunningUnderTheInstallation(t *tes
 	if _, err := steward.BeginComponentAttempt(b.installation, "steward-tick", 1, process, now); err != nil {
 		t.Fatal(err)
 	}
-	runner, _ := json.Marshal(steward.RunnerRecord{Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID})
+	runner, _ := json.Marshal(steward.RunnerRecord{Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID, Capable: 1})
 	if err := os.WriteFile(filepath.Join(b.installation, "artifacts", "agents", "steward", "runner.json"), runner, 0o644); err != nil {
 		t.Fatal(err)
 	}

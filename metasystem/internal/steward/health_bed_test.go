@@ -193,7 +193,7 @@ func (b *healthBed) startRunner(process identity.Ref, at time.Time) {
 	b.alive(process)
 	if err := writeJSONAtomic(runnerRecordPath(b.root), RunnerRecord{
 		Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID,
-		StartedAt: at.Format(time.RFC3339),
+		StartedAt: at.Format(time.RFC3339), Capable: 1,
 	}); err != nil {
 		b.t.Fatal(err)
 	}
@@ -204,7 +204,9 @@ func (b *healthBed) evaluate(repoRoot, metasystemRoot string, now time.Time, _ i
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
 	cadence := func(string) int { return b.tickSeconds }
 	real := map[HealthRole]func() RoleVerdict{
-		RoleStewardRunner:     func() RoleVerdict { return checkStewardRunnerWithCadence(repoRoot, now, b.probe, cadence) },
+		RoleStewardRunner: func() RoleVerdict {
+			return checkStewardRunnerObserved(repoRoot, now, func() time.Time { return now }, b.probe)
+		},
 		RoleSupervisionOwner:  func() RoleVerdict { return checkSupervisionOwner(repoRoot, b.probe) },
 		RoleRepoWatcher:       func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, b.probe) },
 		RoleCensusFreshness:   func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) },
