@@ -55,18 +55,23 @@ func ReadCheckResult(execution string) (CheckResult, error) {
 	return result, err
 }
 
+// outcome also owns round attribution: only a deadline with no other failure
+// is an environment failure. A signal kill keeps the failed-round consequence.
 func (execution CheckExecution) outcome() CheckOutcome {
 	outcome := CheckPassed
+	complete := len(execution.Steps) == 2
 	for _, step := range execution.Steps {
-		if step.Outcome == "failed" {
+		switch step.Outcome {
+		case "passed":
+		case "deadline":
+			outcome = CheckEnvironmentFailure
+		default:
 			return CheckFailed
 		}
-		if !step.Terminal || step.Outcome != "passed" {
-			outcome = CheckEnvironmentFailure
-		}
+		complete = complete && step.Terminal
 	}
-	if len(execution.Steps) != 2 {
-		return CheckEnvironmentFailure
+	if outcome == CheckPassed && !complete {
+		return CheckFailed
 	}
 	return outcome
 }

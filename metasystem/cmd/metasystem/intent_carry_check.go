@@ -193,8 +193,10 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	if err := retained.RequirePassed(); err != nil {
 		return branch.GateObservation{}, err
 	}
-	// The execution retains the environment locally; a committed read carries
-	// only the declared commands and their observed exits.
+	// Machine-local directories and the environment stay in the execution record.
+	// The committed check runs relative to its subject workspace.
+	retained.Directory = ""
+	retained.Check.Directory = "."
 	retained.Check.Environment = []string{}
 	retained.Check.Input = nil
 	retained.Check.DeclaredEnv = nil

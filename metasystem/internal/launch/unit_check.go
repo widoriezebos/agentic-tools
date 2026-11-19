@@ -87,8 +87,8 @@ type CheckEvidence struct {
 	Source                       string
 }
 
-func (check UnitCheck) evidence(directory, cheapDirectory, execution, before string, context CheckContext) CheckEvidence {
-	record := CheckEvidence{Version: 1, Outcome: CheckPassed, Declaration: check.Declaration, Manual: check.Declaration == nil,
+func (check UnitCheck) evidence(directory, cheapDirectory, execution, before string, context CheckContext, outcome CheckOutcome) CheckEvidence {
+	record := CheckEvidence{Version: 1, Outcome: outcome, Declaration: check.Declaration, Manual: check.Declaration == nil,
 		Commands: [2]string{check.Cheap, check.Audits}, Source: filepath.Base(execution)}
 	record.Content.Before = before
 	if context.Tree != nil {
@@ -249,8 +249,8 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	err = writeUnitJSON(filepath.Join(execution, "result.json"), CheckResult{
 		Version: 1, Outcome: observation.Outcome, ExecutionID: filepath.Base(execution), Directory: directory, Check: check, Exits: exits,
 	}, execution)
-	if err == nil && len(failures) == 0 {
-		err = writeUnitJSON(evidencePath, check.evidence(directory, manualDirectory, execution, before, context), execution)
+	if err == nil && observation.Outcome == CheckPassed {
+		err = writeUnitJSON(evidencePath, check.evidence(directory, manualDirectory, execution, before, context, observation.Outcome), execution)
 		savedEvidence = err == nil
 	}
 	return execution, exits, errors.Join(append(failures, err)...)

@@ -291,6 +291,20 @@ func TestWorkRebaseDeclaredCheckEvidenceValidation(t *testing.T) {
 	if len(execution.Check.Environment) != 0 {
 		t.Fatal("committed proof exposed the execution environment")
 	}
+	if strings.Contains(original.Gate.Evidence, b.root()) || strings.Contains(original.Gate.Evidence, b.worktree) || filepath.IsAbs(execution.Check.Directory) {
+		t.Fatal("committed proof exposed an absolute workspace path")
+	}
+	var committed launch.CheckResult
+	if err := json.Unmarshal([]byte(original.Gate.Evidence), &committed); err != nil {
+		t.Fatal(err)
+	}
+	if committed.Directory != "" {
+		t.Fatal("committed proof retained the local run directory")
+	}
+	local, err := launch.ReadCheckResult(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", subject, original.Gate.RunID))
+	if err != nil || !filepath.IsAbs(local.Directory) || !filepath.IsAbs(local.Check.Directory) {
+		t.Fatal("local execution lost its workspace directories")
+	}
 	for _, damage := range []string{"cheap red", "audit red", "missing audit", "wrong execution", "wrong tree", "changed command", "changed digest"} {
 		att := original
 		var changed struct {

@@ -105,15 +105,9 @@ func checkCause(step *UnitStep, round string) bool {
 	if len(unknown) > 0 || execution == nil || step.LaunchID == "" {
 		return false
 	}
-	deadline := false
-	for _, check := range execution.Steps {
-		if check.Outcome != "passed" && check.Outcome != "deadline" {
-			return false
-		}
-		deadline = deadline || check.Outcome == "deadline"
+	if execution.outcome() != CheckEnvironmentFailure {
+		return false
 	}
-	if deadline {
-		step.Cause, step.Deadline = "environment", true
-	}
-	return deadline
+	step.Cause, step.Deadline = "environment", true
+	return true
 }

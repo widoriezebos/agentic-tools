@@ -19,7 +19,7 @@ func TestIntentUnitCheckRecordsTerminalOutcome(t *testing.T) {
 		{"passed", "printf cheap", "printf audits", launch.CheckPassed},
 		{"cheap red", "printf cheap; exit 7", "printf audits", launch.CheckFailed},
 		{"audit red", "printf cheap", "printf audits; exit 9", launch.CheckFailed},
-		{"environment", "kill -TERM $$", "printf audits", launch.CheckEnvironmentFailure},
+		{"signal killed", "kill -TERM $$", "printf audits", launch.CheckFailed},
 		{"red before interruption", "exit 7", "kill -TERM $$", launch.CheckFailed},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -43,6 +43,13 @@ func TestIntentUnitCheckRecordsTerminalOutcome(t *testing.T) {
 			observations, unknown := launch.ReadCheckExecutions(execution)
 			if len(unknown) != 0 || len(observations) != 1 || observations[0].Outcome != row.outcome {
 				t.Fatal("execution observation lost terminal outcome")
+			}
+			if row.outcome == launch.CheckPassed {
+				data, err := os.ReadFile(filepath.Join(execution, "evidence.json"))
+				var evidence launch.CheckEvidence
+				if err != nil || json.Unmarshal(data, &evidence) != nil || evidence.Outcome != retained.Outcome {
+					t.Fatal("coverage evidence lost the execution outcome")
+				}
 			}
 			if row.outcome != launch.CheckPassed {
 				if _, err := os.Stat(filepath.Join(execution, "evidence.json")); !os.IsNotExist(err) {

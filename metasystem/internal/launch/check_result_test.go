@@ -83,12 +83,22 @@ func TestCheckOutcomePreservesFailureBeforeInterruption(t *testing.T) {
 	}{
 		{"passed", "passed", CheckPassed},
 		{"deadline", "passed", CheckEnvironmentFailure},
-		{"passed", "cancelled", CheckEnvironmentFailure},
+		{"passed", "cancelled", CheckFailed},
 		{"failed", "deadline", CheckFailed},
 		{"deadline", "failed", CheckFailed},
-		{"passed", "", CheckEnvironmentFailure},
+		{"cancelled", "deadline", CheckFailed},
+		{"deadline", "cancelled", CheckFailed},
+		{"deadline", "deadline", CheckEnvironmentFailure},
+		{"passed", "unknown", CheckFailed},
+		{"passed", "", CheckFailed},
 	} {
 		execution := CheckExecution{Steps: []processmeasure.Step{{Outcome: row.first, Terminal: true}, {Outcome: row.second, Terminal: row.second != ""}}}
+		round := t.TempDir()
+		writeCheckObservation(t, round, "check-one", "launch-one", "2026-11-19T20:00:00Z", row.first, row.second)
+		step := UnitStep{LaunchID: "launch-one", Cause: "unclassified"}
+		if environment := checkCause(&step, round); environment != (row.want == CheckEnvironmentFailure) {
+			t.Fatalf("%s/%s: round environment=%v disagrees with outcome %s", row.first, row.second, environment, row.want)
+		}
 		if got := execution.outcome(); got != row.want {
 			t.Fatalf("%s/%s: %s, want %s", row.first, row.second, got, row.want)
 		}
@@ -125,5 +135,16 @@ func TestPublicationRerunsIncompleteCheck(t *testing.T) {
 	subject := provePublication(t, f.runner, run, f.worktree, need.Base)
 	if subject.GateReuse != nil || len(f.starter.ids) != before+1 || len(*messages) != 1 {
 		t.Fatal("publication reused incomplete coverage instead of running its check")
+	}
+}
+
+func TestCheckEvidenceUsesExecutionOutcome(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []CheckOutcome{CheckPassed, CheckFailed, CheckBudgetExhausted, CheckEnvironmentFailure} {
+		directory := t.TempDir()
+		evidence := (UnitCheck{}).evidence(directory, directory, directory, "tree", CheckContext{}, outcome)
+		if evidence.Outcome != outcome {
+			t.Fatalf("evidence outcome=%s, want %s", evidence.Outcome, outcome)
+		}
 	}
 }
