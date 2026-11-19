@@ -1,0 +1,13 @@
+{
+  "presenceSchema": 1,
+  "machine": "landing",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem",
+  "generation": 260,
+  "engine": "f306c34410ad4054cae594962c84143b34d444ae",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": null,
+  "working": null,
+  "tickAt": "2026-11-19T15:53:01Z",
+  "diskFreeBytes": 171989516288
+}
