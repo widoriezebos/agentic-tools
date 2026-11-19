@@ -34,9 +34,15 @@ func ReconcileRecoveryRequests(self string, cfg TickConfig, census WorkerCensus)
 	}
 	var obligations error
 	for _, seat := range seats {
+		if checkoutRemoved(seat.Path) {
+			continue
+		}
 		root, err := goal.ResolveStateRoot(seat.Path)
 		if err == nil {
 			held, lockErr := AcquireArbitration(root)
+			if errors.Is(lockErr, ErrCheckoutGone) {
+				continue
+			}
 			err = lockErr
 			if err == nil {
 				err = reconcileSeatRecovery(root, cfg, census, providers, seat.Armed)

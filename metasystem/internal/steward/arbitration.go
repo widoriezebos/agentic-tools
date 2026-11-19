@@ -24,6 +24,48 @@ func ArbitrationLockPath(repoRoot string) string {
 // ArbitrationLock is a held exclusive lock.
 type ArbitrationLock struct{ f *os.File }
 
+// ErrCheckoutGone means the root supplied for arbitration no longer exists.
+var ErrCheckoutGone = errors.New("checkout is gone")
+
+func arbitrationCheckoutExists(root string) error {
+	info, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w: %s", ErrCheckoutGone, root)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("arbitration checkout %s is not a directory", root)
+	}
+	return nil
+}
+
+func arbitrationPathError(root string, err error) error {
+	if errors.Is(err, os.ErrNotExist) {
+		if rootErr := arbitrationCheckoutExists(root); rootErr != nil {
+			return rootErr
+		}
+	}
+	return err
+}
+
+func prepareArbitrationDirectory(root string) error {
+	if err := arbitrationCheckoutExists(root); err != nil {
+		return err
+	}
+	// Create only descendants, one level at a time. Recursive parent creation
+	// could recreate the checkout if it disappeared after the existence check.
+	dir := root
+	for _, part := range []string{"artifacts", "agents", "steward"} {
+		dir = filepath.Join(dir, part)
+		if err := os.Mkdir(dir, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+			return arbitrationPathError(root, err)
+		}
+	}
+	return nil
+}
+
 var beforeArbitrationWait = func() {}
 
 // arbitrationWantPath is where a blocking acquirer queues: it holds this
@@ -38,12 +80,12 @@ func arbitrationWantPath(repoRoot string) string { return ArbitrationLockPath(re
 // contended one queues on the want file first, so the disk sweeper yields.
 func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := prepareArbitrationDirectory(repoRoot); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, err
+		return nil, arbitrationPathError(repoRoot, err)
 	}
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
 		return &ArbitrationLock{f: f}, nil
@@ -54,7 +96,7 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	want, err := os.OpenFile(arbitrationWantPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		unlockAndClose(f)
-		return nil, err
+		return nil, arbitrationPathError(repoRoot, err)
 	}
 	// The queued hold ends with an unlock: a sibling's fork copy of the
 	// want description would otherwise keep the sweeper yielding.
@@ -89,7 +131,7 @@ var ErrArbitrationHeld = errors.New("steward arbitration is held")
 // ErrArbitrationHeld.
 func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := prepareArbitrationDirectory(repoRoot); err != nil {
 		return nil, err
 	}
 	// A queued waiter holds the want file shared; the sweeper yields to it.
@@ -108,7 +150,7 @@ func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, err
+		return nil, arbitrationPathError(repoRoot, err)
 	}
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		f.Close()
@@ -122,10 +164,17 @@ func TryAcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 
 // ProbeArbitration reports whether the lock is free without creating the
 // lock file or its directory and without holding anything afterwards: the
-// plan phase's probe (Part B R15). An absent lock file reads as free.
+// plan phase's probe (Part B R15). An absent lock file in an existing
+// checkout reads as free; an absent checkout returns ErrCheckoutGone.
 func ProbeArbitration(repoRoot string) (free bool, err error) {
+	if err := arbitrationCheckoutExists(repoRoot); err != nil {
+		return false, err
+	}
 	f, err := os.OpenFile(ArbitrationLockPath(repoRoot), os.O_RDONLY, 0)
 	if errors.Is(err, os.ErrNotExist) {
+		if rootErr := arbitrationCheckoutExists(repoRoot); rootErr != nil {
+			return false, rootErr
+		}
 		return true, nil
 	}
 	if err != nil {

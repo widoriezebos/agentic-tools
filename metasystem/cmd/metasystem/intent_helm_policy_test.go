@@ -236,6 +236,40 @@ func TestHelmPolicyPartialRecovery(t *testing.T) {
 	}
 }
 
+func TestHelmAllSkipsGoneRegisteredCheckouts(t *testing.T) {
+	t.Parallel()
+	b := newHelmFleetBed(t)
+	parent := newPolicyBed(t).seat
+	gone := []string{filepath.Join(t.TempDir(), "gone"), filepath.Join(parent, "gone")}
+	for i, path := range gone {
+		b.register(t, path, 10+i)
+	}
+	for _, act := range []string{"take", "status", "return"} {
+		args := []string{"--all"}
+		if act == "take" {
+			args = append(args, "--reason", "inspect live seats")
+		}
+		code, _, raw := b.helm(t, b.seat, act, args...)
+		if code != 0 {
+			t.Fatalf("%s: exit %d: %s", act, code, raw)
+		}
+		if helm.Active(parent).Active {
+			t.Fatal("missing nested checkout applied helm to its parent")
+		}
+		for _, path := range gone {
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("deleted checkout was recreated: %v", err)
+			}
+			if strings.Contains(raw, path) {
+				t.Fatalf("missing registration was reported: %s", raw)
+			}
+		}
+		if active := helm.Active(b.second).Active; active != (act != "return") {
+			t.Fatalf("live checkout helm after %s: %v", act, active)
+		}
+	}
+}
+
 func TestHelmPolicyCorruptRecoveryAndAuthority(t *testing.T) {
 	t.Parallel()
 	b := newHelmFleetBed(t)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -109,6 +110,14 @@ type helmHostResult struct {
 	Recovery []string     `json:"recovery,omitempty"`
 }
 
+func goneHelmRegistration(target hostCheckout) bool {
+	if !strings.HasPrefix(target.source, "registry:") {
+		return false
+	}
+	_, err := os.Stat(target.path)
+	return errors.Is(err, os.ErrNotExist)
+}
+
 // runHelmAll shares the machine verbs' host discovery without their machine
 // filter. All local registered checkouts belong to the act, even when stopped.
 // A failure leaves successful targets in place and names the direct retry.
@@ -136,6 +145,9 @@ func (inv *intentInvocation) runHelmAll(act string) int {
 	// identity; fleet presence from other computers is deliberately not used.
 	registryChecked := map[string]bool{}
 	for index := 0; index < len(candidates); index++ {
+		if goneHelmRegistration(candidates[index]) {
+			continue
+		}
 		path := candidates[index].path
 		seat, err := helm.Locate(path)
 		if err != nil || registryChecked[seat.CommonDir] {
@@ -170,6 +182,9 @@ func (inv *intentInvocation) runHelmAll(act string) int {
 		return shellCommand(append(argv, "--repo", path))
 	}
 	for _, target := range candidates {
+		if goneHelmRegistration(target) {
+			continue
+		}
 		path, key := target.path, filepath.Clean(target.path)
 		if seat, err := helm.Locate(path); err == nil {
 			path, key = seat.Checkout, seat.CommonDir
