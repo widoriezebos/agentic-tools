@@ -1,9 +1,11 @@
 package proofrun
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -21,21 +23,32 @@ import (
 // proof state into an extracted lane candidate. It grants no proof authority.
 const NativeHistoryRootEnvironment = "METASYSTEM_NATIVE_HISTORY_ROOT"
 
+const goHistoryLimit = 4096
+const goHistoryMaxAge = 7 * 24 * time.Hour
+
 type goLaunchHistory struct {
-	path        string
-	scope       string
-	packageKeys []string
-	packages    map[string]string
-	keys        []string
-	durations   map[string]int64
+	path              string
+	scope             string
+	packageKeys       []string
+	keys              []string
+	entries           map[string]goLaunchObservation
+	means             map[string]goLaunchObservation
+	completeSelection bool
+}
+
+type goLaunchObservation struct {
+	Duration int64     `json:"duration"`
+	Package  string    `json:"package,omitempty"`
+	Observed time.Time `json:"observed"`
 }
 
 type goLaunchRecord struct {
-	Schema    int               `json:"schema"`
-	Scope     string            `json:"scope"`
-	Packages  map[string]string `json:"packages"`
-	Written   time.Time         `json:"written"`
-	Durations map[string]int64  `json:"durations"`
+	Schema  int                            `json:"schema"`
+	Scope   string                         `json:"scope"`
+	Entries map[string]goLaunchObservation `json:"entries"`
+	// Means are a snapshot of the latest complete selection's measured launches.
+	// Narrow replays update exact entries without changing this snapshot.
+	Means map[string]goLaunchObservation `json:"means"`
 }
 
 func goHistoryDigest(value any) string {
@@ -44,7 +57,7 @@ func goHistoryDigest(value any) string {
 }
 
 func loadGoLaunchHistory(installation roots.Installation, group testpolicy.Group, partitions []goTestPartition, environments ...[]string) *goLaunchHistory {
-	h := &goLaunchHistory{durations: map[string]int64{}, packages: map[string]string{}}
+	h := &goLaunchHistory{}
 	if installation == "" {
 		return h
 	}
@@ -79,21 +92,72 @@ func loadGoLaunchHistory(installation roots.Installation, group testpolicy.Group
 			Variant         string
 		}{packages, names, variant}))
 	}
-	data, err := os.ReadFile(h.path)
-	var record goLaunchRecord
-	if err != nil || json.Unmarshal(data, &record) != nil || record.Schema != 2 || record.Scope != h.scope || record.Written.IsZero() || time.Since(record.Written) < 0 || time.Since(record.Written) > 7*24*time.Hour {
-		return h
+	record := h.read(time.Now())
+	h.entries, h.means = record.Entries, record.Means
+	return h
+}
+
+func (h *goLaunchHistory) read(now time.Time) goLaunchRecord {
+	empty := goLaunchRecord{Schema: 3, Scope: h.scope, Entries: map[string]goLaunchObservation{}, Means: map[string]goLaunchObservation{}}
+	file, err := os.Open(h.path)
+	if err != nil {
+		return empty
 	}
-	for key, duration := range record.Durations {
-		if duration <= 0 || record.Packages[key] == "" {
-			return h
+	defer file.Close()
+	// Advisory input is bounded as well as output; oversized or malformed records miss.
+	data, err := io.ReadAll(io.LimitReader(file, 4<<20))
+	var record goLaunchRecord
+	if err != nil || json.Unmarshal(data, &record) != nil || record.Schema != 3 || record.Scope != h.scope {
+		return empty
+	}
+	if record.Entries == nil {
+		record.Entries = empty.Entries
+	}
+	if record.Means == nil {
+		record.Means = empty.Means
+	}
+	for key, entry := range record.Entries {
+		if entry.Package == "" {
+			delete(record.Entries, key)
 		}
 	}
-	if record.Durations != nil {
-		h.durations = record.Durations
-		h.packages = record.Packages
+	trimGoObservations(record.Entries, now)
+	trimGoObservations(record.Means, now)
+	return record
+}
+
+func trimGoObservations(entries map[string]goLaunchObservation, now time.Time) {
+	keys := make([]string, 0, len(entries))
+	for key, entry := range entries {
+		age := now.Sub(entry.Observed)
+		if entry.Duration <= 0 || entry.Observed.IsZero() || age < 0 || age > goHistoryMaxAge {
+			delete(entries, key)
+		} else {
+			keys = append(keys, key)
+		}
 	}
-	return h
+	if len(keys) <= goHistoryLimit {
+		return
+	}
+	slices.SortFunc(keys, func(a, b string) int {
+		if order := entries[b].Observed.Compare(entries[a].Observed); order != 0 {
+			return order
+		}
+		return cmp.Compare(a, b)
+	})
+	for _, key := range keys[goHistoryLimit:] {
+		delete(entries, key)
+	}
+}
+
+func goHistoryMean(durations []int64) int64 {
+	count := int64(len(durations))
+	var mean, remainder int64
+	for _, duration := range durations {
+		mean += duration / count
+		remainder += duration % count
+	}
+	return mean + remainder/count
 }
 
 func (h *goLaunchHistory) weights(fallback []int64) []int64 {
@@ -105,24 +169,17 @@ func (h *goLaunchHistory) weights(fallback []int64) []int64 {
 	// Durations and package means are milliseconds; add the static weight to
 	// the largest observation so test counts cannot masquerade as durations.
 	var largest int64
-	packageDurations := map[string][]int64{}
-	for key, duration := range h.durations {
-		largest = max(largest, duration)
-		pkg := h.packages[key]
-		packageDurations[pkg] = append(packageDurations[pkg], duration)
+	for _, entry := range h.entries {
+		largest = max(largest, entry.Duration)
+	}
+	for _, mean := range h.means {
+		largest = max(largest, mean.Duration)
 	}
 	for i, key := range h.keys {
-		if duration := h.durations[key]; duration > 0 {
-			weights[i] = duration
-		} else if durations := packageDurations[h.packageKeys[i]]; len(durations) > 0 {
-			// Divide before summing to keep even large valid observations in range.
-			count := int64(len(durations))
-			var mean, remainder int64
-			for _, duration := range durations {
-				mean += duration / count
-				remainder += duration % count
-			}
-			weights[i] = mean + remainder/count
+		if entry := h.entries[key]; entry.Duration > 0 {
+			weights[i] = entry.Duration
+		} else if mean := h.means[h.packageKeys[i]]; mean.Duration > 0 {
+			weights[i] = mean.Duration
 		} else if largest > 0 {
 			weights[i] = largest + min(max(1, fallback[i]), math.MaxInt64-largest)
 		}
@@ -130,20 +187,22 @@ func (h *goLaunchHistory) weights(fallback []int64) []int64 {
 	return weights
 }
 
-// Only complete, executed launches replace observations. Cached and missing
-// terminals keep the prior observation. This record never supplies a result.
+// Successful executed launches replace observations. Red or cut launches keep
+// their previous cost and age; cached and missing terminals do not refresh it.
+// This record never supplies a result.
 func (h *goLaunchHistory) save(partitions []goTestPartition, executions []PackageExecution) {
 	if h == nil || h.path == "" {
 		return
 	}
-	durations := map[string]int64{}
-	packages := map[string]string{}
+	now := time.Now().UTC()
+	// Re-read at publication so an intervening narrow run's entries survive.
+	// Atomic replacement allows lost concurrent updates, never a partial record.
+	record := h.read(now)
+	measured := map[string][]int64{}
+	incomplete := map[string]bool{}
 	for i, key := range h.keys {
-		if old := h.durations[key]; old > 0 {
-			durations[key] = old
-		}
 		var elapsed int64
-		complete := true
+		complete, green := true, true
 		for _, pkg := range partitions[i].Packages {
 			found := false
 			for _, execution := range executions {
@@ -151,20 +210,41 @@ func (h *goLaunchHistory) save(partitions []goTestPartition, executions []Packag
 					continue
 				}
 				if execution.Mode == PackageExecuted && execution.ElapsedMS != nil && *execution.ElapsedMS > 0 && (execution.Status == "ok" || execution.Status == "fail") {
-					elapsed += *execution.ElapsedMS
+					elapsed += min(*execution.ElapsedMS, math.MaxInt64-elapsed)
 					found = true
+					green = green && execution.Status == "ok"
 				}
 			}
 			complete = complete && found
 		}
-		if complete && elapsed > 0 {
-			durations[key] = elapsed
+		incomplete[h.packageKeys[i]] = incomplete[h.packageKeys[i]] || !complete || !green
+		if !complete || elapsed <= 0 {
+			continue
 		}
-		if durations[key] > 0 {
-			packages[key] = h.packageKeys[i]
+		if !green && record.Entries[key].Duration > 0 {
+			continue
 		}
+		record.Entries[key] = goLaunchObservation{Duration: elapsed, Package: h.packageKeys[i], Observed: now}
+		measured[h.packageKeys[i]] = append(measured[h.packageKeys[i]], elapsed)
 	}
-	data, err := json.Marshal(goLaunchRecord{Schema: 2, Scope: h.scope, Written: time.Now().UTC(), Durations: durations, Packages: packages})
+	if h.completeSelection {
+		// Each package uses one complete set of measured shards. An unmeasured
+		// or red package retains its prior snapshot without blocking other packages.
+		means := map[string]goLaunchObservation{}
+		for _, pkg := range h.packageKeys {
+			if incomplete[pkg] {
+				if previous, ok := record.Means[pkg]; ok {
+					means[pkg] = previous
+				}
+			} else if durations := measured[pkg]; len(durations) > 0 {
+				means[pkg] = goLaunchObservation{Duration: goHistoryMean(durations), Observed: now}
+			}
+		}
+		record.Means = means
+	}
+	trimGoObservations(record.Entries, now)
+	trimGoObservations(record.Means, now)
+	data, err := json.Marshal(record)
 	if err == nil {
 		_ = atomicfile.WriteVolatile(h.path, string(data)+"\n")
 	}

@@ -201,6 +201,8 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byP
 		historyRoot = roots.Installation(request.Root)
 	}
 	nativeRequest.nativeHistory = loadGoLaunchHistory(historyRoot, group, partitions, environment)
+	// Only an unrestricted inventory supplies package means for changed shards.
+	nativeRequest.nativeHistory.completeSelection = slices.Equal(request.Packages, []string{"./..."}) && len(request.Tests) == 0 && !request.OnlyTaggedTests && !request.Unsharded
 	outcome, closeErr, coverageMerge, executions, launchErr := runGoPartitions(ctx, nativeRequest, group, request.Root, environment, expected,
 		partitions, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
 	result.Execution = executions

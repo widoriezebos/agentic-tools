@@ -3,6 +3,7 @@ package proofrun
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func historyPartitions() ([]goTestPartition, []NativeTestIdentity) {
 
 // Fake Go terminals drive the real process launcher, readiness barrier,
 // scheduler, result collector and advisory publication, with no timing waits.
-func historyLaunches(t *testing.T, root, mode string, partitions []goTestPartition, expected []NativeTestIdentity) []int {
+func historyLaunches(t *testing.T, root, mode string, partitions []goTestPartition, expected []NativeTestIdentity, completeSelection ...bool) []int {
 	t.Helper()
 	bin := t.TempDir()
 	script := `#!/bin/sh
@@ -57,7 +58,8 @@ if [ "$HISTORY_MODE" = cached ]; then
 fi
 if [ "$HISTORY_MODE" = missing ]; then exit 0; fi
 status=pass
-if [ "$HISTORY_MODE" = red ]; then status=fail; fi
+if [ "$HISTORY_MODE" = zero-other ] && [ "$name" = TestOther ]; then elapsed=0; fi
+if [ "$HISTORY_MODE" = red ]; then status=fail; elapsed=0.001; fi
 printf '{"Action":"%s","Package":"%s","Elapsed":%s}\n' "$status" "$pkg" "$elapsed"
 if [ "$HISTORY_MODE" = red ]; then exit 1; fi
 `
@@ -66,6 +68,10 @@ if [ "$HISTORY_MODE" = red ]; then exit 1; fi
 	}
 	group := testpolicy.Group{ID: "history", Adapter: "go"}
 	history := loadGoLaunchHistory(roots.Installation(root), group, partitions)
+	history.completeSelection = mode != "narrow"
+	if len(completeSelection) > 0 {
+		history.completeSelection = completeSelection[0]
+	}
 	var order []int
 	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{wrapOutput: func(index int, output io.Writer) io.Writer { order = append(order, index); return output }})
 	var output synchronizedBuffer
@@ -132,7 +138,7 @@ func TestGoLaunchHistoryFallbackAndSelectionIdentity(t *testing.T) {
 				history.scope = other.scope
 				history.save(partitions, nil)
 			case "schema":
-				data, err := json.Marshal(goLaunchRecord{Schema: 99, Scope: history.scope, Packages: history.packages, Written: time.Now().UTC(), Durations: history.durations})
+				data, err := json.Marshal(goLaunchRecord{Schema: 99, Scope: history.scope, Entries: history.entries, Means: history.means})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -140,7 +146,15 @@ func TestGoLaunchHistoryFallbackAndSelectionIdentity(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "stale":
-				data, err := json.Marshal(goLaunchRecord{Schema: 2, Scope: history.scope, Packages: history.packages, Written: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Durations: history.durations})
+				for key, entry := range history.entries {
+					entry.Observed = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+					history.entries[key] = entry
+				}
+				for key, entry := range history.means {
+					entry.Observed = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+					history.means[key] = entry
+				}
+				data, err := json.Marshal(goLaunchRecord{Schema: 3, Scope: history.scope, Entries: history.entries, Means: history.means})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -231,12 +245,12 @@ func TestGoLaunchHistoryConcurrentWritersPublishWholeRecords(t *testing.T) {
 	}
 	wg.Wait()
 	h := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions)
-	if len(h.durations) != len(partitions) {
+	if len(h.entries) != len(partitions) {
 		t.Fatal("unreadable concurrent publication")
 	}
-	first := h.durations[h.keys[0]]
-	for _, duration := range h.durations {
-		if duration != first {
+	first := h.entries[h.keys[0]].Duration
+	for _, entry := range h.entries {
+		if entry.Duration != first {
 			t.Fatal("torn publication")
 		}
 	}
@@ -247,8 +261,8 @@ func TestNativeHistorySurvivesScratchAndSourceChanges(t *testing.T) {
 	root, historyRoot := t.TempDir(), t.TempDir()
 	files := map[string]string{
 		"go.mod":         "module example.invalid/nativehistory\n\ngo 1.27\n",
-		"a/tiny_test.go": "package a\nimport \"testing\"\nfunc TestTiny(t *testing.T) { t.Parallel() }\n",
-		"b/tiny_test.go": "package b\nimport \"testing\"\nfunc TestTiny(t *testing.T) { t.Parallel() }\n",
+		"a/tiny_test.go": "package a\nimport \"testing\"\nfunc TestTiny(t *testing.T) { t.Parallel() }\nfunc TestOne(t *testing.T) { t.Parallel() }\nfunc TestTwo(t *testing.T) { t.Parallel() }\n",
+		"b/tiny_test.go": "package b\nimport \"testing\"\nfunc TestTiny(t *testing.T) { t.Parallel() }\nfunc TestOne(t *testing.T) { t.Parallel() }\nfunc TestTwo(t *testing.T) { t.Parallel() }\n",
 	}
 	for name, contents := range files {
 		path := filepath.Join(root, name)
@@ -286,15 +300,23 @@ func TestNativeHistorySurvivesScratchAndSourceChanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := json.Unmarshal(data, &record); err != nil || len(record.Durations) != 2 {
+		if err := json.Unmarshal(data, &record); err != nil || len(record.Entries) != 2 {
 			t.Fatalf("record: %v", err)
 		}
 		// Fix durations to make the next hand-out independent of host timing.
-		for key := range record.Durations {
-			record.Durations[key] = 1000
-			if record.Packages[key] == goHistoryDigest([]string{"example.invalid/nativehistory/b"}) {
-				record.Durations[key] = 9000
+		for key, entry := range record.Entries {
+			entry.Duration = 1000
+			if entry.Package == goHistoryDigest([]string{"example.invalid/nativehistory/b"}) {
+				entry.Duration = 9000
 			}
+			record.Entries[key] = entry
+		}
+		for pkg, mean := range record.Means {
+			mean.Duration = 1000
+			if pkg == goHistoryDigest([]string{"example.invalid/nativehistory/b"}) {
+				mean.Duration = 9000
+			}
+			record.Means[pkg] = mean
 		}
 		data, err = json.Marshal(record)
 		if err != nil {
@@ -302,6 +324,14 @@ func TestNativeHistorySurvivesScratchAndSourceChanges(t *testing.T) {
 		}
 		if err := os.WriteFile(paths[0], data, 0600); err != nil {
 			t.Fatal(err)
+		}
+		replay, err := RunNativeInventory(t.Context(), NativeInventoryRequest{Root: root, HistoryRoot: roots.Installation(historyRoot), LogRoot: t.TempDir(), Packages: []string{"./b"}, Tests: []string{"TestOne", "TestTwo"}, Unsharded: true, Workers: 1, Environment: gittree.ScrubbedEnviron()})
+		if err != nil || replay.Failed || len(replay.Execution) != 1 {
+			t.Fatalf("replay failed=%t err=%v", replay.Failed, err)
+		}
+		after := readHistoryRecord(t, paths[0])
+		if len(after.Entries) != 3 || !reflect.DeepEqual(after.Means, record.Means) {
+			t.Fatal("narrow inventory changed complete history")
 		}
 		if err := os.WriteFile(filepath.Join(root, "a/tiny_test.go"), []byte(files["a/tiny_test.go"]+"// changed source contents\n"), 0600); err != nil {
 			t.Fatal(err)
@@ -317,12 +347,137 @@ func TestGoLaunchHistoryCannotChangeIdentityOrReuse(t *testing.T) {
 		environment := []string{"FIXTURE=one"}
 		before := groupExecutionIdentity(request, group, "", "inputs", digestGroupEnvironment(group, environment), nil, nil)
 		countBefore, reasonBefore := reusePolicy(request, group, 1, goCacheFacts{})
-		request.nativeHistory = &goLaunchHistory{durations: map[string]int64{"anything": 999999}}
+		request.nativeHistory = &goLaunchHistory{entries: map[string]goLaunchObservation{"anything": {Duration: 999999}}}
 		environment = append(environment, NativeHistoryRootEnvironment+"=/another-installation")
 		after := groupExecutionIdentity(request, group, "", "inputs", digestGroupEnvironment(group, environment), nil, nil)
 		countAfter, reasonAfter := reusePolicy(request, group, 1, goCacheFacts{})
 		if before != after || countBefore != countAfter || reasonBefore != reasonAfter {
 			t.Fatal("advisory scheduling affected proof identity or reuse")
 		}
+	}
+}
+
+func TestGoLaunchHistoryNarrowRunPreservesCompleteOrder(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	partitions, expected := historyPartitions()
+	partitions[1].Names = append(partitions[1].Names, "TestAdded")
+	expected = append(expected, NativeTestIdentity{Classname: partitions[1].Packages[0], Name: "TestAdded"})
+	historyLaunches(t, root, "", partitions, expected)
+	first := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions).weights([]int64{1, 1, 1})
+	narrow := []goTestPartition{{Packages: partitions[0].Packages, Names: []string{"TestSmall", "TestAdded"}}}
+	selected := []NativeTestIdentity{{Classname: narrow[0].Packages[0], Name: "TestSmall"}, {Classname: narrow[0].Packages[0], Name: "TestAdded"}}
+	historyLaunches(t, root, "narrow", narrow, selected)
+	h := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions)
+	if got := h.weights([]int64{1, 1, 1}); !reflect.DeepEqual(got, first) {
+		t.Fatalf("narrow run changed complete weights: got %v want %v", got, first)
+	}
+	changed := []goTestPartition{{Packages: partitions[0].Packages, Names: []string{"TestChanged"}}}
+	if got := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, changed).weights([]int64{1}); got[0] != 5000 {
+		t.Fatalf("narrow run changed package mean: %v", got)
+	}
+	if got := historyLaunches(t, root, "", partitions, expected); !reflect.DeepEqual(got, []int{1, 2, 0}) {
+		t.Fatalf("complete run after replay order %v", got)
+	}
+}
+
+func readHistoryRecord(t *testing.T, path string) goLaunchRecord {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record goLaunchRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+func writeHistoryRecord(t *testing.T, path string, record goLaunchRecord) {
+	t.Helper()
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGoLaunchHistoryExpiresEntriesAndBoundsRecord(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"age", "bound"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			partitions, expected := historyPartitions()
+			historyLaunches(t, root, "", partitions, expected)
+			h := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions)
+			record := readHistoryRecord(t, h.path)
+			fresh := record.Entries[h.keys[1]]
+			if mode == "age" {
+				old := record.Entries[h.keys[0]]
+				old.Observed = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+				record.Entries[h.keys[0]] = old
+				record.Means[h.packageKeys[0]] = old
+			} else {
+				older := fresh
+				older.Observed = older.Observed.Add(-time.Hour)
+				for i := range goHistoryLimit + 1 {
+					key := goHistoryDigest(fmt.Sprintf("older-%d", i))
+					record.Entries[key] = older
+					record.Means[key] = older
+				}
+			}
+			writeHistoryRecord(t, h.path, record)
+			// Cached terminals must neither refresh ages nor hide save-time pruning.
+			historyLaunches(t, root, "cached", partitions, expected, false)
+			saved := readHistoryRecord(t, h.path)
+			if saved.Entries[h.keys[1]] != fresh {
+				t.Fatal("fresh observation changed without execution")
+			}
+			if mode == "age" {
+				if _, ok := saved.Entries[h.keys[0]]; ok {
+					t.Fatal("old entry survived save")
+				}
+				if _, ok := saved.Means[h.packageKeys[0]]; ok {
+					t.Fatal("old package mean survived save")
+				}
+				if len(saved.Entries) != 2 || len(saved.Means) != 1 {
+					t.Fatal("fresh history was discarded")
+				}
+			} else if len(saved.Entries) != goHistoryLimit || len(saved.Means) != goHistoryLimit {
+				t.Fatalf("record exceeded bounds: entries=%d means=%d", len(saved.Entries), len(saved.Means))
+			}
+		})
+	}
+}
+
+func TestGoLaunchHistoryMergeReadsCurrentRecord(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	partitions, expected := historyPartitions()
+	historyLaunches(t, root, "", partitions, expected)
+	loaded := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, partitions)
+	narrow := []goTestPartition{{Packages: partitions[0].Packages, Names: []string{"TestSmall", "TestAdded"}}}
+	selected := []NativeTestIdentity{{Classname: narrow[0].Packages[0], Name: "TestSmall"}, {Classname: narrow[0].Packages[0], Name: "TestAdded"}}
+	historyLaunches(t, root, "narrow", narrow, selected)
+	before := readHistoryRecord(t, loaded.path)
+	loaded.save(partitions, nil)
+	after := readHistoryRecord(t, loaded.path)
+	if len(after.Entries) != 4 || !reflect.DeepEqual(before, after) {
+		t.Fatal("save lost observations published after load")
+	}
+}
+
+func TestGoLaunchHistoryUnmeasuredPackageDoesNotBlockMeans(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	partitions, expected := historyPartitions()
+	historyLaunches(t, root, "zero-other", partitions, expected)
+	changed := []goTestPartition{{Packages: partitions[0].Packages, Names: []string{"TestChanged"}}}
+	if got := loadGoLaunchHistory(roots.Installation(root), testpolicy.Group{}, changed).weights([]int64{1}); got[0] != 5000 {
+		t.Fatalf("unmeasured package blocked measured package mean: %v", got)
 	}
 }

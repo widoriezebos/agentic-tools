@@ -47,7 +47,7 @@ func Execute(argv []string, stdout, stderr io.Writer) error {
 	}
 	command := exec.Command(executable, argv[1:]...)
 	command.Args[0] = argv[0]
-	command.Env = environment
+	command.Env = slices.DeleteFunc(environment, func(entry string) bool { return strings.HasPrefix(entry, proofrun.NativeHistoryRootEnvironment+"=") })
 	command.Stdout, command.Stderr = stdout, stderr
 	return command.Run()
 }
