@@ -12,10 +12,12 @@ Open read items (fix unit astra-runner-u3b-read.r1): 1
 - ReadItem: id=astra-runner-u3b-read.r1-1 read=astra-runner-u3b-read.r1 state=open addedAt=2026-11-19T05:10:17Z changedAt=- material=false closingReference="" text="U3b correction 1 compares the runner reading in wall times through clockMovedBack. The case the two reads asked to test, two times that both carry a monotonic reading with the wall clock set back between them, cannot be built through Go public API: only time.Now creates a monotonic reading, Add moves wall and monotonic together, and Round, Truncate, In, UTC, Local, AddDate and every decoder drop it (GOROOT src/time/time.go:44-51, :281-283). By a1 ruling in Wido name (2026-11-19 06:1x): no unsafe test; the pure function is tested on constructed wall times, and a source check keeps every comparison of the observation going through it."
 Open read items (fix unit code-critic-012bf206c02cfe8940d860cb): 1
 - ReadItem: id=code-critic-012bf206c02cfe8940d860cb-1 read=code-critic-012bf206c02cfe8940d860cb state=open addedAt=2026-11-19T03:00:32Z changedAt=- material=false closingReference="" text="U3a was built and read by the same model, Claude Opus 5.5, because Codex on the laptop is at its limit until 22 Nov 21:53 (temporary roster, a1 in Wido name). Astra read the unit independently through Codex in the Mini VM: designs/astra-runner-u3a-read.r1.log."
+Open read items (fix unit code-critic-f2fb2871e3b61a2dd01112b9): 1
+- ReadItem: id=code-critic-f2fb2871e3b61a2dd01112b9-1 read=code-critic-f2fb2871e3b61a2dd01112b9 state=open addedAt=2026-11-19T06:26:46Z changedAt=- material=false closingReference="" text="U3b (attempt 2, units d9ca7834ad, read b90acba3d0) was built, corrected and read by the same model, Claude Opus 5.5, under the temporary roster until 22 Nov 21:53. Astra read both attempts independently in the Mini VM: designs/astra-runner-u3b-read.r1.log (one material finding, the monotonic clock comparison, fixed by correction 1) and designs/astra-runner-u3b-read.r2.log (UNIT STANDS, 0 material)."
 - ReadItem: id=astra-runner-u3a-read.r1-1 read=astra-runner-u3a-read.r1 state=fixed addedAt=2026-11-19T03:00:11Z changedAt=2026-11-19T06:26:18Z material=true closingReference="d9ca7834ad49c1940fb9903b4953f8040bd48571" text="U3a was published (read c09946c3a4) with one known material finding from Astra: runnerObservedAt returns the later of now and the clock, so a clock that moved back after the caller read now is not detected (runner_liveness.go:49-56, :102). Nothing decides on the reading before U3b, so the fault cannot act. Fixed in U3b, contract 6 and test Ts10 of brief revision 3; a1 agreed in Wido name on 2026-11-19, no correction round of U3a. Close this note with the U3b units commit."
 - OpenedAt: 2026-11-16T10:00:01Z
 - FirstClaimAt: 2026-11-16T12:09:28Z
-- Revision: 24
+- Revision: 25
 - Pinned: m1e
 - Budget: elapsedLimit=7d attemptLimit=30 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=30
 - BudgetExceptions: 0
@@ -50,4 +52,5 @@ History:
 - 2026-11-19T03:00:32Z NH6BKW7Q7SXJKR06GRCVJN9Z06-m1e-71c5cb39 read-items-add actor=m1e+steward-seat targets=a-runner-is-judged-by-its-progress
 - 2026-11-19T05:10:17Z MTE3FC6XTPR73PT9ZFB9YR94P0-m1e-71c5cb39 read-items-add actor=m1e+steward-seat targets=a-runner-is-judged-by-its-progress
 - 2026-11-19T06:26:18Z QPS1Q8BTK95PGKYC2T8YND6P9J-m1e-71c5cb39 read-items-close actor=m1e+steward-seat targets=a-runner-is-judged-by-its-progress
-Integrity: sha256=75bbd147990c482cf5fc5477bc9fd515afdff2951a36ec170303bd63c72eb89f
+- 2026-11-19T06:26:46Z DMDM1GJ9W5YQR9FD6ZCS3JMDN9-m1e-71c5cb39 read-items-add actor=m1e+steward-seat targets=a-runner-is-judged-by-its-progress
+Integrity: sha256=837813f6a514922d0820d06dfaff4667b85912bc2c92c9b74f9cc5adbf7b3f7e
