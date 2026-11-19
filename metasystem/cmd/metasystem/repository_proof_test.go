@@ -335,6 +335,9 @@ func repositoryProofRunners() repoproof.HostRunners {
 		}
 		return result, nil
 	}, Groups: func(ids []string) ([]proofrun.NamedGroupResult, error) {
+		if reflect.DeepEqual(ids, []string{"refusal-register-standard"}) {
+			return []proofrun.NamedGroupResult{{ID: "refusal-register-standard", Status: "green"}}, nil
+		}
 		if reflect.DeepEqual(ids, []string{"fast-static-build"}) {
 			return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
 		}
