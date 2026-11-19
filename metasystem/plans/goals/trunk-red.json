@@ -31029,6 +31029,51 @@
       "opened": "2026-11-19T12:05:14Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/internal/steward:TestFleetRearmPreservesContinuation",
+      "identity": "red:metasystem/internal/steward:TestFleetRearmPreservesContinuation",
+      "group": "metasystem/internal/steward",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261119T122208.930444000Z.log",
+          "classname": "metasystem/internal/steward",
+          "name": "TestFleetRearmPreservesContinuation",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261119T122208.930444000Z",
+          "batch": "20261119T122208.930444000Z",
+          "baseCommit": "e93932021a94a6faaa6debfe50928b7daf6fbb2f",
+          "baseTree": "773fc80aaf46d8ecf97440d26f0f15cd82d386ca",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261119T122208.930444000Z.log",
+          "logDigest": "316876e7bfa250ef65bd1d3a1604205af3ae7301549e7f8e36187b951b0715f7",
+          "seenAt": "2026-11-19T12:40:34Z",
+          "opid": "YCGHP6YBRF33TX21HK4DXJ30X7-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261119T122208.930444000Z"
+      ],
+      "opened": "2026-11-19T12:40:34Z",
+      "closed": null
     }
   ],
   "cadence": {
