@@ -155,11 +155,19 @@ func TestB(t *testing.T) { t.Parallel() }
 				"PATH": tools, "GOWORK": "off", "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off",
 			})
 			const big = "example.com/proof/cmd/metasystem"
-			natives, static, sections := 0, false, map[string]int{}
+			natives, sections := 0, map[string]int{}
+			staticStarted, suiteStarted, staticDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 				natives++
-				if !static {
-					t.Fatal("static did not run first")
+				if len(request.BuildTags) == 0 {
+					<-staticStarted
+					close(suiteStarted)
+				} else {
+					select {
+					case <-staticDone:
+					default:
+						t.Fatal("batch preceded static join")
+					}
 				}
 				request.Root, request.Environment, request.Workers = root, environment, 2
 				// The batch pass has no tagged-only tests in this fixture.
@@ -222,13 +230,23 @@ func TestB(t *testing.T) { t.Parallel() }
 				return result, nil
 			}}
 			hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if reflect.DeepEqual(ids, []string{"refusal-register-standard"}) {
+					return []proofrun.NamedGroupResult{{ID: "refusal-register-standard", Status: "green"}}, nil
+				}
 				if !reflect.DeepEqual(ids, []string{"fast-static-build"}) {
 					t.Fatalf("static selection: %v", ids)
 				}
-				static = true
+				close(staticStarted)
+				<-suiteStarted
+				close(staticDone)
 				return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
 			}
 			command := func(argv []string, stdout, _ io.Writer) error {
+				select {
+				case <-staticDone:
+				default:
+					t.Fatal("section preceded static join")
+				}
 				if natives != 2 || len(argv) != 3 || argv[1] != "--section" {
 					t.Fatalf("section ran before native passes: %v", argv)
 				}
@@ -361,6 +379,7 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 			}
 			env["METASYSTEM_FULL_REPORTER"] = os.Getenv("METASYSTEM_FULL_REPORTER")
 			static, natives, groups := false, 0, 0
+			staticStarted, suiteStarted, staticDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			hooks := HostRunners{Environment: func() (string, error) { return "stable toolchain", nil }, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 				natives++
 				if mode == "scoped package" && (!reflect.DeepEqual(r.Packages, []string{"internal/launch"}) || len(r.BuildTags) != 0) {
@@ -369,8 +388,17 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 				if mode == "scoped named batch" && (!reflect.DeepEqual(r.Packages, []string{"cmd/metasystem"}) || !reflect.DeepEqual(r.Tests, []string{"TestA", "TestB"})) {
 					t.Fatalf("named inventory %+v", r)
 				}
-				if env["LANDING_PROOF_SCOPE"] == "" && !static {
-					t.Fatal("static did not run first")
+				if env["LANDING_PROOF_SCOPE"] == "" {
+					if len(r.BuildTags) == 0 {
+						<-staticStarted
+						close(suiteStarted)
+					} else {
+						select {
+						case <-staticDone:
+						default:
+							t.Fatal("batch preceded static join")
+						}
+					}
 				}
 				result := proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: pkg, Shard: 1, Status: "ok"}, {Package: pkg, Shard: 2, Status: "ok"}, {Package: "github.com/widoriezebos/agentic-tools/metasystem/internal/launch", Shard: 1, Status: "ok"}}}
 				if natives == 1 {
@@ -391,8 +419,14 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 				}
 				return result, nil
 			}, Groups: func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if reflect.DeepEqual(ids, []string{"refusal-register-standard"}) {
+					return []proofrun.NamedGroupResult{{ID: "refusal-register-standard", Status: "green"}}, nil
+				}
 				if reflect.DeepEqual(ids, []string{"fast-static-build"}) {
 					static = true
+					close(staticStarted)
+					<-suiteStarted
+					close(staticDone)
 					return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
 				}
 				groups++
@@ -409,6 +443,11 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 				return []proofrun.NamedGroupResult{{ID: "verb-ratchet", Status: status, DurationMS: 7}}, nil
 			}}
 			command := func(argv []string, stdout, _ io.Writer) error {
+				select {
+				case <-staticDone:
+				default:
+					t.Fatal("section preceded static join")
+				}
 				if argv[0] != env["METASYSTEM_FULL_REPORTER"] {
 					t.Fatalf("unexpected command %v", argv)
 				}

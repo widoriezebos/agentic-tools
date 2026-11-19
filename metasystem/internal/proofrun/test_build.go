@@ -1310,8 +1310,8 @@ type goShardLifecycleHooks struct {
 
 type goShardLifecycleHooksKey struct{}
 
-// Each package has its own readiness chain: go test emits start before its
-// build check, but run and package terminals certify that check has finished.
+// Each package has one first-producer barrier. A test run event follows
+// compilation and TestMain setup; package terminals and exit also release it.
 type goPackageReadiness struct {
 	done   chan struct{}
 	once   sync.Once
@@ -1504,18 +1504,20 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 	})
 	predecessors := make([][]*goPackageReadiness, len(partitions))
 	readiness := make([]map[string]*goPackageReadiness, len(partitions))
-	last := map[string]*goPackageReadiness{}
+	first := map[string]*goPackageReadiness{}
 	for index, partition := range partitions {
 		readiness[index] = map[string]*goPackageReadiness{}
 		for _, pkg := range partition.Packages {
-			if previous := last[pkg]; previous != nil {
-				predecessors[index] = append(predecessors[index], previous)
+			if producer := first[pkg]; producer != nil {
+				predecessors[index] = append(predecessors[index], producer)
+				continue
 			}
 			ready := &goPackageReadiness{done: make(chan struct{}), shard: index, pkg: pkg}
-			readiness[index][pkg], last[pkg] = ready, ready
+			readiness[index][pkg], first[pkg] = ready, ready
 		}
 	}
-	for index := range partitions {
+	order := newGoWorkerOrder(shardCtx, goPartitionWeights(partitions, expected), predecessors)
+	for _, index := range order.order {
 		countOne, reason := reusePolicy(request, group, index+1, facts)
 		runs[index].reason = reason
 		args := goNativeTestArguments(group, group.Coverage, countOne)
@@ -1552,7 +1554,7 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 				runs[index].launchErr = fmt.Errorf("wait for Go package readiness: %w", err)
 				return
 			}
-			release, err := acquireTestWorkers(shardCtx, 1)
+			release, err := order.acquire(shardCtx, index)
 			if err != nil {
 				runs[index].launchErr = fmt.Errorf("acquire Go test worker: %w", err)
 				cancelShards()

@@ -169,11 +169,18 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 	t.Parallel()
 	var out, stderr bytes.Buffer
-	static := false
+	staticStarted, suiteStarted, staticDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	batches := 0
 	hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
-		if !static {
-			t.Fatal("tests preceded static")
+		if len(r.BuildTags) == 0 {
+			<-staticStarted
+			close(suiteStarted)
+		} else {
+			select {
+			case <-staticDone:
+			default:
+				t.Fatal("batch preceded static join")
+			}
 		}
 		if len(r.BuildTags) > 0 {
 			batches++
@@ -184,16 +191,26 @@ func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 		return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/package", Shard: 1, Status: "ok"}}}, nil
 	}}
 	hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+		if reflect.DeepEqual(ids, []string{"refusal-register-standard"}) {
+			return []proofrun.NamedGroupResult{{ID: "refusal-register-standard", Status: "green"}}, nil
+		}
 		if !reflect.DeepEqual(ids, []string{"fast-static-build"}) {
 			t.Fatalf("static selection: %v", ids)
 		}
-		static = true
+		close(staticStarted)
+		<-suiteStarted
+		close(staticDone)
 		return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
 	}
 	sections := map[string]int{}
 	command := func(argv []string, stdout, _ io.Writer) error {
 		if argv[0] != "/fixture/run/reporter" {
 			t.Fatalf("unexpected %v", argv)
+		}
+		select {
+		case <-staticDone:
+		default:
+			t.Fatal("section preceded static join")
 		}
 		id := argv[2]
 		sections[id]++
@@ -358,6 +375,9 @@ func TestFullLegFailuresKeepTheirGroupAndEnvironmentVerdicts(t *testing.T) {
 				return result, nil
 			}}
 			hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if reflect.DeepEqual(ids, []string{"refusal-register-standard"}) {
+					return []proofrun.NamedGroupResult{{ID: "refusal-register-standard", Status: "green"}}, nil
+				}
 				if !reflect.DeepEqual(ids, []string{"fast-static-build"}) {
 					t.Fatalf("static selection: %v", ids)
 				}

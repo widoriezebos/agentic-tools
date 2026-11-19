@@ -36,6 +36,16 @@ type NamedGroupResult struct {
 // installation. Logs are temporary diagnostics, never retained proof records.
 // Selection is validated in full before discovery or any native command runs.
 func RunNamedGroups(ctx context.Context, installation string, contract testpolicy.Contract, ids, environment []string, progress ...func(string, int, []PackageExecution)) ([]NamedGroupResult, error) {
+	return runNamedGroups(ctx, installation, contract, ids, environment, nil, false, progress...)
+}
+
+// RunStaticBesideSuite preserves completed prerequisites from this invocation
+// and bounds the independent static command while native workers are active.
+func RunStaticBesideSuite(ctx context.Context, installation string, contract testpolicy.Contract, environment []string, completed []NamedGroupResult) ([]NamedGroupResult, error) {
+	return runNamedGroups(ctx, installation, contract, []string{"fast-static-build"}, environment, completed, true)
+}
+
+func runNamedGroups(ctx context.Context, installation string, contract testpolicy.Contract, ids, environment []string, completed []NamedGroupResult, overlap bool, progress ...func(string, int, []PackageExecution)) ([]NamedGroupResult, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("no testing group ids supplied")
 	}
@@ -87,11 +97,17 @@ func RunNamedGroups(ctx context.Context, installation string, contract testpolic
 		return nil, err
 	}
 	defer release()
+	if overlap {
+		workers = min(workers, max(2, workers/4))
+	}
 	request := TestRunRequest{Workers: workers, Environment: environment, LogRoot: logRoot}
 	ctx = withTestWorkerPool(ctx, workers)
 	cache := &goDiscoveryCache{}
 	var results []NamedGroupResult
 	known := map[string]string{}
+	for _, result := range completed {
+		known[result.ID] = result.Status
+	}
 	var run func(string) error
 	run = func(id string) error {
 		if _, done := known[id]; done {

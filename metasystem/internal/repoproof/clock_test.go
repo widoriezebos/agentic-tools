@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -53,10 +54,11 @@ func TestFullReporterMeasuresItsTotalBeforeTheReport(t *testing.T) {
 	for _, red := range []bool{false, true} {
 		t.Run(fmt.Sprint(red), func(t *testing.T) {
 			t.Parallel()
+			var clockMu sync.Mutex
 			now := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
 			var out, stderr bytes.Buffer
 			nativeRuns := 0
-			hooks := HostRunners{Now: func() time.Time { return now }, Environment: func() (string, error) { return "fixture", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+			hooks := HostRunners{Now: func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return now }, Environment: func() (string, error) { return "fixture", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 				nativeRuns++
 				if request.Progress == nil {
 					t.Fatal("reporter supplied no live progress callback")
@@ -67,14 +69,21 @@ func TestFullReporterMeasuresItsTotalBeforeTheReport(t *testing.T) {
 				if !strings.Contains(out.String(), "landing planned 1\nlanding package fixture/unit 1 ok 0\n") {
 					t.Fatalf("progress was not published during native execution: %s", &out)
 				}
+				clockMu.Lock()
 				now = now.Add(2 * time.Minute)
+				clockMu.Unlock()
 				return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/unit", Shard: 1, Status: "ok"}}}, nil
 			}}
 			hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if len(ids) == 1 && ids[0] == "refusal-register-standard" {
+					return []proofrun.NamedGroupResult{{ID: ids[0], Status: "green"}}, nil
+				}
 				if len(ids) != 1 || ids[0] != "fast-static-build" {
 					t.Fatalf("static selection: %v", ids)
 				}
+				clockMu.Lock()
 				now = now.Add(time.Minute)
+				clockMu.Unlock()
 				status := "green"
 				if red {
 					status = "red"

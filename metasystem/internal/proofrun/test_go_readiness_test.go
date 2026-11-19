@@ -240,6 +240,7 @@ func TestGoPartitionsReadinessChainLeavesWorkersForOtherPackages(t *testing.T) {
 		return true
 	})
 	run.gate(t, 1, 0, "a")
+	run.gate(t, 2, 0, "a")
 	testenv.Await(t, "producer held before its first run event", func() bool {
 		pool := run.ctx.Value(testWorkerPoolContextKey{}).(*testWorkerPool)
 		if available, _ := testWorkerPoolState(pool); available == 0 {
@@ -264,14 +265,13 @@ func TestGoPartitionsReadinessChainLeavesWorkersForOtherPackages(t *testing.T) {
 	run.blocked(t, 1, 2)
 	close(release[0])
 	awaitReadinessSignal(t, run.ctx, entered[1])
-	run.gate(t, 2, 1, "a")
-	run.blocked(t, 2)
+	awaitReadinessSignal(t, run.ctx, run.launched[2])
 	close(release[1])
 	run.finish(t)
 	unrelated.finish(t)
 	run.header(t, 0, "no wait")
 	run.header(t, 1, "shard 1 of "+readinessPrefix+"a to begin running")
-	run.header(t, 2, "shard 2 of "+readinessPrefix+"a to begin running")
+	run.header(t, 2, "shard 1 of "+readinessPrefix+"a to begin running")
 }
 
 func TestGoPartitionsReadinessResolvesPackagesIndependently(t *testing.T) {
@@ -428,7 +428,7 @@ func TestGoPartitionsReadinessCompileFailurePreservesEveryShard(t *testing.T) {
 		return true
 	})
 	run.gate(t, 1, 0, "broken")
-	run.gate(t, 2, 1, "broken")
+	run.gate(t, 2, 0, "broken")
 	awaitReadinessSignal(t, run.ctx, held)
 	run.blocked(t, 1, 2)
 	close(release)

@@ -3,6 +3,8 @@ package proofrun
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sort"
 	"sync"
 )
 
@@ -137,4 +139,103 @@ func testWorkerRelease(pool *testWorkerPool, workers int) func() {
 			pool.mu.Unlock()
 		})
 	}
+}
+
+// goWorkerOrder freezes the finite launch queue before any worker is handed
+// out. Readiness is checked under the pool lock, before reserving capacity;
+// a waiting cold package therefore cannot keep another package from running.
+type goWorkerOrder struct {
+	order        []int
+	pending      []bool
+	predecessors [][]*goPackageReadiness
+	pool         *testWorkerPool
+}
+
+func newGoWorkerOrder(ctx context.Context, weights []int64, predecessors [][]*goPackageReadiness) *goWorkerOrder {
+	pool, _ := testWorkerPoolForRequest(ctx, 1)
+	q := &goWorkerOrder{pool: pool, predecessors: predecessors, pending: make([]bool, len(weights))}
+	for i := range weights {
+		q.order = append(q.order, i)
+		q.pending[i] = true
+	}
+	sort.SliceStable(q.order, func(i, j int) bool { return weights[q.order[i]] > weights[q.order[j]] })
+	return q
+}
+
+func (q *goWorkerOrder) next() int {
+	for _, i := range q.order {
+		if !q.pending[i] {
+			continue
+		}
+		ready := true
+		for _, dependency := range q.predecessors[i] {
+			select {
+			case <-dependency.done:
+			default:
+				ready = false
+			}
+		}
+		if ready {
+			return i
+		}
+	}
+	return -1
+}
+
+func (q *goWorkerOrder) acquire(ctx context.Context, index int) (func(), error) {
+	q.pool.mu.Lock()
+	defer q.pool.mu.Unlock()
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if q.pool.available > 0 && q.next() == index {
+			q.pending[index] = false
+			q.pool.available--
+			close(q.pool.changed)
+			q.pool.changed = make(chan struct{})
+			return testWorkerRelease(q.pool, 1), nil
+		}
+		changed := q.pool.changed
+		q.pool.waiters++
+		q.pool.mu.Unlock()
+		select {
+		case <-ctx.Done():
+		case <-changed:
+		}
+		q.pool.mu.Lock()
+		q.pool.waiters--
+	}
+}
+
+// With no measured history, shards precede whole packages, then larger
+// selections precede smaller ones. Equal weights retain partition order.
+func goPartitionWeights(partitions []goTestPartition, expected []NativeTestIdentity) []int64 {
+	selected := make([]int, len(partitions))
+	for i, p := range partitions {
+		for _, test := range expected {
+			if test.Name != goPackageBuildIdentity && slices.Contains(p.Packages, test.Classname) && slices.Contains(p.Names, test.Name) {
+				selected[i]++
+			}
+		}
+	}
+	counts := map[string]int{}
+	maximum := 0
+	for i, p := range partitions {
+		maximum = max(maximum, selected[i])
+		for _, pkg := range p.Packages {
+			counts[pkg]++
+		}
+	}
+	weights := make([]int64, len(partitions))
+	for i, p := range partitions {
+		weights[i] = int64(selected[i])
+		for _, pkg := range p.Packages {
+			if counts[pkg] > 1 {
+				weights[i] += int64(maximum) + 1
+				break
+			}
+		}
+	}
+	return weights
 }

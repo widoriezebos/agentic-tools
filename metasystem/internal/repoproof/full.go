@@ -27,6 +27,7 @@ import (
 type HostRunners struct {
 	Native      func(proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error)
 	Groups      func([]string) ([]proofrun.NamedGroupResult, error)
+	Static      func([]proofrun.NamedGroupResult) ([]proofrun.NamedGroupResult, error)
 	Environment func() (string, error)
 	Now         func() time.Time
 }
@@ -141,6 +142,17 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	if err != nil {
 		return notRun(err)
 	}
+	if hooks.Static == nil {
+		if hooks.Groups != nil {
+			hooks.Static = func(_ []proofrun.NamedGroupResult) ([]proofrun.NamedGroupResult, error) {
+				return hooks.Groups([]string{"fast-static-build"})
+			}
+		} else {
+			hooks.Static = func(completed []proofrun.NamedGroupResult) ([]proofrun.NamedGroupResult, error) {
+				return proofrun.RunStaticBesideSuite(ctx, root, contract, environment, completed)
+			}
+		}
+	}
 	if hooks.Groups == nil {
 		hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
 			return proofrun.RunNamedGroups(ctx, root, contract, ids, environment)
@@ -173,14 +185,14 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	full := !scoped && only == ""
 	if full {
-		groups = append([]string{"fast-static-build"}, groups...)
+		for _, group := range contract.Groups {
+			if group.ID == "fast-static-build" {
+				groups = append(groups, group.Requires...)
+			}
+		}
 	}
 
-	if len(groups) > 0 {
-		results, err := hooks.Groups(groups)
-		if err != nil {
-			return notRun(err)
-		}
+	collectGroups := func(results []proofrun.NamedGroupResult) {
 		for _, group := range results {
 			stdout.Write(group.NativeOutput)
 			status := group.Status
@@ -203,6 +215,14 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				fmt.Fprintln(stderr, group.Output)
 			}
 		}
+	}
+	var prerequisites []proofrun.NamedGroupResult
+	if len(groups) > 0 {
+		prerequisites, err = hooks.Groups(groups)
+		if err != nil {
+			return notRun(err)
+		}
+		collectGroups(prerequisites)
 	}
 	logRoot, release, err := diskstore.ScratchDir("metasystem-landing-native-")
 	if err != nil {
@@ -278,6 +298,34 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		}
 		return nil
 	}
+	// Only the coordinator writes reports and the verdict map. Every return
+	// joins the static command before releasing the suite's scratch directory.
+	var staticDone chan struct{}
+	var staticResults []proofrun.NamedGroupResult
+	var staticErr error
+	joinStatic := func() error { return nil }
+	if full {
+		staticDone = make(chan struct{})
+		go func() {
+			defer close(staticDone)
+			staticResults, staticErr = hooks.Static(prerequisites)
+		}()
+		joined := false
+		joinStatic = func() error {
+			if !joined {
+				<-staticDone
+				collectGroups(staticResults)
+				joined = true
+			}
+			return staticErr
+		}
+		defer func() { _ = joinStatic() }()
+	}
+	// Operational failures still collect the concurrent static result before
+	// printing the final not-run line.
+	nativeNotRun := func(err error) int {
+		return notRun(errors.Join(err, joinStatic()))
+	}
 	for _, selection := range selections {
 		pkg, names, _ := strings.Cut(selection, "=")
 		pkg = strings.TrimPrefix(pkg, "metasystem/")
@@ -288,17 +336,20 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			tests = strings.Fields(getenv("LANDING_ONLY_TESTS"))
 		}
 		if err := native([]string{pkg}, tests, nil); err != nil {
-			return notRun(err)
+			return nativeNotRun(err)
 		}
 		if only == "" && !full && (pkg == "cmd/metasystem" || strings.HasPrefix(pkg, "internal/landing/")) {
 			if err := native([]string{pkg}, tests, []string{"batchtest"}); err != nil {
-				return notRun(err)
+				return nativeNotRun(err)
 			}
 		}
 	}
 	if full {
+		if err := joinStatic(); err != nil {
+			return nativeNotRun(err)
+		}
 		if err := native([]string{"cmd/metasystem", "internal/landing/..."}, nil, []string{"batchtest"}); err != nil {
-			return notRun(err)
+			return nativeNotRun(err)
 		}
 		reporter := getenv("METASYSTEM_FULL_REPORTER")
 		if reporter == "" {
@@ -327,14 +378,14 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				}
 			}
 			if decodeErr := json.Unmarshal(report.Bytes(), &result); decodeErr != nil {
-				return notRun(fmt.Errorf("section %s report: %w", group.ID, decodeErr))
+				return nativeNotRun(fmt.Errorf("section %s report: %w", group.ID, decodeErr))
 			}
 			found := false
 			hasFailure := false
 			for _, leg := range result.Data.Groups {
 				found = found || leg.ID == group.ID
 				if !leg.NativeLaunched || leg.NativeExitStatus == nil || (leg.Status != "passed" && leg.Status != "failed") {
-					return notRun(fmt.Errorf("section %s did not complete: %s", leg.ID, leg.Status))
+					return nativeNotRun(fmt.Errorf("section %s did not complete: %s", leg.ID, leg.Status))
 				}
 				if leg.Status == "failed" || *leg.NativeExitStatus != 0 {
 					failed[leg.ID] = nil
@@ -342,7 +393,7 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				}
 			}
 			if !found || (err != nil && !hasFailure) {
-				return notRun(fmt.Errorf("section %s has no completed verdict: %v", group.ID, err))
+				return nativeNotRun(fmt.Errorf("section %s has no completed verdict: %v", group.ID, err))
 			}
 		}
 	}

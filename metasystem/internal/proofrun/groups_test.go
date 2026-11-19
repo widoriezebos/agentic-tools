@@ -239,3 +239,41 @@ func TestPresent(t *testing.T) {
 		t.Fatalf("passing tagged test must be green without coverage: %+v, %v", results, err)
 	}
 }
+
+func TestStaticBesideSuiteBoundsWorkersAndRetainsPrerequisites(t *testing.T) {
+	t.Parallel()
+	for _, allowance := range []int{1, 2, 8, 18} {
+		for _, status := range []string{"green", "red"} {
+			t.Run(fmt.Sprintf("%d/%s", allowance, status), func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				all := 0
+				groups := []testpolicy.Group{
+					{ID: "refusal-register-standard", Adapter: "command", CWD: ".", Format: "exit-status", Argv: []string{"/bin/sh", "-c", "exit 99"}},
+					{ID: "fast-static-build", Adapter: "command", CWD: ".", Format: "exit-status", Requires: []string{"refusal-register-standard"}, Resources: testpolicy.GroupResources{Workers: &all},
+						Argv: []string{"/bin/sh", "-c", fmt.Sprintf(`test "$METASYSTEM_TEST_WORKERS" = %d && printf ran > static-ran`, min(allowance, max(2, allowance/4)))}},
+				}
+				environment := []string{"PATH=" + t.TempDir(), fmt.Sprintf("METASYSTEM_TESTING_WORKERS=%d", allowance), fmt.Sprintf("%s=%d", TestWorkersEnvironment, allowance)}
+				results, err := RunStaticBesideSuite(t.Context(), root, testpolicy.Contract{Groups: groups}, environment, []NamedGroupResult{{ID: "refusal-register-standard", Status: status}})
+				if err != nil || len(results) != 1 {
+					t.Fatalf("results=%+v error=%v", results, err)
+				}
+				if status == "green" {
+					if results[0].Status != "green" || results[0].Workers != min(allowance, max(2, allowance/4)) {
+						t.Fatalf("static result %+v", results[0])
+					}
+					if _, err := os.Stat(filepath.Join(root, "static-ran")); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if !results[0].NotRun || results[0].Status != "red" {
+						t.Fatalf("red prerequisite ignored: %+v", results[0])
+					}
+					if _, err := os.Stat(filepath.Join(root, "static-ran")); !os.IsNotExist(err) {
+						t.Fatal("blocked static ran")
+					}
+				}
+			})
+		}
+	}
+}
