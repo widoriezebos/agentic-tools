@@ -1,0 +1,123 @@
+{
+  "canonicalRead": {
+    "engine": "f306c34410ad4054cae594962c84143b34d444ae",
+    "findings": [],
+    "id": "code-critic-87d912e4d36e93aa68edc296",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-runner-is-judged-by-its-progress/metasystem/artifacts/agents/code-critic-87d912e4d36e93aa68edc296/rounds/1/return.md",
+    "subject": {
+      "commit": "fd9d39edbfc4edc24dff2bd3cb24385a85680ff9",
+      "diffDigest": "f5c3baa0b7fbc95dbe271e3e94044834c0ef3758fa5ebc8f14bcb93e4bf6b531",
+      "kind": "commit",
+      "parent": "b90acba3d0cdc9111c4bf14b081cb95fc2a5b7ff",
+      "tree": "b41cdacbcf2ee5e0654233f23e5093d93fe7855e"
+    }
+  },
+  "readDigest": "f23930a0655b3ade5bfdadaadb8f4b46e960a8a3390d9cff76b27551bd9ae088",
+  "schemaVersion": 1,
+  "goal": "a-runner-is-judged-by-its-progress",
+  "unit": "U4a",
+  "subject": {
+    "commit": "fd9d39edbfc4edc24dff2bd3cb24385a85680ff9",
+    "parent": "b90acba3d0cdc9111c4bf14b081cb95fc2a5b7ff",
+    "tree": "b41cdacbcf2ee5e0654233f23e5093d93fe7855e",
+    "patchDigest": "f5c3baa0b7fbc95dbe271e3e94044834c0ef3758fa5ebc8f14bcb93e4bf6b531",
+    "unitDigest": "e0158c4d840e24c463deae603756e59e55fa48eed0594e7be425a237a07a16ad"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-87d912e4d36e93aa68edc296",
+    "round": 1,
+    "closureSha256": "d85b22953f68ad0e0271750a967727a86a2ad970ce01decd55dbae8f7c783eed"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b41cdacbcf2ee5e0654233f23e5093d93fe7855e",
+    "runId": "goal-read-gate-20261119t125215z-0d40af74e3318236"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "37d87e67181787d6e3c29b0beb368284a7284908",
+      "digest": "15b040a508f5c927a02e9da144d0ec7e9cee8537ff382f16b4495d5173052e0f"
+    },
+    {
+      "kind": "read",
+      "commit": "c39cdd43663768ceaff07d1b2165153a7fb68ee6",
+      "digest": "5bb98b4aaf72bd3ad522bcea9f3b697fdad9a3f1bb39cc29efc7ced0cf4f66b2"
+    },
+    {
+      "kind": "read",
+      "commit": "f4648aada4f791f697a4bdabfdb9c30485f0c54c",
+      "digest": "5239aad1f44d42ea455b725886e364fc5b5e9aed5eb920eba8778d45119cba58"
+    },
+    {
+      "kind": "read",
+      "commit": "247c45bcb632d84f2f71fe61efdbfc50d9cf74d7",
+      "digest": "01963e5146c043787250847713d396ff0940e445f4377d6e634b37a81d213f58"
+    },
+    {
+      "kind": "read",
+      "commit": "104b800ef0d63027a6c97b7d043f7594700cea54",
+      "digest": "e3d4d07e631878bb31a3c84ad9ebcba9b4a38476e962dd1a1159a10518e874df"
+    },
+    {
+      "kind": "read",
+      "commit": "24c745d4df8f577aa6bceeb6ff7878b262236e90",
+      "digest": "4b43b55d52435a45317cffd98af0af15b8226ee137fedbc01da424ba8bfcfe3b"
+    },
+    {
+      "kind": "read",
+      "commit": "828852661c4495ffdca9209a88e9d5bd13737f44",
+      "digest": "dd8a600364be4fab797315ad4e5afa2a628b2108e179f0acefc51224574d9616"
+    },
+    {
+      "kind": "read",
+      "commit": "85ea36c3e7beb9ba9257242fc6fcf1bc079b8a73",
+      "digest": "ff2d20782615929733426169ffe2d754d309714dc92f5ae35025225f6bfc7ab6"
+    },
+    {
+      "kind": "read",
+      "commit": "c09946c3a484145a936797036b6855c07f7624fc",
+      "digest": "9ba55052c058a1158466baae249974a223356d6510bce1d1bf66d21448d518aa"
+    },
+    {
+      "kind": "read",
+      "commit": "b90acba3d0cdc9111c4bf14b081cb95fc2a5b7ff",
+      "digest": "b6008567bc8652f58c97f55cf172a8059ed6104741ab830871a8ff83670bfe5c"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_rearm_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    },
+    {
+      "path": "metasystem/internal/config/validate_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_judged_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_replacement_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    },
+    {
+      "path": "metasystem/internal/up/recovery_repair_test.go",
+      "readerWord": "reviewed by critic root code-critic-87d912e4d36e93aa68edc296"
+    }
+  ],
+  "sha256": "a964162258e5213bdf439e534eb7022935fee4e6ed8860d79369e56d8caef8fb"
+}
