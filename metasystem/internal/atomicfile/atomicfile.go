@@ -48,21 +48,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	filesync "github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
 // syncDir syncs one directory. It is a variable so fault-injection tests can
 // fail a chosen sync without touching the filesystem's real behavior.
-var syncDir = func(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	if err := dir.Sync(); err != nil {
-		dir.Close()
-		return err
-	}
-	return dir.Close()
-}
+var syncDir = filesync.SyncDir
 
 // WriteText replaces path's content with text.
 //
@@ -232,7 +224,7 @@ func writeTemp(dir, base string, fill func(*os.File) error, durable bool) (strin
 		return "", err
 	}
 	if durable {
-		if err := tmp.Sync(); err != nil {
+		if err := filesync.Sync(tmp); err != nil {
 			tmp.Close()
 			os.Remove(name)
 			return "", err
