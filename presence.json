@@ -1,0 +1,53 @@
+{
+  "presenceSchema": 1,
+  "machine": "ui",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem",
+  "generation": 159,
+  "engine": "706f4c9e2827ca27b2434a6065d847f08d8f3578",
+  "armedLineage": "no-lease",
+  "tickSeconds": 3600,
+  "chain": {
+    "root": "seat-7ff0c2d4641f7bae",
+    "job": "seat-7ff0c2d4641f7bae",
+    "role": "working",
+    "round": 0,
+    "goal": "red-names-what-failed",
+    "startedAt": "2026-11-19T14:48:33Z"
+  },
+  "working": {
+    "goal": "red-names-what-failed",
+    "phase": {
+      "role": "working",
+      "round": 0,
+      "roundLimit": null
+    },
+    "job": {
+      "id": "seat-7ff0c2d4641f7bae",
+      "role": "working",
+      "status": "running",
+      "startedAt": "2026-11-19T14:48:33Z",
+      "capMinutes": null,
+      "capEndsAt": null
+    },
+    "box": {
+      "attempts": 6,
+      "attemptLimit": 24,
+      "reservedMinutes": 339,
+      "reservedMinutesLimit": 2400,
+      "problem": ""
+    },
+    "chain": [
+      {
+        "job": "seat-7ff0c2d4641f7bae",
+        "role": "working",
+        "round": 0,
+        "status": "running",
+        "startedAt": "2026-11-19T14:48:33Z",
+        "endedAt": null,
+        "capMinutes": null
+      }
+    ]
+  },
+  "tickAt": "2026-11-19T15:39:39Z",
+  "diskFreeBytes": 174772740096
+}
