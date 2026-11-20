@@ -137,7 +137,7 @@ func roleReasoningEffort(p BuildRecordParams, minimum ConfigurationObligations) 
 			case "medium", "high", "xhigh":
 				return effort, nil
 			default:
-				return "", fmt.Errorf("Codex implementer effort must identify a reasoning level")
+				return "", fmt.Errorf("unsupported reasoning effort for a Codex implementer")
 			}
 		}
 	}
