@@ -281,7 +281,7 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 	result.BuildModel, result.BuildEffort = result.Values[4].Value, result.Values[5].Value
 	result.sharedEffort = result.BuildEffort
 	if resolved[BuildRuntimeKey].Value == "codex" {
-		result.BuildEffort, err = config.CodexBuildEffort(confPath, lookupEnv)
+		result.BuildEffort, _, err = config.CodexBuildEffort(confPath, lookupEnv)
 		if err != nil {
 			return Settings{}, invalidSetting(config.CodexBuildEffortKey, err)
 		}

@@ -1214,3 +1214,33 @@ func TestCodexRoleRosterInJobRecords(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexImplementerFallsBackToClassEffort(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"launch.build.effort", "launch.build.effort.codex"} {
+		t.Run(key, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(key+"=max\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			p := criticRecordParams(t, root, "implementer")
+			var warning string
+			p.Warn = func(message string) { warning = message }
+			p.Mode, p.Runtime, p.Model, p.Workspace = "implement", "codex", "gpt-6.2-astra", root
+			p.LookupEnv = func(string) (string, bool) { return "", false }
+			p.Permissions = writeJSONFile(t, root, "permissions.json", map[string]any{
+				"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+				"network": "deny", "approvals": "deny", "tools": "read-only",
+			})
+			if err := buildRecord(p, recordFacts(t, root, 1, "")); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(warning, key+`="max"`) || !strings.Contains(warning, "medium") {
+				t.Errorf("warning %q must identify the setting, its value and the fallback effort", warning)
+			}
+			if got := readJSONFile(t, p.Output)["reasoningEffort"]; got != "medium" {
+				t.Errorf("recorded effort %v, want mechanical class effort medium", got)
+			}
+		})
+	}
+}

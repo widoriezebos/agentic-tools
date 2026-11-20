@@ -663,6 +663,7 @@ func (s *session) dispatchJob(args []string) error {
 		return exitWith(1)
 	}
 	params := dispatch.BuildRecordParams{
+		Warn:      s.eprintln,
 		LookupEnv: s.configLookup(), Output: recordJSON, Job: job, Role: a.role, Mode: mode, Mission: missionID, MissionTurn: missionTurn, Stream: a.stream,
 		Root: s.root, SettingsFile: s.settingsPath(), Runtime: runtime, Workspace: workspace, CapResolution: capResolution, Model: model,
 		AliasedFrom: aliasedFrom, RosterAliasedFrom: rosterAliasedFrom, Overridden: roster.Overridden,

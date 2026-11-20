@@ -127,7 +127,7 @@ func roleReasoningEffort(p BuildRecordParams, minimum ConfigurationObligations) 
 		return "xhigh", nil
 	case "implementer":
 		if p.Mode != "design" {
-			effort, err := config.CodexBuildEffort(dispatchSettingsPath(p.Root, p.SettingsFile), p.LookupEnv)
+			effort, key, err := config.CodexBuildEffort(dispatchSettingsPath(p.Root, p.SettingsFile), p.LookupEnv)
 			if err != nil {
 				return "", err
 			}
@@ -137,7 +137,10 @@ func roleReasoningEffort(p BuildRecordParams, minimum ConfigurationObligations) 
 			case "medium", "high", "xhigh":
 				return effort, nil
 			default:
-				return "", fmt.Errorf("unsupported reasoning effort for a Codex implementer")
+				if p.Warn != nil {
+					p.Warn(fmt.Sprintf("Codex implementer cannot use %s=%q, using class effort %s", key, effort, floor))
+				}
+				return floor, nil
 			}
 		}
 	}

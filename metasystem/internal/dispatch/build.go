@@ -181,6 +181,7 @@ func (a capAuthority) resolutionField() map[string]any {
 // from. File-valued fields are read here so the record shape and its inputs
 // stay in one place.
 type BuildRecordParams struct {
+	Warn func(string)
 	// LookupEnv is the invocation's configuration environment; nil is the
 	// process environment.
 	LookupEnv         func(string) (string, bool)

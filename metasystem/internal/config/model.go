@@ -13,28 +13,28 @@ const (
 )
 
 // CodexBuildEffort resolves the runtime pin first, then an existing shared
-// installation pin, then the Codex default. An explicit shared xhigh is a pin.
-func CodexBuildEffort(conf string, lookup func(string) (string, bool)) (string, error) {
+// installation pin, then the Codex default. The key identifies the setting used.
+func CodexBuildEffort(conf string, lookup func(string) (string, bool)) (value, key string, err error) {
 	p := GetParams{ConfPath: conf, LookupEnv: lookup, Key: CodexBuildEffortKey}
 	source, err := KeyOrigin(p)
 	if err != nil {
-		return "", err
+		return "", p.Key, err
 	}
 	if source == "default" {
 		p.Key = BuildEffortKey
 		source, err = KeyOrigin(p)
 		if err != nil {
-			return "", err
+			return "", p.Key, err
 		}
 		if source == "default" {
 			p.Key = CodexBuildEffortKey
 		}
 	}
-	value, _, err := Get(p)
+	value, _, err = Get(p)
 	if err == nil && strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("%s is empty", p.Key)
+		return "", p.Key, fmt.Errorf("%s is empty", p.Key)
 	}
-	return value, err
+	return value, p.Key, err
 }
 
 var nonModelChar = regexp.MustCompile(`[^a-z0-9]+`)
