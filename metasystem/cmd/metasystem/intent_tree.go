@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
@@ -121,7 +123,8 @@ func (inv *intentInvocation) stopUnitRun(id string) int {
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	if problem := inv.directPersonProof("cancellation of a unit run"); problem != nil {
+	var namedProof humanauthority.Proof
+	if problem := inv.directPersonProof("cancellation of a unit run", &namedProof); problem != nil {
 		return inv.render(*problem)
 	}
 	runner := inv.unitRunner()
@@ -135,5 +138,7 @@ func (inv *intentInvocation) stopUnitRun(id string) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run could not be fully stopped; its worktree remains reserved: " + err.Error(), Details: []string{err.Error()}, next: inv.sameCommand(), Data: record})
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "run " + id + " cancelled; its children ended and its worktree is released", Data: record})
+	result := intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "run " + id + " cancelled; its children ended and its worktree is released", Data: record}
+	enrollment, _ := humanauthority.ReadEnrollment(checkoutAuthorityRoot(inv.layout))
+	return inv.render(inv.completeQuestionAct(result, inv.layout.InstallationRoot.Path(), channel.NamedAct{Verb: "work stop", Goal: record.Goal, Target: id}, &namedProof, enrollment.Human))
 }

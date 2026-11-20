@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -1683,7 +1684,7 @@ func runIntentDecide(inv *intentInvocation) int {
 	if inv.stateRoot != store {
 		reason += fmt.Sprintf(" (proven at %s, read at %s)", inv.stateRoot, store)
 	}
-	actor, _, problem := inv.actingAs("accept-risk", id, actorHuman)
+	actor, namedProof, problem := inv.actingAs("accept-risk", id, actorHuman)
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -1704,6 +1705,7 @@ func runIntentDecide(inv *intentInvocation) int {
 	} else if result.Data == nil {
 		result.Data = map[string]any{"chain": chain}
 	}
+	result = inv.completeQuestionAct(result, questionRoot, channel.NamedAct{Verb: "goal accept-risk", Goal: id, Target: chain, Finding: inv.input.text("finding")}, namedProof, unitStopActor(actor))
 	if result.Outcome == intentPartial {
 		result.Summary = "the goal records the accepted risk, but a later record did not land: " + result.Summary
 	}

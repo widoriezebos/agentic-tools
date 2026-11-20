@@ -771,6 +771,8 @@ func contractReply(c PollConfig, q Question, text string) (bool, string) {
 		last = q.Attempts[n-1]
 	}
 	switch {
+	case q.Answer != nil && q.Answer.Act != nil:
+		return false, fmt.Sprintf("Already answered at %s (%s).", q.Answer.At.Local().Format("15:04"), q.Answer.Text)
 	case q.State == "open" && (q.Answer == nil || q.Answer.Phase == "accepted"):
 		if chosenOption(q, text) != nil {
 			return true, ""

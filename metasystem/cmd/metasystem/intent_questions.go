@@ -122,6 +122,10 @@ func (q questionRef) publicName() string {
 // questionDetails keeps the evidence and proposed terms with the question's words.
 func questionDetails(page *textui.Page, c channel.Question) {
 	section := page.Section("", "")
+	if c.Answer != nil && c.Answer.Act != nil {
+		a := c.Answer.Act
+		section.Text(fmt.Sprintf("Answered by %s at %s: %s", a.Person, a.At.Local().Format("15:04"), shellCommand(a.Command)))
+	}
 	for _, fact := range c.Facts {
 		section.Text(fact)
 	}
@@ -326,6 +330,10 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 
 func (inv *intentInvocation) settleQuestionReplies() *intentResult {
 	root := inv.layout.InstallationRoot.Path()
+	if err := channel.ReconcileNamedActs(root, inv.owners.dependencies.endpoint); err != nil {
+		inv.replySettleErr = err
+		return nil
+	}
 	ctx, cancel, err := channelPollContext(root)
 	if err == nil {
 		defer cancel()
@@ -386,6 +394,9 @@ func runIntentShowQuestion(inv *intentInvocation, args []string) int {
 // a person, not waited for by a process.
 func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	if problem := inv.selectLayoutRoot(); problem != nil {
+		return *problem
+	}
+	if problem := inv.settleQuestionReplies(); problem != nil {
 		return *problem
 	}
 	q, problem := inv.resolveQuestion(ref)

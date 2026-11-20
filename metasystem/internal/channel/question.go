@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,12 +21,14 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 type Option struct {
-	Label       string `json:"label"`
-	Consequence string `json:"consequence"`
+	NamedAct    *NamedAct `json:"namedAct,omitempty"`
+	Label       string    `json:"label"`
+	Consequence string    `json:"consequence"`
 	// Act is the public argv the option runs, without --by.
 	Act []string `json:"act,omitempty"`
 }
@@ -46,19 +49,20 @@ type Rejection struct {
 	PostRef *MessageRef `json:"postRef"`
 }
 type Answer struct {
-	Machine      string     `json:"machine,omitempty"`
-	Lineage      string     `json:"lineage,omitempty"`
-	Provider     string     `json:"provider,omitempty"`
-	Text         string     `json:"text"`
-	UserID       string     `json:"userID"`
-	Ref          MessageRef `json:"ref"`
-	At           time.Time  `json:"at"`
-	Step         int64      `json:"step"`
-	ULID         string     `json:"ulid"`
-	Opid         string     `json:"opid"`
-	ApprovalULID string     `json:"approvalULID,omitempty"`
-	Receipt      string     `json:"receipt,omitempty"`
-	Phase        string     `json:"phase"`
+	Act          *ActEvidence `json:"act,omitempty"`
+	Machine      string       `json:"machine,omitempty"`
+	Lineage      string       `json:"lineage,omitempty"`
+	Provider     string       `json:"provider,omitempty"`
+	Text         string       `json:"text"`
+	UserID       string       `json:"userID"`
+	Ref          MessageRef   `json:"ref"`
+	At           time.Time    `json:"at"`
+	Step         int64        `json:"step"`
+	ULID         string       `json:"ulid"`
+	Opid         string       `json:"opid"`
+	ApprovalULID string       `json:"approvalULID,omitempty"`
+	Receipt      string       `json:"receipt,omitempty"`
+	Phase        string       `json:"phase"`
 }
 
 // Decision identifies the machine state that needs a person.
@@ -79,6 +83,9 @@ type Withdrawal struct {
 }
 
 type Question struct {
+	ActsBefore   []string  `json:"actsBefore,omitempty"`
+	ActsOpenedAt time.Time `json:"actsOpenedAt,omitzero"`
+	ActPerson    string    `json:"actPerson,omitempty"`
 	// Text is the post, stored before its first attempt; every attempt posts it.
 	Text      string           `json:"text,omitempty"`
 	Plain     *Plain           `json:"plain,omitempty"`
@@ -121,6 +128,7 @@ type Question struct {
 }
 
 type AskRequest struct {
+	ResolveEndpoint                               func(string) (goal.Endpoint, error)
 	Plain                                         *Plain
 	Decision                                      *Decision
 	Recovery                                      *RecoverySubject
@@ -130,6 +138,7 @@ type AskRequest struct {
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
 	Facts                                         []string
 	Options                                       []Option
+	ActsBefore                                    []string
 	Recommendation, Wants                         string
 	Budget                                        *goal.Budget
 	Provider                                      Provider
@@ -202,8 +211,12 @@ func listQuestions(repo string) ([]Question, error) {
 // and the turn-end scanner. One unreadable file never hides the other open
 // questions; its path is returned on the separate failure channel.
 func WalkOpenQuestions(repo string) ([]Question, []string) {
+	repairErr := ReconcileNamedActs(repo, nil)
 	all, unreadable := WalkQuestions(repo)
 	var questions []Question
+	if repairErr != nil && !errors.Is(repairErr, ErrChannelBusy) {
+		unreadable = append(unreadable, repairErr.Error())
+	}
 	for _, question := range all {
 		if question.State == "open" {
 			questions = append(questions, question)
@@ -311,6 +324,9 @@ func Ask(r AskRequest) (Question, error) {
 // is written, posted or published again. The same facts with any other
 // parameter is a different question and is asked.
 func AskOrFind(r AskRequest) (Question, bool, error) {
+	if err := validateNamedActs(r); err != nil {
+		return Question{}, false, err
+	}
 	if err := validateContract(r); err != nil {
 		return Question{}, false, err
 	}
@@ -376,9 +392,15 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, PersonAct: r.PersonAct, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
+	q := Question{ActsBefore: r.ActsBefore, Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, PersonAct: r.PersonAct, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
+	}
+	if hasNamedActs(q) {
+		q.ActsOpenedAt = time.Now().UTC()
+		if enrollment, err := humanauthority.ReadEnrollment(r.RepoRoot); err == nil {
+			q.ActPerson = enrollment.Human
+		}
 	}
 	q.Text = renderQuestion(r.RepoRoot, q)
 	if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
@@ -401,7 +423,11 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	}
 	// A question without a goal has no goal file to mark.
 	if r.Lineage != "" && r.Goal != "" && r.ProcessAct == "" {
-		ep, e := project.PublicationEndpoint(r.RepoRoot)
+		resolve := r.ResolveEndpoint
+		if resolve == nil {
+			resolve = project.PublicationEndpoint
+		}
+		ep, e := resolve(r.RepoRoot)
 		if e != nil {
 			return q, false, e
 		}
@@ -537,6 +563,9 @@ func renderPlain(q Question) string {
 	}
 	lines = append(lines, "If you do nothing: "+plainSentence(cmp.Or(plain.IfNothing, "this question stays open"), false))
 	for _, option := range q.Options {
+		if option.NamedAct != nil {
+			lines = append(lines, "- "+option.Label+": "+strings.Join(option.NamedAct.Command(), " "))
+		}
 		lines = append(lines, "- "+option.Label+": "+plainSentence(option.Consequence, false))
 	}
 	return strings.Join(lines, "\n")

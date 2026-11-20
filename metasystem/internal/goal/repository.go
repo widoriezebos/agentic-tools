@@ -160,3 +160,19 @@ func NewWorldAtEndpoint(e Endpoint) bool {
 	_, exists := files[goalsPrefix+"backlog.md"]
 	return err == nil && exists
 }
+
+// ReadRecordFiles captures the current shared ledger and releases the capture
+// after reading one record family through the endpoint's repository.
+func ReadRecordFiles(e Endpoint, prefix string) (map[string][]byte, error) {
+	nonce, err := NewOperationULID()
+	if err != nil {
+		return nil, err
+	}
+	repository := e.repository()
+	tip, err := repository.Capture(nonce)
+	if err != nil {
+		return nil, err
+	}
+	defer repository.Release(nonce)
+	return repository.Files(tip, prefix)
+}

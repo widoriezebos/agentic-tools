@@ -98,6 +98,9 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 			return result, err
 		}
 	}
+	if err := reconcileNamedActs(c.RepoRoot, resolveEndpoint); err != nil {
+		return result, err
+	}
 	questions, err := listQuestions(c.RepoRoot)
 	if err != nil {
 		return result, err
@@ -222,7 +225,7 @@ func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status St
 }
 
 func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, resolveEndpoint pollEndpointResolver) error {
-	if q.ProcessAct != "" || q.Recovery != nil {
+	if (q.ProcessAct != "" || q.Recovery != nil) && (q.Answer == nil || q.Answer.Act == nil) {
 		return nil
 	}
 	a := q.Answer
@@ -298,18 +301,28 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	// Decision 7: the answer receipt is no longer posted; a recorded answer,
 	// or a receipted one from an older engine, closes locally.
 	if a.Phase == "recorded" || a.Phase == "receipted" {
-		if q.Contract {
+		if a.Act != nil {
+			if q.Thread != nil {
+				line := fmt.Sprintf("Answered at the %s: %s (by %s at %s). Nothing more to do here.\n%s", a.Act.Source, a.Text, a.UserID, a.At.Local().Format("15:04"), strings.Join(a.Act.Command, " "))
+				if err := queueNotice(noticesPath(c), "named-act:"+q.ID, line, &q.Thread.ID, threadRoot(*q.Thread)); err != nil {
+					return err
+				}
+			}
+		} else if q.Contract {
 			if c.Provider == nil || a.Phase != "recorded" {
 				return nil
 			}
 			return settleChoice(ctx, c, q)
 		}
-		if q.UnitStop != nil || q.PersonAct != nil || LaneStopCommand(*q) != "" {
+		if a.Act == nil && (q.UnitStop != nil || q.PersonAct != nil || LaneStopCommand(*q) != "") {
 			return nil
 		}
 		a.Phase = "closed"
 		q.State = "closed"
 		q.ClosedAt = c.Now.UTC()
+		if a.Act != nil {
+			q.ClosedAt = a.At
+		}
 		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
 			return err
 		}

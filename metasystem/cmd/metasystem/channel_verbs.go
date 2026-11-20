@@ -178,6 +178,8 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 // channelAskInput is one question as its asker states it; Options are
 // "label: consequence".
 type channelAskInput struct {
+	NamedActs      map[string]channel.NamedAct
+	ActsBefore     []string
 	Act, IfNothing string
 	PersonAct      *channel.PersonAct
 	// About is what a question without a goal is about: lane or machine.
@@ -195,6 +197,8 @@ func askChannelQuestion(root string, in channelAskInput) (channel.Question, []st
 // channelAskSurface is who asks and through which configured channel; tests
 // give one ask its own identity and transport.
 type channelAskSurface struct {
+	endpoint func(string) (goal.Endpoint, error)
+	now      func(string) (time.Time, error)
 	identity func(root string) (string, string, error)
 	load     func(root string) (phase.Loaded, error)
 	cursor   func(root string) (string, bool, error)
@@ -215,6 +219,11 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 			return channel.Question{}, nil, 2, errors.New("--option wants label: consequence")
 		}
 		opts = append(opts, channel.Option{Label: strings.TrimSpace(label), Consequence: strings.TrimSpace(consequence)})
+	}
+	for i := range opts {
+		if act, ok := in.NamedActs[opts[i].Label]; ok {
+			opts[i].NamedAct = &act
+		}
 	}
 	var warnings []string
 	l, e := surface.load(root)
@@ -239,7 +248,11 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 			ledgerCursor = cursor
 		}
 	}
-	now, e := goalCommandNow(root)
+	clock := surface.now
+	if clock == nil {
+		clock = goalCommandNow
+	}
+	now, e := clock(root)
 	if e != nil {
 		return channel.Question{}, warnings, 1, e
 	}
@@ -247,7 +260,7 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 	if len(in.Facts) > 0 {
 		plain = &channel.Plain{Decision: in.Facts[0], Act: in.Act, IfNothing: in.IfNothing}
 	}
-	q, existing, e := channel.AskOrFind(channel.AskRequest{Plain: plain, PersonAct: in.PersonAct, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
+	q, existing, e := channel.AskOrFind(channel.AskRequest{ResolveEndpoint: surface.endpoint, ActsBefore: in.ActsBefore, Plain: plain, PersonAct: in.PersonAct, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
 		return q, warnings, 1, e
 	}

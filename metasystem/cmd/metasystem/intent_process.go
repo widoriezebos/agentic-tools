@@ -352,7 +352,7 @@ func processIntentCommands() []intentCommand {
 			usage: []string{"metasystem question ask G --question TEXT --option TEXT...", "metasystem question ask G --question TEXT --option 'LABEL: CONSEQUENCE'... [--recommend LABEL]",
 				"metasystem question ask --about lane|machine --question TEXT --option TEXT..."},
 			details: []string{
-				"The person answers in the channel thread; the answer is authenticated there, never by a local command.",
+				"The person answers in the channel thread, or completes the command declared by --option-act at the enrolled terminal.",
 				"--about lane or --about machine asks about the landing lane or this machine when no goal is involved; such a question is an ordinary question and carries no authority kind.",
 				"--kind selects an authority question (stop, budget-above-norm, carry); stop and budget-above-norm take --budget BOX.",
 				"question show Q shows its state and how it is answered; question wait Q waits for its answer.",
@@ -362,6 +362,7 @@ func processIntentCommands() []intentCommand {
 				intentTargetFlag,
 				{name: "question", value: "TEXT", usage: "the question, the first line the person reads"},
 				{name: "if-nothing", value: "TEXT", usage: "what happens if you do nothing"},
+				{name: "option-act", value: "LABEL: COMMAND", repeat: true, usage: "the completed command that answers this option (accept-risk or work stop run)"},
 				{name: "act", value: "COMMAND", usage: "the person's work build or work revise this question asks for; its success closes the question, a reply does not"},
 				fileFlag("question", "read the question from FILE"),
 				{name: "about", value: "lane|machine", usage: "with no goal: what the question is about"},
@@ -1613,6 +1614,9 @@ func runIntentAsk(inv *intentInvocation) int {
 	}
 	in := channelAskInput{IfNothing: inv.input.text("if-nothing"), Goal: id, About: about, Kind: kind, Facts: append([]string{question}, inv.input.values["fact"]...),
 		Options: inv.input.values["option"], Recommendation: inv.input.text("recommend"), Wants: inv.input.text("wants")}
+	if problem := inv.declareQuestionActs(&in); problem != nil {
+		return inv.render(*problem)
+	}
 	if inv.input.has("budget") {
 		if kind != "stop" && kind != "budget-above-norm" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: askTargets,
