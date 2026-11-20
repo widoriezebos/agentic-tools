@@ -137,6 +137,9 @@ func recoverEntry(e Endpoint, tip string, entry Entry, policy SensitiveRecoveryP
 	}
 	action := ClassifyRecovery(entry, post, OwnerAlive(entry), callerIsOwner(entry), PastDeadline(entry, timeNowUTC()))
 	report := RecoveryReport{Opid: entry.Opid, Action: action}
+	if action == ActionConfirm || action == ActionConfirmLate {
+		e.syncPublished(tip, entry.Opid)
+	}
 	switch action {
 	case ActionConfirm:
 		if err := recoverConfirmedEffect(e, tip, entry); err != nil {

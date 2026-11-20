@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +68,9 @@ type Endpoint struct {
 	// casPublisher is the publication boundary this endpoint's
 	// compare-and-swap goes through; nil is the plain lease push. Set only
 	// through WithCASPublisher.
-	casPublisher CASPublisher
+	casPublisher       CASPublisher
+	syncDirectory      func(string) error
+	durabilityWarnings io.Writer
 }
 
 // CASPublisher publishes one ledger commit onto tip in place of the plain
@@ -944,6 +947,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		outcome, pushErr := PublishCAS(e, tip, commit)
 		switch outcome {
 		case CASLanded:
+			e.syncPublished(commit, "")
 			// The postcondition, not the push's exit code, is the
 			// truth: refetch and find OUR trailer before
 			// anything terminalizes.

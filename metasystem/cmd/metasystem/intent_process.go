@@ -120,7 +120,7 @@ func processIntentCommands() []intentCommand {
 			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
 			usage:    []string{"metasystem system check"},
 			details:  []string{"Checks this checkout once: its machinery, what system setup would change, its skills, and its app covenant (shape and evidence) when it has one; it repairs nothing.", "Each problem names the command that fixes it, where there is one."},
-			flags:    []intentFlag{intentInstallationFlag},
+			flags:    []intentFlag{intentInstallationFlag, {name: "durability", usage: "show the Git sync settings of owned repositories"}},
 			maxArgs:  0,
 			examples: []string{"metasystem system check", "metasystem system check --json"},
 			run:      runIntentDoctor,
@@ -1806,6 +1806,17 @@ func runIntentDoctor(inv *intentInvocation) int {
 	scope, _, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if inv.input.switched("durability") {
+		home, err := inv.landing().home()
+		var lines []string
+		if err == nil {
+			lines, err = goal.DurabilityReport(home, scope.Root.Path())
+		}
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "The durability check could not read the installation", Details: []string{err.Error()}, retry: "once the installation records are readable"})
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "Git repository durability", text: lines, Data: lines})
 	}
 	owners := inv.owners.processes
 	now, err := owners.healthNow(scope.Installation.Path())

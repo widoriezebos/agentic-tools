@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -121,6 +122,9 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 		}
 	}
 	run(StepClone, StepTracking, StepConfiguration, StepNickname)
+	if runtime.GOOS == "linux" && git(t, target, "config", "--local", "--get", "core.fsync") != "committed,reference" {
+		t.Fatal("the prepared clone lacks its repository-local minimum")
+	}
 	// The engine step is the one thing this test stands in for: the
 	// bootstrap build (go run ./cmd/devgate build) runs the gate fence,
 	// which has no business running inside a test. What the build produces

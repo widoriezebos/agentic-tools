@@ -402,6 +402,10 @@ func Adopt(options Options) (Result, error) {
 		if _, err := d.Git(target, true, "config", "metasystem.goal.machine", nickname); err != nil {
 			return Result{}, err
 		}
+		run := func(root string, args ...string) (string, error) { return gitLine(d, root, true, args...) }
+		if _, warning := gittree.PrepareFsync(target, run); warning != "" {
+			result.Notes = append(result.Notes, warning)
+		}
 		result.Notes = append(result.Notes, seedLandingRef(d, target)...)
 	}
 

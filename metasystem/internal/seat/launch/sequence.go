@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
@@ -299,12 +300,18 @@ func (s *Sequencer) clone(record *Record) (stepRun, error) {
 	if err != nil {
 		return stepRun{}, err
 	}
+	changed, warning := gittree.PrepareFsync(destination, s.git)
+	if made && changed {
+		repaired = strings.TrimPrefix(repaired+", core.fsync", ", ")
+	}
 	head, err := s.git(destination, "rev-parse", "HEAD")
 	if err != nil {
 		return stepRun{}, err
 	}
 	record.ClonedCommit = strings.TrimSpace(head)
 	switch {
+	case warning != "":
+		return stepRun{outcome: StepDone, words: warning}, nil
 	case made && repaired == "":
 		return stepRun{outcome: StepSkipped, words: "the clone this launch made is at " + record.ClonedCommit}, nil
 	case made:

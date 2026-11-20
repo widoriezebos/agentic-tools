@@ -5,6 +5,8 @@ package launch
 import (
 	"errors"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +51,9 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 		// The wait is counted in the NEW machine's ticks, so its own cadence
 		// is read from the clone rather than assumed from this seat's.
 		"git -C " + destInstall() + " config --get metasystem.steward.tick-seconds",
+	}
+	if runtime.GOOS == "linux" {
+		want = slices.Insert(want, 7, "git -C "+destRoot+" config --local --no-includes --get core.fsync", "git -C "+destRoot+" config --local --replace-all core.fsync committed,reference")
 	}
 	got := built.runner.keys()
 	if len(got) != len(want) {
@@ -185,6 +190,7 @@ func TestAResumeSkipsEveryStepWhosePostconditionHolds(t *testing.T) {
 	built.runner.said["git -C "+destRoot+" remote get-url origin"] = originURL + "\n"
 	built.runner.said["git -C "+destRoot+" config --local --list -z"] =
 		built.runner.said["git -C "+fromRoot+" config --local --list -z"]
+	built.runner.said["git -C "+destRoot+" config --local --no-includes --get core.fsync"] = "all\n"
 
 	carried := fresh()
 	carried.Created = Created{Destination: true, Nickname: true, EvidenceRoot: true}
@@ -694,4 +700,18 @@ func recordText(t *testing.T, record Record) string {
 		built.WriteString(step.Step + step.Outcome + step.Words)
 	}
 	return built.String()
+}
+
+func TestCloneReportsUnwritableDurabilityOnce(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux preparation")
+	}
+	built := newWorld(request())
+	built.runner.refused["git -C "+destRoot+" config --local --replace-all core.fsync committed,reference"] = "config locked"
+	record, err := built.sequencer.Run(fresh())
+	step, _ := record.StepOf(StepClone)
+	if err != nil || record.Outcome != OutcomeDone || strings.Count(step.Words, "core.fsync") != 1 {
+		t.Fatalf("launch outcome %s, clone %v, error %v", record.Outcome, step, err)
+	}
 }

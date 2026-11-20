@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -865,9 +866,35 @@ func TestAdoptGitIntegrationSeedsOrKeepsTheLandingRef(t *testing.T) {
 		gitIn(t, target, "checkout", "-q", "--detach")
 		options := optionsFor(source, target, io.Discard)
 		options.Runtimes = "none"
+		options.Deps.Genesis = func(root string) error {
+			if runtime.GOOS == "linux" && gitIn(t, root, "config", "--local", "--get", "core.fsync") != "committed,reference" {
+				t.Fatal("genesis started without the repository minimum")
+			}
+			return testGenesis(root)
+		}
 		result := adoptWith(t, options)
 		if !strings.Contains(notes(result), "landing ref was not seeded: the target checkout is detached; automatic machine re-arm remains disabled until the key is configured") || landingRef(t, target) != "" {
 			t.Fatalf("a detached target: notes=%q ref=%q", notes(result), landingRef(t, target))
+		}
+	})
+	t.Run("unwritable sync config", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS != "linux" {
+			t.Skip("Linux preparation")
+		}
+		target := repository(t, "locked")
+		options := optionsFor(source, target, io.Discard)
+		options.Runtimes = "none"
+		options.defaults()
+		git := options.Deps.Git
+		options.Deps.Git = func(dir string, scrub bool, args ...string) ([]byte, error) {
+			if strings.Join(args, " ") == "config --local --replace-all core.fsync committed,reference" {
+				return nil, errors.New("config locked")
+			}
+			return git(dir, scrub, args...)
+		}
+		if result := adoptWith(t, options); strings.Count(notes(result), "Could not set core.fsync in "+target) != 1 {
+			t.Fatal("completed adoption must name the target with a single warning")
 		}
 	})
 	t.Run("preset is kept", func(t *testing.T) {
