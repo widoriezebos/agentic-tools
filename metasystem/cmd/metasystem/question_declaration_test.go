@@ -22,6 +22,19 @@ func TestQ2AgentCommandOptionsNeedDeclarations(t *testing.T) {
 		{"steward accepts", "run metasystem goal accept-risk " + bedGoal + " --finding S-1 --review critic-r2", true, true},
 		{"continuation cancels", "run metasystem work stop run:stuck", true, true},
 		{"quoted command", "run `bin/metasystem\tgoal accept-risk " + bedGoal + " --finding S-1 --review critic-r2`", true, true},
+		{"trailing full stop", "metasystem work stop run:stuck.", true, true},
+		{"finding full stop", "metasystem goal accept-risk " + bedGoal + " --review critic-r2 --finding S-1.", true, true},
+		{"trailing prose", "metasystem work stop run:stuck and rebuild", true, true},
+		{"backticks and prose", "`metasystem goal accept-risk " + bedGoal + " --review critic-r2 --finding S-1`, then it lands", true, true},
+		{"bin executable", "bin/metasystem work stop run:stuck", true, true},
+		{"absolute executable", "/opt/tools/metasystem work stop run:stuck; then rebuild", true, true},
+		{"mid sentence", "If ready, run metasystem goal accept-risk " + bedGoal + " --finding S-1 --review critic-r2 and carry on.", true, true},
+		{"double quoted command", "Run \"metasystem work stop run:stuck\" and rebuild.", true, true},
+		{"single quoted command", "Run 'metasystem work stop run:stuck' and rebuild.", true, true},
+		{"parenthesized command", "Cancel (metasystem work stop run:stuck).", true, true},
+		{"quoted reason", "metasystem goal accept-risk " + bedGoal + " --review critic-r2 --finding S-1 --reason 'bounded exposure', then rebuild", true, true},
+		{"flags before target", "metasystem goal accept-risk --review critic-r2 --finding S-1 " + bedGoal + ". Then carry on.", true, true},
+		{"verb in prose", "Discuss accept-risk before deciding what to do.", true, false},
 		{"human accepts", "run metasystem goal accept-risk fix-docs", false, false},
 		{"human cancels", "run metasystem work stop run:stuck", false, false},
 		{"no command", "accept the risk and carry on", true, false},
@@ -109,6 +122,7 @@ func TestQ2UndeclarableCommandOptionsRemainAskable(t *testing.T) {
 		{name: "incomplete command", target: []string{bedGoal}, command: "metasystem goal accept-risk " + bedGoal},
 		{name: "duplicate command", target: []string{bedGoal}, extra: []string{"--option", "Accept and rebuild: " + command}},
 		{name: "duplicate command with another reason", target: []string{bedGoal}, extra: []string{"--option", "Accept and rebuild: " + command + " --reason 'bounded exposure'"}},
+		{name: "duplicate with prose", target: []string{bedGoal}, extra: []string{"--option", "Accept and rebuild: Run `" + command + "`, then rebuild."}},
 		{name: "duplicate run", target: []string{bedGoal}, command: "metasystem work stop run:stuck", extra: []string{"--option", "Cancel and rebuild: metasystem work stop run:stuck"}},
 		{name: "carry", target: []string{bedGoal}, extra: []string{"--kind", "carry", "--wants", "carry workspace=" + strings.Repeat("a", 40) + " goal=" + bedGoal + " past=Wido"}},
 		{name: "stop", target: []string{bedGoal}, extra: []string{"--kind", "stop", "--budget", "1d/10/720m/1/3"}},
@@ -124,7 +138,7 @@ func TestQ2UndeclarableCommandOptionsRemainAskable(t *testing.T) {
 				cmd = row.command
 			}
 			args := append([]string{"question", "ask"}, row.target...)
-			args = append(args, "--question", "Decide?", "--option", "Accept: "+cmd)
+			args = append(args, "--question", "Decide?", "--option", "Accept: If ready, run "+cmd+", then continue.")
 			args = append(args, row.extra...)
 			code, result := b.runJSON(owners, args...)
 			qs, bad := channel.WalkQuestions(b.root())

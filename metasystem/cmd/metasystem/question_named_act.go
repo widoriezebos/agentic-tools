@@ -160,18 +160,20 @@ func (inv *intentInvocation) resolveQuestionAct(goalID, command string) (channel
 	return act, nil
 }
 
-// Only command prefixes in option consequences are recognized. Other prose
-// and commands outside the completed-act allowlist remain ordinary choices.
-var questionActCommand = regexp.MustCompile(`(?:^|[^[:alnum:]_-])metasystem[[:space:]]+(goal[[:space:]]+accept-risk(?:[[:space:]]|$)|work[[:space:]]+stop[[:space:]]+run:)`)
+// Recognize one target and the declaration's flags, stopping before prose or
+// surrounding punctuation. Quoted arguments may contain spaces and punctuation.
+const questionActArgument = `(?:'[^']*'|"[^"]*"|[^[:space:]'"` + "`" + `,;()!?]+)`
+const questionActFlag = `--(?:(?:review|finding|reason)(?:=|[[:space:]]+)` + questionActArgument + `|json|verbose)`
 
-// Recognize the command suffix only; surrounding prose is not interpreted.
+var questionActCommand = regexp.MustCompile(`(?:^|[^[:alnum:]_-])(metasystem[[:space:]]+(?:goal[[:space:]]+accept-risk|work[[:space:]]+stop)[[:space:]]+` +
+	`(?:` + questionActFlag + `[[:space:]]+)*` + questionActArgument + `(?:[[:space:]]+` + questionActFlag + `)*)`)
+
 func optionActCommand(consequence string) string {
-	match := questionActCommand.FindStringIndex(consequence)
+	match := questionActCommand.FindStringSubmatch(consequence)
 	if match == nil {
 		return ""
 	}
-	start := match[0] + strings.Index(consequence[match[0]:match[1]], "metasystem")
-	return strings.Trim(strings.TrimSpace(consequence[start:]), "`")
+	return strings.TrimRight(match[1], ".")
 }
 
 func (inv *intentInvocation) requireQuestionActDeclarations(in *channelAskInput) *intentResult {
