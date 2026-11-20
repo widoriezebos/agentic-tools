@@ -315,8 +315,11 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 		result.Summary = "the bounded check passed"
 	}
 	if err != nil {
-		result.Details = []string{err.Error()}
-		result.Outcome, result.code, result.Summary = intentFailed, 1, "the unit check did not pass"
+		result.Outcome, result.code, result.Summary = intentFailed, 1, "the unit check failed: "+err.Error()
+		if plan.Check != nil && plan.Check.Kind() == "bounded" {
+			result.Summary = "the unit check did not pass"
+			result.Details = []string{err.Error()}
+		}
 	}
 	return inv.render(result)
 }

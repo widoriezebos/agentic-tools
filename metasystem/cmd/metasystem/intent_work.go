@@ -1797,7 +1797,7 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	text = append(text, "A clean read of the build by another model than the builder's is the unit's read; any other read is feedback and work review asks the committed critic. Nothing is approved, certified or landed. A correction: "+shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")))
 	judged := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: text,
 		Summary: fmt.Sprintf("unit %s of %s: run %s round %d awaits judgement (%s; read verdict: %s)", record.Unit, record.Goal, record.ID, round.Number, round.Outcome, verdict)}
-	if budgetEnded {
+	if budgetEnded && round.Outcome == "green" {
 		judged.Summary = fmt.Sprintf("unit %s of %s: run %s round %d awaits judgement (budget-exhausted; read verdict: %s); %s", record.Unit, record.Goal, record.ID, round.Number, verdict, feedback.BudgetSummary())
 	}
 	if launch.UnitReviewReadyOutcomes[round.Outcome] {

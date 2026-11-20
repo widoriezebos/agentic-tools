@@ -417,6 +417,29 @@ func TestBoundedRoundContinuesAndFreezesNominations(t *testing.T) {
 	if code := runIntentIn(command, rest, &stdout, &stderr, b.root(), owners); code != 0 || !strings.Contains(stdout.String(), "budget-exhausted") || !strings.Contains(stdout.String(), "candidate's complete check") {
 		t.Fatalf("public status lost feedback: code=%d %s", code, stdout.String())
 	}
+	// A retained budget result must not replace a later failed round outcome.
+	// Waiting reads the recorded round without executing its checks again.
+	for _, outcome := range []string{"proof-wrote", "read-failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			record.Rounds[0].Outcome = outcome
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeTestingFixtureFile(t, filepath.Join(b.unitRoot, record.ID, "run.json"), data, 0600)
+			code, stopped, _ := b.work("work", "wait", "run:"+record.ID)
+			if code != 0 || resultData(t, stopped)["outcome"] != outcome {
+				t.Fatalf("retained round was not read: exit=%d outcome=%v", code, resultData(t, stopped)["outcome"])
+			}
+			wantNext := "revise"
+			if outcome == "read-failed" {
+				wantNext = "review"
+			}
+			if !strings.Contains(stopped.Summary, outcome) || strings.Contains(stopped.Summary, "the round continues") || stopped.Next == nil || !slices.Contains(stopped.Next.Argv, wantNext) {
+				t.Fatalf("stopped round presented as continuing: summary=%s next=%+v", stopped.Summary, stopped.Next)
+			}
+		})
+	}
 }
 
 func TestBoundedManualRepairAdmission(t *testing.T) {

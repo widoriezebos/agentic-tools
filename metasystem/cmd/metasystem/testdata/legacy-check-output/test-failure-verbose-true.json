@@ -1,0 +1,5 @@
+{
+  "Code": 1,
+  "Stdout": "",
+  "Stderr": "cheap fixture\naudit fixture\n✗ metasystem test run: the unit check failed: exit status 9\n"
+}
