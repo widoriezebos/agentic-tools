@@ -583,6 +583,10 @@ func testFleetAbnormalSeatRestarts(t *testing.T) {
 				return nil
 			}
 			cfg := steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}
+			milestones := []string{"admitted:run"}
+			cfg.Units = func(string, string) ([]steward.UnitStage, error) {
+				return []steward.UnitStage{{Unit: "unit", Run: "run", Advances: milestones}}, nil
+			}
 			first, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, fleetSeatSelection())
 			if err != nil || first.LaunchID == "" {
 				t.Fatalf("initial seat: %+v %v", first, err)
@@ -591,6 +595,11 @@ func testFleetAbnormalSeatRestarts(t *testing.T) {
 				t.Helper()
 				if err := os.WriteFile(filepath.Join(root, "tip"), []byte(tip), 0600); err != nil {
 					t.Fatal(err)
+				}
+				if scenario == "hour-cap" {
+					// Keep the goal-work cap clear so this case reaches the
+					// independent hourly limit on abnormal process restarts.
+					milestones = append(milestones, fmt.Sprintf("checked:%d", len(milestones)))
 				}
 				result, err := steward.RunTick(root, cfg, fleetHandoffCensus{})
 				if err != nil {
@@ -663,6 +672,10 @@ func testFleetCompletedSeatProgress(t *testing.T) {
 		return nil
 	}
 	cfg := steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}
+	milestones := []string{"admitted:run"}
+	cfg.Units = func(string, string) ([]steward.UnitStage, error) {
+		return []steward.UnitStage{{Unit: "unit", Run: "run", Continuable: true, Advances: milestones}}, nil
+	}
 	selection := fleetSeatSelection()
 	for i := 0; i < 4; i++ {
 		if record, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, selection); err != nil || record.LaunchID == "" {
@@ -671,6 +684,7 @@ func testFleetCompletedSeatProgress(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "tip"), []byte(strings.Repeat(string(rune('b'+i)), 40)), 0600); err != nil {
 			t.Fatal(err)
 		}
+		milestones = append(milestones, fmt.Sprintf("checked:%d", i))
 		cfg.Now = cfg.Now.Add(time.Minute)
 		tick, err := steward.RunTick(root, cfg, fleetHandoffCensus{})
 		if err != nil || tick.Seat == nil {
@@ -760,6 +774,9 @@ func testFleetUnreservedStartFailure(t *testing.T) {
 	}
 	enrollReviveRunner(t, root, now)
 	owners := bed.owners()
+	// The replacement runs in the original checkout. Its work reader must
+	// resolve that ledger, not the launch-manager fixture's separate ledger.
+	owners.dependencies = defaultSyncRequestDependencies()
 	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
 	owners.commandNow = func(string) (time.Time, error) { return now, nil }
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {

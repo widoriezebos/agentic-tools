@@ -613,15 +613,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		return result, false, degradedErr
 	}
 	if cfg.Seat != nil {
-		seat := defaultSeatDependencies(cfg.Seat)
-		if cfg.GoalProjection != nil {
-			seat.Project = cfg.GoalProjection
-		}
-		if cfg.Situation != nil {
-			seat.Situation = func(root string, now time.Time) (SituationRecord, error) {
-				return SituationPage(root, func(at time.Time) Situation { return cfg.Situation(root, at) }, now, SituationFresh)
-			}
-		}
+		seat := seatDependenciesForConfig(cfg)
 		dependencies.openWork.Seat = &seat
 	}
 	machine := "this machine"
