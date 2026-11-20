@@ -56,5 +56,30 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 			}
 		}
 	}
+	for _, subject := range record.Subjects {
+		if subject.Round != round.Number {
+			continue
+		}
+		for _, id := range subject.GateLaunches {
+			execution, err := runner.Manager.Store.Read(id)
+			// Publication retains its id before Start; a failed start may never
+			// create a launch. There is no execution to collect in that case.
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			// Unstamped publication history has no proven booking owner.
+			if readString(execution.AdapterData, "unitRun") != record.ID || readString(execution.AdapterData, "unitInstallation") != runner.Installation || runner.Installation == "" {
+				continue
+			}
+			if execution.State.Terminal() {
+				if err := runner.CollectLaunch(record, execution, failedStepCause(execution)); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }

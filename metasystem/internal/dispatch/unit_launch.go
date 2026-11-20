@@ -114,11 +114,34 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 // ReconcileUnitLaunch replaces the reservation's charge evidence, rather than
 // subtracting a refund. An environment exclusion survives every later collection.
 func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, cause, started, ended string, executed bool) error {
+	_, err := reconcileUnitLaunch(root, id, run, goal, revision, status, cause, started, ended, executed, nil)
+	return err
+}
+
+// BookEndedUnitLaunch settles only an existing open reservation. A person's
+// terminal decision and an earlier collection both win over this observation.
+func BookEndedUnitLaunch(root string, execution launch.Record, run, goal, cause string, now time.Time) (bool, error) {
+	return reconcileUnitLaunch(root, execution.ID, run, goal, 0, string(execution.State), cause, execution.StartedAt, execution.FinishedAt, execution.Executed(), &now)
+}
+
+func reconcileUnitLaunch(root, id, run, goal string, revision uint64, status, cause, started, ended string, executed bool, bookedAt *time.Time) (bool, error) {
 	if !TerminalStatus(status) {
-		return fmt.Errorf("the unit execution %s has no terminal outcome", id)
+		return false, fmt.Errorf("the unit execution %s has no terminal outcome", id)
 	}
-	return withRecordLock(root, id, func(path string) error {
+	changed := false
+	err := withRecordLock(root, id, func(path string) error {
 		record, err := readObject(path)
+		if bookedAt != nil {
+			if err != nil {
+				return err
+			}
+			if TerminalStatus(asString(record["status"])) {
+				return nil
+			}
+			if asString(record["operationId"]) != "unit-launch:"+id || asString(record["status"]) != "pending" && asString(record["status"]) != "running" {
+				return fmt.Errorf("the unit execution %s has no open reservation", id)
+			}
+		}
 		if os.IsNotExist(err) {
 			// Unreserved history is bound to the observed goal revision, but
 			// supplies no approved spending cap or live process custody.
@@ -156,6 +179,14 @@ func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, ca
 		if cause == "environment" {
 			record["unitEnvironment"] = true
 		}
-		return writeRecord(path, record)
+		if bookedAt != nil {
+			record["endBookedBy"], record["endBookedAt"], record["endBookedLaunch"] = "steward", bookedAt.UTC().Format(time.RFC3339Nano), id
+		}
+		if err := writeRecord(path, record); err != nil {
+			return err
+		}
+		changed = true
+		return nil
 	})
+	return changed, err
 }

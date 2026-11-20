@@ -65,6 +65,8 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 		return "starting"
 	case work.Cancelled():
 		return "cancelled; new work starts under another name"
+	case work.Record.State == launch.UnitStepEnded:
+		return "step ended; awaiting collection by a session"
 	case work.Running():
 		return "running"
 	}
@@ -495,6 +497,8 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to admit another gap correction"
 	case lastOutcome(work) == "build-size":
 		return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to accept the retained change size"
+	case work.Record != nil && work.Record.State == launch.UnitStepEnded:
+		return inv.publicArgv(append([]string{"work", "wait", id}, suffix...)...), "the step ended; this collects its result and continues the round"
 	case work.Running():
 		return inv.publicArgv(append([]string{"work", "wait", id}, suffix...)...), "the work is running; this waits for it"
 	case read.State == "collected" && !read.Published:

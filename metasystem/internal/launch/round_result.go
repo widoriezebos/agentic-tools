@@ -69,7 +69,8 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree, parent s
 				return "", err
 			}
 			spec := StartSpec{ID: id, Kind: "proof", Goal: plan.Goal, Tag: plan.Unit,
-				WorkingDirectory: worktree, Brief: brief, Round: review.Round.Number, MaxRounds: review.Record.MaxRounds}
+				WorkingDirectory: worktree, Brief: brief, Round: review.Round.Number, MaxRounds: review.Record.MaxRounds,
+				UnitRun: review.Record.ID, UnitInstallation: runner.Installation}
 			spec.wait = review.Wait
 			if runner.BeforeModelLaunch != nil {
 				if err := runner.BeforeModelLaunch(review.Record, spec); err != nil {

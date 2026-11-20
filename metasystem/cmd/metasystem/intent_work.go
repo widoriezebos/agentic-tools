@@ -1630,6 +1630,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "UNIT_WAIT_RETRY"):
+			if current, readErr := runner.Status(record.ID); readErr == nil && current.State == launch.UnitStepEnded {
+				return intentResult{Outcome: intentConfirmed, Targets: targets,
+					Summary: "the step ended; the steward recorded its result while this session waited",
+					Data:    unitData(current, runner.Manager), next: inv.workArgv(current, "wait"), nextReason: "collect the result and continue the round"}
+			}
 			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "This wait needs repeating; its error was not recorded as a work failure",
 				Data: unitData(record, runner.Manager), next: again, nextReason: "the same command continues it", Details: details}
 		case launch.IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED"):

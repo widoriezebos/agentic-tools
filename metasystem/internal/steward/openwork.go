@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 type openWorkDependencies struct {
@@ -90,7 +91,7 @@ func seatBusyReader(home string, tick time.Duration, probers ...identity.Prober)
 	return seatBusyOrphanReader(home, tick, prober, nil)
 }
 
-func seatBusyOrphanReader(home string, tick time.Duration, prober identity.Prober, orphan func(UncollectedRun, string)) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
+func seatBusyOrphanReader(home string, tick time.Duration, prober identity.Prober, orphan func(UncollectedRun, string), bookers ...*launch.UnitRunner) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
 	return func(root string, work goal.ClaimableBudgetedWork, now time.Time) (bool, string, int) {
 		selected := home
 		if selected == "" {
@@ -100,9 +101,18 @@ func seatBusyOrphanReader(home string, tick time.Duration, prober identity.Probe
 				return len(work.Claimed)+len(work.Landing) > 0, "dependent work custody is unknown; unreadable records: 1", 1
 			}
 		}
-		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now, Tick: tick, Orphan: orphan, Probe: func(ref identity.Ref) identity.Liveness {
+		runner := seatEndRunner(root, selected, now, prober)
+		if len(bookers) > 0 {
+			runner = bookers[0]
+		}
+		bookingSkipped := BookEndedWork(root, tick, runner)
+		busy, reason, skipped := SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now, Tick: tick, Orphan: orphan, Probe: func(ref identity.Ref) identity.Liveness {
 			return identity.AliveRef((TickConfig{Prober: prober}).withDefaults().Prober, ref)
 		}})
+		if bookingSkipped > 0 {
+			reason = strings.TrimPrefix(reason+fmt.Sprintf("; end booking deferred: %d", bookingSkipped), "; ")
+		}
+		return busy, reason, skipped + bookingSkipped
 	}
 }
 

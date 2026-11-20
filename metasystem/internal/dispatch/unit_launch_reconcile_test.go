@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
@@ -135,5 +136,77 @@ func TestANeverExecutedSettlementFreesItsSlot(t *testing.T) {
 	after, err = os.ReadFile(path)
 	if err != nil || string(before) != string(after) {
 		t.Fatalf("contradictory executed times changed the reservation: %v", err)
+	}
+}
+
+func TestStewardBookingAndSessionCollectionShareOneTerminalWrite(t *testing.T) {
+	t.Parallel()
+	root, file := budgetProjectionRoot(t), budgetGoal()
+	file.StopCapability = &goal.StopCapability{Generation: 3, Revision: 3, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	if err := ReserveUnitLaunch(root, "execution", "unit", file, 1, 5, now, false); err != nil {
+		t.Fatal(err)
+	}
+	exit := 0
+	execution := launch.Record{ID: "execution", State: launch.Completed, ExitCode: &exit, StartedAt: now.Format(time.RFC3339Nano), FinishedAt: now.Add(time.Minute).Format(time.RFC3339Nano)}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() {
+		<-start
+		_, err := BookEndedUnitLaunch(root, execution, "unit", file.Id, "", now.Add(10*time.Minute))
+		results <- err
+	}()
+	go func() {
+		<-start
+		results <- ReconcileUnitLaunch(root, execution.ID, "unit", file.Id, 3, string(execution.State), "", execution.StartedAt, execution.FinishedAt, true)
+	}()
+	close(start)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(root, "artifacts/agents/jobs/execution.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(path)
+	if changed, err := BookEndedUnitLaunch(root, execution, "unit", file.Id, "", now.Add(time.Hour)); err != nil || changed {
+		t.Fatalf("repeat booking changed terminal: %v %v", changed, err)
+	}
+	if err := ReconcileUnitLaunch(root, execution.ID, "unit", file.Id, 3, string(execution.State), "", execution.StartedAt, execution.FinishedAt, true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	afterInfo, _ := os.Stat(path)
+	if err != nil || string(before) != string(after) || !info.ModTime().Equal(afterInfo.ModTime()) {
+		t.Fatal("joined collection rewrote terminal evidence", err)
+	}
+	budget := ProjectBudget(root, file, now.Add(time.Hour))
+	if budget.Status != BudgetKnown || budget.ActiveJobs != 0 || budget.OpenCapMinutes != 0 || budget.ObservedJobMinutes != 1 || budget.Attempts != 1 {
+		t.Fatalf("collection counted twice: %+v", budget)
+	}
+}
+
+func TestStewardBookingNeverOverwritesAPersonsTerminalReservation(t *testing.T) {
+	t.Parallel()
+	root, file := budgetProjectionRoot(t), budgetGoal()
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	path := filepath.Join(root, "artifacts/agents/jobs/execution.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRecord(path, map[string]any{"jobId": "execution", "operationId": "unit-launch:execution", "unitRun": "unit", "goalId": file.Id, "status": "cancelled", "phase": "cancelled", "endedAt": now.Format(time.RFC3339Nano)}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	execution := launch.Record{ID: "execution", State: launch.Completed, StartedAt: now.Format(time.RFC3339Nano), FinishedAt: now.Add(time.Minute).Format(time.RFC3339Nano)}
+	if changed, err := BookEndedUnitLaunch(root, execution, "unit", file.Id, "", now.Add(time.Hour)); err != nil || changed {
+		t.Fatalf("person's stop was overwritten: %v %v", changed, err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("person's cancellation was rewritten")
 	}
 }

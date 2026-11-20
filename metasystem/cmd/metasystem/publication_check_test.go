@@ -146,6 +146,13 @@ func TestPublicationCheckThroughWorkReview(t *testing.T) {
 				if len(b.starter.launched()) != wantLaunches || (subject.GateReuse != nil) == mismatch || subject.GateRunID == "" {
 					t.Fatalf("wrong publication result: %+v launches=%v stderr=%s", subject, b.starter.launched(), stderr)
 				}
+				for _, id := range subject.GateLaunches {
+					execution, err := b.manager.Store.Read(id)
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertUnitStamp(t, execution, run, b.root())
+				}
 				if mismatch && !strings.Contains(stderr, "base differs") {
 					t.Fatalf("rerun did not name base: %s", stderr)
 				}

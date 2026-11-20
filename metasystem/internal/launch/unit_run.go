@@ -136,7 +136,20 @@ type UnitAlone struct {
 	FinishedAt string   `json:"finishedAt,omitempty"`
 }
 
+// EndBooking records the launch fact independently of a session's later
+// classification, retry and continuation of the step.
+type EndBooking struct {
+	By          string `json:"by"`
+	At          string `json:"at"`
+	Launch      string `json:"launch"`
+	State       State  `json:"state"`
+	CollectedAt string `json:"collectedAt,omitempty"`
+}
+
+const UnitStepEnded = "step-ended"
+
 type UnitStep struct {
+	EndBooking         *EndBooking   `json:"endBooking,omitempty"`
 	Kind               string        `json:"kind,omitempty"`
 	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
 	ExecutionEndedAt   string        `json:"executionEndedAt,omitempty"`
@@ -388,6 +401,18 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		}
 	} else if record.State == "awaiting-judgement" {
 		return UnitResult{Record: record, Round: len(record.Rounds)}, nil
+	}
+	// Re-enter normal collection from the retained launch, including the
+	// builder's result block and the existing retry and proof decisions.
+	if record.State == UnitStepEnded {
+		record.State = "running"
+	}
+	for i := range record.Rounds[len(record.Rounds)-1].Steps {
+		step := &record.Rounds[len(record.Rounds)-1].Steps[i]
+		if step.EndBooking != nil && step.EndBooking.CollectedAt == "" {
+			step.State = StepRunning
+			step.EndBooking.CollectedAt = runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+		}
 	}
 	settings, err := runner.Manager.resolvedSettings()
 	if err != nil {
