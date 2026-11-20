@@ -143,6 +143,7 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	input["unit"] = "legacy"
 	delete(input, "fullArgv")
 	delete(input, "estimate")
+	delete(input, "pairedReads") // legacy input predates paired rounds
 	data, _ = json.Marshal(input)
 	os.WriteFile(legacyPlan, data, 0o600)
 	runner := &launch.UnitRunner{Manager: bed.manager, Git: workGit{bed}, Root: bed.unitRoot}
@@ -185,7 +186,7 @@ type sandboxReader struct {
 	structured *string
 }
 
-func (r sandboxReader) SelfRef() (identity.Ref, error) { return workProcessRef(10), nil }
+func (r sandboxReader) SelfRef() (identity.Ref, error) { return workProcessRef(99), nil }
 func (r sandboxReader) StartChild(command launch.Command) (launch.Child, identity.Ref, error) {
 	r.mu.Lock()
 	*r.commands = append(*r.commands, command)
@@ -236,9 +237,13 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 	if !strings.HasPrefix(resolved, temporary+string(filepath.Separator)) || strings.HasPrefix(output, bed.worktree) || strings.HasPrefix(output, bed.unitRoot) {
 		t.Fatalf("findings path %s is not a private temporary path outside the worktree and run store", output)
 	}
-	if len(commands) != 1 || !slices.Contains(commands[0].Args, "workspace-write") || commands[0].Directory != bed.worktree ||
+	run, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(data["run"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 1 || !slices.Contains(commands[0].Args, "workspace-write") || commands[0].Directory != run.Rounds[0].ReadCheckout || commands[0].Directory == bed.worktree ||
 		!strings.Contains(commands[0].Stdin, "Write findings to: "+output) {
-		t.Fatalf("codex command=%+v", commands)
+		t.Fatal("the Codex child did not receive the frozen checkout, workspace-write sandbox and declared output")
 	}
 	copies := data["readFindings"].([]any)
 	// Reads retain both the prose report and the structured stop evidence.

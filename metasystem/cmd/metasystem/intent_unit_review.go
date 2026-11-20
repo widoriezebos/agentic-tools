@@ -743,7 +743,7 @@ func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, rev
 		return nil, "the round must have exactly one read step"
 	}
 	step := reads[0]
-	if step.Unattached || review.Round.ReadCheckout != "" && (review.Round.Result == nil || step.ExaminedTree != subject.StagedTree || step.ExaminedTree != review.Round.Result.Tree || review.Round.Result.Parent != review.Base) {
+	if step.Unattached || review.Round.ReadCheckout != "" && (review.Round.Result == nil || step.ExaminedTree != subject.StagedTree || step.ExaminedTree != review.Round.Result.Tree || step.ExaminedBase != review.Base) {
 		return nil, "the read did not examine the publication subject"
 	}
 	if revision == 0 || len(report) == 0 || len(readJSON) == 0 || read.State != launch.Completed || read.Kind != "read" || !read.VerdictIsCounting() {

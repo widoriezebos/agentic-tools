@@ -156,6 +156,7 @@ const UnitStepEnded = "step-ended"
 type UnitStep struct {
 	Unattached   bool   `json:"unattached,omitempty"`
 	ExaminedTree string `json:"examinedTree,omitempty"`
+	ExaminedBase string `json:"examinedBase,omitempty"`
 
 	EndBooking         *EndBooking   `json:"endBooking,omitempty"`
 	Kind               string        `json:"kind,omitempty"`
@@ -427,6 +428,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		return UnitResult{}, err
 	}
 	deadline := runner.Manager.Now().Add(time.Duration(settings.WaitCapSeconds) * time.Second)
+	runner.tree.deadline = deadline
 	if request.Resume != "" {
 		round := &record.Rounds[len(record.Rounds)-1]
 		if round.JoiningOutcome != "" {
@@ -732,7 +734,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if beforeProof.TreeID != round.Result.Tree || strings.TrimSpace(beforeProof.Head) != round.Result.Parent {
+	if plan.HasRead() && !runner.resolving && (beforeProof.TreeID != round.Result.Tree || strings.TrimSpace(beforeProof.Head) != round.Result.Parent) {
 		return runner.treeMoved(record, round, "the frozen build tree")
 	}
 	readStart := len(round.Steps)
@@ -875,7 +877,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 		for _, step := range round.Steps[readStart:] {
-			if len(step.Moved) > 0 || (step.State == StepPassed && step.ExaminedTree != round.Result.Tree) || observed.TreeID != round.Result.Tree {
+			if len(step.Moved) > 0 || (step.State == StepPassed && (step.ExaminedTree != round.Result.Tree || step.ExaminedBase != record.Base)) || observed.TreeID != round.Result.Tree {
 				names := strings.TrimPrefix(step.Reason, "the check's inputs changed during the step: ")
 				if names == "" {
 					names = "the frozen read tree"
@@ -964,7 +966,7 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 				return err
 			}
 			return runner.save(*record)
-		}, unit: true, snapshot: runner.snapshotRepository, wait: runner.waitLaunch,
+		}, unit: true, readBase: record.Base, snapshot: runner.snapshotRepository, wait: runner.waitLaunch,
 		before: func(spec StartSpec) error {
 			if err := runner.beforeLaunch(*record, spec); err != nil {
 				return err
@@ -1211,8 +1213,24 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 				return UnitResult{Record: *record}, err
 			}
 		}
-		if err := runner.releaseFrozenReads(record, round); err != nil {
-			return UnitResult{Record: *record}, err
+		for {
+			err := runner.releaseFrozenReads(record, round)
+			if err == nil {
+				break
+			}
+			var held *readCheckoutHeld
+			if !errors.As(err, &held) {
+				return UnitResult{Record: *record}, err
+			}
+			if runner.tree == nil || !runner.Manager.Now().Before(runner.tree.deadline) {
+				return runner.result(*record, round, held.step, true), nil
+			}
+			if err := runner.CommandWait(func() error {
+				runner.Manager.Sleep(min(runner.Manager.Poll, runner.tree.deadline.Sub(runner.Manager.Now())))
+				return nil
+			}); err != nil {
+				return UnitResult{Record: *record}, err
+			}
 		}
 	}
 	round.JoiningOutcome = ""
@@ -1680,7 +1698,7 @@ func readOutputs(manager *Manager, round UnitRound) []string {
 	}
 	for _, step := range round.Steps {
 		if strings.HasPrefix(step.Name, "read") && step.State == StepPassed && !step.Unattached && step.Verdict != "" && step.LaunchID != "" {
-			if record, err := manager.Store.Read(step.LaunchID); err == nil {
+			if record, err := manager.Store.Read(step.LaunchID); err == nil && record.State == Completed && record.VerdictIsCounting() {
 				for _, output := range record.Outputs {
 					if _, err := os.Stat(output.Path); !os.IsNotExist(err) {
 						paths = append(paths, output.Path)

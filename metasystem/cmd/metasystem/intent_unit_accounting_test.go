@@ -304,7 +304,7 @@ func (s *accountingStarter) StartSupervisor(id, _ string) (identity.Ref, error) 
 		current.Supervisor = &supervisor
 		current.FinishedAt = s.bed.manager.Now().UTC().Format(time.RFC3339Nano)
 		if denied {
-			exit, child := 1, workProcessRef(20)
+			exit, child := 1, workProcessRef(98)
 			current.ExitCode, current.Child = &exit, &child
 			current.State, current.Cause, current.Reason = launch.Failed, "sandbox-denied", "sandbox denied command execution"
 			return nil
@@ -316,6 +316,8 @@ func (s *accountingStarter) StartSupervisor(id, _ string) (identity.Ref, error) 
 			current.FinishedAt = ""
 			return nil
 		}
+		ended := workProcessRef(98)
+		current.Child = &ended
 		exit := 0
 		current.State, current.ExitCode = launch.Completed, &exit
 		if record.Kind == "read" {
@@ -374,6 +376,8 @@ func TestIntentUnitLaunchAccountingEnvironmentRetry(t *testing.T) {
 			}
 			// Complete the exact retained execution, as the supervisor's terminal writer does.
 			if _, err := bed.manager.Store.Update(starter.held, func(record *launch.Record) error {
+				ended := workProcessRef(98)
+				record.Child = &ended
 				exit := 0
 				record.State, record.ExitCode, record.FinishedAt = launch.Completed, &exit, bed.manager.Now().UTC().Format(time.RFC3339Nano)
 				if record.Kind == "read" {
@@ -502,5 +506,80 @@ func TestIntentUnitLaunchAccountingUnreadableCollection(t *testing.T) {
 	code, result, _ = bed.work("work", "wait", "run:"+run)
 	if code != 0 || len(starter.ids) != 3 {
 		t.Fatalf("restored history did not recover: %d %+v", code, result)
+	}
+}
+
+// Both executions are charged even though only one goal job is available.
+// Exercise the reservation, the physical launches and reconciliation through work.
+func TestRoundCheckAndReadSpendAtOneJob(t *testing.T) {
+	for _, live := range []bool{false, true} {
+		t.Run(fmt.Sprintf("live-%t", live), func(t *testing.T) {
+			bed := newWorkBedWith(t, func(file *goal.GoalFile) {
+				workApprovedBox(file)
+				file.Budget.ActiveJobLimit = 1
+				file.Budget.ReservedJobMinutesLimit = 600
+				workApprovedBox(file)
+			})
+			bed.starter.hold = "proof"
+			probe := &treeProber{}
+			bed.manager.Prober = probe
+			if live {
+				bed.manager.Supervisor = boundaryStarter{bed, func() { bed.starter.hold = "read" }}
+			}
+			code, result := treeBuild(t, bed, "paired", true)
+			if code != 3 {
+				t.Fatalf("start with pending proof: %d %s", code, result.Summary)
+			}
+			id := resultData(t, result)["run"].(string)
+			runner := &launch.UnitRunner{Root: bed.unitRoot}
+			run, err := runner.Status(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := run.Rounds[0]
+			proof, read := round.Steps[1], round.Steps[2]
+			if proof.LaunchID == "" || read.LaunchID == "" || len(read.LaunchIDs) != 1 {
+				t.Fatal("both physical executions must be admitted at a one-job limit")
+			}
+			project := func() dispatchcore.BudgetProjection {
+				return dispatchcore.ProjectBudget(bed.root(), bed.goalFile(bed.id), bed.manager.Now())
+			}
+			budget := project()
+			if budget.ActiveJobs != 1 || budget.Attempts != 1 || live && budget.OpenCapMinutes != 240 {
+				t.Fatalf("overlap: attempts=%d jobs=%d cap=%d", budget.Attempts, budget.ActiveJobs, budget.OpenCapMinutes)
+			}
+			probe.dead = true
+			_, err = bed.manager.Store.Update(proof.LaunchID, func(r *launch.Record) error {
+				exit := 1
+				r.State, r.ExitCode, r.FinishedAt = launch.Failed, &exit, bed.manager.Now().UTC().Format(time.RFC3339Nano)
+				r.Reason = "fixture-red"
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, result, _ = bed.work("work", "wait", "run:"+id)
+			run, err = runner.Status(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round = run.Rounds[0]
+			read = round.Steps[2]
+			if round.Outcome != "proof-red" || !read.Unattached || len(round.Reads) != 0 || live && (read.State != launch.StepSkipped || read.Reason != "proof-red") || !live && read.State != launch.StepPassed {
+				t.Fatalf("red join: %s %s %s", result.Summary, round.Outcome, read.State)
+			}
+			bytes, err := os.ReadFile(filepath.Join(bed.root(), "artifacts", "agents", "jobs", read.LaunchID+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var job struct{ Status, StartedAt, EndedAt string }
+			if err := json.Unmarshal(bytes, &job); err != nil {
+				t.Fatal(err)
+			}
+			budget = project()
+			if !dispatchcore.TerminalStatus(job.Status) || job.StartedAt == "" || job.EndedAt == "" || budget.ActiveJobs != 0 || budget.Attempts != 1 || budget.OpenCapMinutes != 0 || budget.ObservedJobMinutes < 3 {
+				t.Fatalf("settlement: %s start=%t end=%t attempts=%d observed=%d open=%d", job.Status, job.StartedAt != "", job.EndedAt != "", budget.Attempts, budget.ObservedJobMinutes, budget.OpenCapMinutes)
+			}
+		})
 	}
 }

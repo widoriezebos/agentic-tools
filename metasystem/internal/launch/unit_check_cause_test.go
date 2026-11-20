@@ -157,7 +157,7 @@ func TestUnitProofCheckDeadlineCause(t *testing.T) {
 			}
 			stopped := result.Record.Rounds[0]
 			step = &stopped.Steps[1]
-			if result.Record.State != "awaiting-judgement" || step.Cause != "environment" || stopped.Cause != "environment" || !step.Deadline || step.Reason != "the frozen check stopped at proof.deadline" || step.Comparison != nil || stopped.Stop == nil || stopped.Stop.Handoff != "stopped deadline" || len(f.starter.ids) != 2 || git.exports != 0 {
+			if result.Record.State != "awaiting-judgement" || step.Cause != "environment" || stopped.Cause != "environment" || !step.Deadline || step.Reason != "the frozen check stopped at proof.deadline" || step.Comparison != nil || stopped.Stop == nil || stopped.Stop.Handoff != "stopped deadline" || !stopped.Steps[2].Unattached || len(f.starter.ids) != 3 || git.exports != 0 {
 				t.Fatalf("round=%+v step=%+v launches=%v", stopped, step, f.starter.ids)
 			}
 		})

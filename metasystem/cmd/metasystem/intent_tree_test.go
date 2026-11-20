@@ -309,7 +309,7 @@ func TestIntentTreeBoundaryIsFreshAfterYield(t *testing.T) {
 	})
 	code, result, _ := b.work("work", "wait", "run:"+run)
 	current, err := runner.Status(run)
-	if err != nil || current.Rounds[0].Outcome != "proof-wrote" || current.Rounds[0].Cause != "environment" || current.Rounds[0].Steps[1].State != launch.StepFailed || len(b.starter.launched()) != 2 {
+	if err != nil || current.Rounds[0].Outcome != "proof-wrote" || current.Rounds[0].Cause != "environment" || current.Rounds[0].Steps[1].State != launch.StepFailed || !current.Rounds[0].Steps[2].Unattached || len(b.starter.launched()) != 2 {
 		t.Fatalf("resume used stale proof boundary: %d %+v %+v %v", code, result, current, err)
 	}
 }

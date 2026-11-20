@@ -721,11 +721,27 @@ func TestRunStopsAtTheCapAndResumeContinues(t *testing.T) {
 	}
 }
 
-func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
-	for _, scenario := range []string{"land", "completed-then-red", "live-then-red", "stop", "budget-waits", "read-failed", "read-writes", "check-writes"} {
+// The contract retains this test's original name. The proof starts first,
+// and its wait includes every read of the frozen subject.
+func TestProofRunsBeforeTheRead(t *testing.T) {
+	for _, scenario := range []string{"land", "completed-then-red", "live-then-red", "stop", "budget-waits", "read-failed", "read-writes", "check-writes", "wrong-subject", "custody", "declared-in-tree"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, repo := newGitUnitFixture(t)
 			f.starter.readVerdict = "land"
+			plan, err := ReadUnitPlan(f.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			briefText := "## Prepared copy\n\nPath: " + repo + "\n"
+			if scenario == "declared-in-tree" {
+				path := filepath.Join(repo, "findings.md")
+				plan.Read.Outputs = []string{path}
+				briefText += "Write findings to: " + path + "\n"
+				if err := writeUnitJSON(f.plan, plan, ""); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFile(t, plan.Read.Brief, briefText)
 			f.starter.holdKind = "proof"
 			var checkout string
 			var proofID string
@@ -745,6 +761,13 @@ func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
 					return err
 				}
 				round := run.Rounds[0]
+				brief, err := os.ReadFile(r.Inputs[0].Path)
+				if err != nil {
+					return err
+				}
+				if !strings.Contains(string(brief), "Path: "+checkout+"\n") {
+					t.Fatal("retained reader brief points outside its checkout")
+				}
 				if _, err := os.Stat(filepath.Join(round.Directory, "proof-before.json")); err != nil {
 					return err
 				}
@@ -755,6 +778,22 @@ func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
 					return err
 				}
 				switch scenario {
+				case "declared-in-tree":
+					paths, _ := declaredOutputPaths(r)
+					if len(paths) != 2 || strings.HasPrefix(paths[0], repo+"/") || !strings.Contains(string(brief), paths[0]) {
+						t.Fatal("reader would write declared output into a measured tree")
+					}
+					writeFile(t, paths[0], "VERDICT: land\n")
+					state, err := f.manager.Store.StateDir(r.ID)
+					if err != nil {
+						return err
+					}
+					// The supervisor retains its structured output in the launch store.
+					f.starter.readOutput = filepath.Join(state, "outputs", filepath.Base(paths[1]))
+					if err := os.MkdirAll(filepath.Dir(f.starter.readOutput), 0700); err != nil {
+						return err
+					}
+					writeFile(t, f.starter.readOutput, structuredUnitReturn(0, "regression", "unit.go"))
 				case "live-then-red", "stop":
 					f.starter.holdKind = "read"
 				case "read-failed":
@@ -780,6 +819,33 @@ func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
 			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
 			if err != nil || !first.Capped || first.Step != "proof:check" {
 				t.Fatalf("first wait: %s, %v", first.Step, err)
+			}
+			// The older strict plan reader must refuse before it drives any child.
+			raw, err := os.ReadFile(first.Record.Plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var old struct {
+				rawUnitPlan
+				FullArgv []string
+				Estimate *UnitEstimate
+			}
+			dec := json.NewDecoder(strings.NewReader(string(raw)))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&old); err == nil || !strings.Contains(err.Error(), "pairedReads") {
+				t.Fatal("retained paired plan is consumable by an older runner")
+			}
+			if scenario == "wrong-subject" {
+				first.Record.Rounds[0].Steps[2].ExaminedTree = "another-tree"
+				if err := f.runner.save(first.Record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "custody" {
+				_, err = f.manager.Store.Update(first.Record.Rounds[0].Steps[2].LaunchID, func(r *Record) error { alive := ref(20); r.Child = &alive; return nil })
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			if scenario == "budget-waits" {
 				if checkout != "" {
@@ -824,6 +890,19 @@ func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				if scenario == "custody" {
+					if !last.Capped || last.Record.State != "running" {
+						t.Fatal("terminal reader released a live process")
+					}
+					if _, err := os.Stat(checkout); err != nil {
+						t.Fatal(err)
+					}
+					f.manager.Prober.(*fakeProber).states[20] = identity.Dead
+					last, err = f.runner.Advance(UnitRequest{Resume: first.Record.ID})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
 				round := last.Record.Rounds[0]
 				read := stepNamed(t, round, "read")
 				proof := stepNamed(t, round, "proof:check")
@@ -845,7 +924,7 @@ func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
 					if scenario == "live-then-red" && (read.State != StepSkipped || read.Reason != "proof-red") {
 						t.Fatalf("lost read stop: %+v", read)
 					}
-				case "check-writes", "read-writes":
+				case "check-writes", "read-writes", "wrong-subject":
 					if round.Outcome != "proof-wrote" || round.Cause != "environment" {
 						t.Fatalf("missed mutation: %+v", round)
 					}
@@ -2650,6 +2729,7 @@ func TestASilentReaderIsRetriedOnceThenStopsByName(t *testing.T) {
 			}
 			f.manager.Supervisor = supervisingUnitReader{f.starter}
 			processes := f.manager.Processes.(*fakeProcesses)
+			processes.self, processes.child = ref(98), ref(99) // this synchronous supervisor and its child exit before the join
 			reads := 0
 			processes.onStart = func(c Command) {
 				reads++

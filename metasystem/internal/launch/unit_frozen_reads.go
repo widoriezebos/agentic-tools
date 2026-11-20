@@ -23,6 +23,13 @@ func roundReadOwner(run string, n int) diskstore.Owner {
 // objects, a ref or a linked worktree to the builder's repository.
 func (runner *UnitRunner) frozenReadCheckout(record *UnitRunRecord, round *UnitRound, plan UnitPlan) (string, error) {
 	if round.ReadCheckout != "" && !round.CheckoutRemoved {
+		info, err := os.Lstat(filepath.Join(round.ReadStore, "checkout", ".git"))
+		if err != nil {
+			return "", err
+		}
+		if !info.IsDir() {
+			return "", errors.New("the retained reader clone lost its Git directory")
+		}
 		return round.ReadCheckout, nil
 	}
 	source, err := runner.git().Run(plan.Worktree, nil, "rev-parse", "--show-toplevel")
@@ -45,6 +52,14 @@ func (runner *UnitRunner) frozenReadCheckout(record *UnitRunRecord, round *UnitR
 			_ = diskstore.ReleaseTempStore(context.Background(), store, readContextClass, owner)
 		}
 	}()
+	// The parent of the clone must never provide a fallback Git repository.
+	for dir := filepath.Dir(store); dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return "", errors.New("the temporary read store lies inside another Git checkout")
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
 	clone := filepath.Join(store, "checkout")
 	if _, err := runner.git().Run(store, nil, "clone", "--shared", "--no-checkout", "--", root, clone); err != nil {
 		return "", err
@@ -82,6 +97,12 @@ func (runner *UnitRunner) frozenReadCheckout(record *UnitRunRecord, round *UnitR
 	return round.ReadCheckout, nil
 }
 
+type readCheckoutHeld struct{ step *UnitStep }
+
+func (e *readCheckoutHeld) Error() string {
+	return fmt.Sprintf("read %s still holds its checkout", e.step.LaunchID)
+}
+
 func (runner *UnitRunner) releaseFrozenReads(record *UnitRunRecord, round *UnitRound) error {
 	if round.ReadStore == "" || round.CheckoutRemoved {
 		return nil
@@ -96,7 +117,7 @@ func (runner *UnitRunner) releaseFrozenReads(record *UnitRunRecord, round *UnitR
 				return err
 			}
 			if !r.State.Terminal() || !runner.Manager.provenDead(r) {
-				return fmt.Errorf("read %s still holds its checkout", id)
+				return &readCheckoutHeld{step: &step}
 			}
 		}
 	}
@@ -230,12 +251,31 @@ func (runner *UnitRunner) prepareRoundReadBrief(record *UnitRunRecord, round *Un
 	if err != nil {
 		return err
 	}
-	if plan.HasRead() && (packet != "" || len(round.ExcludedDropped) > 0) {
-		brief, err := os.ReadFile(plan.Read.Brief)
-		if err != nil {
-			return err
+	brief, err := os.ReadFile(plan.Read.Brief)
+	if err != nil {
+		return err
+	}
+	// The prepared-copy field in an existing unit plan names its original
+	// worktree. Give the reader the path it actually owns for this round.
+	text := strings.Replace(string(brief), "\nPath: "+plan.Worktree+"\n", "\nPath: "+sequence.spec.WorkingDirectory+"\n", 1)
+	// A plan may declare paths in the builder's own tree. Keep such
+	// outputs outside both trees and let normal launch collection retain them.
+	if round.ReadStore != "" {
+		sequence.spec.Outputs = slices.Clone(sequence.spec.Outputs)
+		var paths []string
+		for i, path := range sequence.spec.Outputs {
+			rel, err := filepath.Rel(plan.Worktree, path)
+			if err == nil && filepath.IsLocal(rel) {
+				dest := filepath.Join(round.ReadStore, "outputs", rel)
+				paths = append(paths, path, dest)
+				sequence.spec.Outputs[i] = dest
+			}
 		}
-		text := string(brief)
+		if len(paths) > 0 {
+			text = strings.NewReplacer(paths...).Replace(text)
+		}
+	}
+	if text != string(brief) || packet != "" || len(round.ExcludedDropped) > 0 {
 		if packet != "" {
 			text = strings.Replace(text, "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1) + packet
 		}

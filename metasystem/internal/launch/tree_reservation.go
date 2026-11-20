@@ -344,6 +344,11 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 	}
 	err = runner.treeLocked(record.Worktree, func(path string, owner *treeReservation) error {
 		for i := range record.Rounds {
+			if round := &record.Rounds[i]; round.ReadStore != "" && !round.CheckoutRemoved {
+				if err := runner.discardRoundReads(&record, round, "cancelled"); err != nil {
+					return err
+				}
+			}
 			if err := runner.releaseFrozenReads(&record, &record.Rounds[i]); err != nil {
 				return err
 			}
@@ -448,9 +453,10 @@ func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound, nam
 // A command takes the tree before its named unit and run locks. Saves reuse
 // that boundary; waits for child results release the locks and validate the run.
 type treeCommand struct {
-	path  string
-	owner *treeReservation
-	files []*os.File
+	deadline time.Time
+	path     string
+	owner    *treeReservation
+	files    []*os.File
 }
 
 func treeCall[T any](runner *UnitRunner, worktree string, act func(*UnitRunner) (T, error)) (T, error) {

@@ -153,7 +153,7 @@ func (exitedChild) Wait() (int, error) { return 0, nil }
 // readProcesses runs the read's child to exit 0 and proves its group gone.
 type readProcesses struct{}
 
-func (readProcesses) SelfRef() (identity.Ref, error) { return workProcessRef(10), nil }
+func (readProcesses) SelfRef() (identity.Ref, error) { return workProcessRef(99), nil }
 func (readProcesses) StartChild(launch.Command) (launch.Child, identity.Ref, error) {
 	return exitedChild{}, workProcessRef(30), nil
 }

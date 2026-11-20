@@ -18,6 +18,7 @@ import (
 // it starts, started and saved; the step states and their recording are the
 // same for both.
 type stepDriver struct {
+	readBase string // base of the cumulative diff supplied to the unit reader
 	wait     func(string, time.Duration) (Record, bool, error)
 	manager  *Manager
 	round    *UnitRound
@@ -91,7 +92,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 					return Record{}, driver.save()
 				}
 				if spec.Kind == "read" && driver.round.ReadCheckout != "" {
-					step.ExaminedTree = before.TreeID
+					step.ExaminedTree, step.ExaminedBase = before.TreeID, driver.readBase
 					if driver.round.Result == nil || before.TreeID != driver.round.Result.Tree || strings.TrimSpace(before.Head) != driver.round.Result.Parent {
 						step.State, step.Cause, step.Reason = StepFailed, "environment", "the frozen read tree changed before the read"
 						step.Moved = []string{"the frozen read tree"}
