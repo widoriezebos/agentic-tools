@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,10 +37,16 @@ func (s cycleSchedule) due(now time.Time, pending bool) time.Time {
 
 func readCycleSchedule(root string, now time.Time) (cycleSchedule, error) {
 	gap, err := boundedConfig(root, "steward.request-gap-sec", config.MustIntDefault("steward.request-gap-sec"), 1)
+	if errors.Is(err, os.ErrNotExist) {
+		gap, err = config.MustIntDefault("steward.request-gap-sec"), nil
+	}
 	if err != nil {
 		return cycleSchedule{}, err
 	}
 	limit, err := boundedConfig(root, "steward.request-cycle-max", config.MustIntDefault("steward.request-cycle-max"), 1)
+	if errors.Is(err, os.ErrNotExist) {
+		limit, err = config.MustIntDefault("steward.request-cycle-max"), nil
+	}
 	return cycleSchedule{NextTick: now, Gap: time.Duration(gap) * time.Second, Limit: limit}, err
 }
 

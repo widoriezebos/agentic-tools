@@ -761,3 +761,12 @@ func TestSeatLaunchCompletionWakesItsSuccessorDecision(t *testing.T) {
 		t.Fatalf("ticks=%d starts=%d", ticks, len(bed.launcher.starts))
 	}
 }
+
+func TestRunnerRequestDefaultsWithoutConfiguration(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
+	schedule, err := readCycleSchedule(t.TempDir(), now)
+	if err != nil || schedule.Gap != 15*time.Second || schedule.Limit != 8 || !schedule.NextTick.Equal(now) {
+		t.Fatalf("missing configuration must use request defaults: %+v, %v", schedule, err)
+	}
+}

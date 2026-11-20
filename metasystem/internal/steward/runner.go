@@ -21,7 +21,6 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -37,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
+	"golang.org/x/sys/unix"
 )
 
 func runnerDir(repoRoot string) string {
