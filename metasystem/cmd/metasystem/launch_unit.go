@@ -47,8 +47,12 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 	if len(red) > 0 {
 		redValue = strings.Join(red, ",")
 	}
+	outcome := round.Outcome
+	if check, err := launch.LatestCheckResult(round.Directory); err == nil && check.Outcome == launch.CheckBudgetExhausted && outcome == "green" {
+		outcome = string(check.Outcome)
+	}
 	return fmt.Sprintf("run=%s round=%d state=%s outcome=%s build=%s read=%s verdict-counts=%t proof=%d/%d red=%s directory=%s",
-		record.ID, round.Number, record.State, round.Outcome, build, strings.Join(reads, ","), counts, passed, total, redValue, filepath.Clean(round.Directory))
+		record.ID, round.Number, record.State, outcome, build, strings.Join(reads, ","), counts, passed, total, redValue, filepath.Clean(round.Directory))
 }
 
 func readStepHasCountingRerun(steps []launch.UnitStep, index int) bool {

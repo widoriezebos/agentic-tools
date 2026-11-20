@@ -121,6 +121,13 @@ func (check UnitCheck) evidence(directory, cheapDirectory, execution, before str
 // checkCeilingFactor bounds a check that keeps writing: it ends at this many times proof.deadline after its start.
 const checkCeilingFactor = 8
 
+// checkCommand executes declared shell commands or a fixed argv through the
+// same adapter. Positional arguments retain their boundaries and use the
+// command's admitted search path.
+func checkCommand(text string, args ...string) *exec.Cmd {
+	return exec.Command("/bin/sh", append([]string{"-c", text}, args...)...)
+}
+
 type outputProgress struct {
 	buffer bytes.Buffer
 	wrote  chan struct{}
@@ -206,7 +213,7 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	environmentSHA256 := CheckEnvironmentDigest(check.EnvironmentValues(), check.Base)
 	environment := commandenv.EngineEnvironmentInDirectory(check.EnvironmentValues(), context.EngineDirectory)
 	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
-		process := exec.Command("/bin/sh", "-c", command.text)
+		process := checkCommand(command.text)
 		process.Dir, process.Env = directory, slices.Clone(environment)
 		if command.name == "cheap" {
 			process.Dir = manualDirectory

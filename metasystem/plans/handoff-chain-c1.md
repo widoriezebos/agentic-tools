@@ -7,5 +7,7 @@
 - Ownership: existing unit check owns selection and outcomes; existing resource custodian settles descendants, including observed session escapees; existing round/status/publication/carry owners interpret outcomes.
 - Deferred by the adopted brief: reader nominations, concurrent reads (C2), lane changes and switching the default.
 - External brief, independent acceptance table and report: `lane-test-20261009/briefs/chain-C1-run-brief.md`, `lane-test-20261009/panes/chain-c1-run-acceptance.md`, and `lane-test-20261009/panes/chain-c1-run-report.txt` in the shared evidence directory. The report owns exact checks, coverage limits and timing.
-- Review limits: the external report challenges the appended branch-read/remainder-gate rulings; a Linux kernel OOM-record adapter is not implemented. Full acceptance-table closure is not claimed.
+- Accepted scope: the correction brief accepts the existing complete publication/carry gates, no separate read gate, catalogue validation, and runtime-diagnostic out-of-memory detection. A Linux kernel OOM-record adapter remains deferred.
+- Correction 1: the check adapter owns both command forms; default/legacy and complete checks retain default signals and clock reads; bounded admission cancels; round messages name incomplete feedback; startup/cancellation remain distinct from observed test failures; complete-only result validation protects branch gates. Verification and dispositions are appended under CORRECTION 1 in the external report.
+- Builder verification now includes layering, testpolicy, testenv, audits and the named Check|UnitRun|CostReport command selection, recorded in development/project-rules-local.md.
 - No push is authorized. Independent review remains separate work.

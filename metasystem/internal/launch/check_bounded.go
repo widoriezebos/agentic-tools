@@ -26,12 +26,12 @@ func (check UnitCheck) Kind() string {
 
 // StatusLines reports incomplete feedback without presenting it as coverage.
 func (result CheckResult) StatusLines() []string {
-	if result.Check.Kind() != "bounded" {
+	if result.Kind != "bounded" {
 		return nil
 	}
 	lines := []string{fmt.Sprintf("check: bounded; outcome: %s", result.Outcome)}
 	if result.Outcome == CheckBudgetExhausted {
-		lines = append(lines, fmt.Sprintf("%d of %d selected tests did not run; the candidate's complete proof covers them", len(result.NotRun), len(result.Selected)))
+		lines = append(lines, result.BudgetSummary())
 	}
 	if len(result.Skipped) > 0 {
 		lines = append(lines, fmt.Sprintf("%d nominations were skipped", len(result.Skipped)))
@@ -42,6 +42,10 @@ func (result CheckResult) StatusLines() []string {
 		}
 	}
 	return lines
+}
+
+func (result CheckResult) BudgetSummary() string {
+	return fmt.Sprintf("the prerequisites passed; the feedback budget ended with %d of %d selected tests not run; the round continues and the candidate's complete check covers the rest", len(result.NotRun), len(result.Selected))
 }
 
 func (check UnitCheck) runBounded(directory, records string, clock CheckContext) (string, []CheckExit, error) {
@@ -98,14 +102,8 @@ func (check UnitCheck) runBounded(directory, records string, clock CheckContext)
 		before, _ = clock.Tree()
 	}
 	run := func(name string, args []string, tests []string, feedback bool) error {
-		command := exec.Command(args[0], args[1:]...)
+		command := checkCommand(`exec "$@"`, append([]string{"check"}, args...)...)
 		command.Dir, command.Env = directory, slices.Clone(environment)
-		// exec.Command resolves relative programs against the calling process;
-		// the shell resolves this fixed argv against the admitted command PATH.
-		if !filepath.IsAbs(args[0]) {
-			command = exec.Command("/bin/sh", append([]string{"-c", `exec "$@"`, "check"}, args...)...)
-			command.Dir, command.Env = directory, slices.Clone(environment)
-		}
 		if clock.Attach != nil {
 			clock.Attach(command)
 		}
@@ -135,15 +133,12 @@ func (check UnitCheck) runBounded(directory, records string, clock CheckContext)
 		// package is cut before its process exits. Partial output is never a red.
 		late := feedback && duration > remaining && why == "completed"
 		for _, line := range strings.Split(exit.Output, "\n") {
-			if late {
-				continue
-			}
 			var event struct{ Action, Test string }
 			if json.Unmarshal([]byte(line), &event) == nil && event.Test != "" {
 				for _, test := range tests {
 					_, name, _ := strings.Cut(test, "/Test")
 					if "Test"+name == event.Test {
-						if event.Action == "pass" || event.Action == "skip" || event.Action == "fail" {
+						if !late && (event.Action == "pass" || event.Action == "skip" || event.Action == "fail") {
 							ran[test] = true
 						}
 					}

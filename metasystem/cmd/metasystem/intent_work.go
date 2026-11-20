@@ -1750,6 +1750,8 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 			next:    inv.workArgv(record, "wait"), nextReason: "continue waiting for this work"}
 	}
 	round := record.Rounds[len(record.Rounds)-1]
+	feedback, feedbackErr := launch.LatestCheckResult(round.Directory)
+	budgetEnded := feedbackErr == nil && feedback.Outcome == launch.CheckBudgetExhausted
 	line := unitJudgementLine(record, runner.Manager)
 	if round.Outcome == "build-size" || round.Outcome == "build-gap" || round.Stop != nil && round.Stop.Loop == "unit-build" {
 		next := inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
@@ -1763,10 +1765,15 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Data: data, Summary: summary, next: next}
 	}
 	if round.Outcome == "read-compacted" {
+		nextReason := "the checks passed: an independent review examines this result"
+		if budgetEnded {
+			line += "\n" + feedback.BudgetSummary()
+			nextReason = "feedback was cut by its budget; review runs the complete check"
+		}
 		return intentResult{Outcome: intentFailed, Targets: targets, code: unitExitReadCompacted, Data: data, text: []string{line},
 			Summary:  fmt.Sprintf("run %s round %d: the read was compacted and its verdict does not count", record.ID, round.Number),
 			Decision: "judge the attempt; a correction is " + shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")),
-			next:     inv.workArgv(record, "review"), nextReason: "the checks passed: an independent review examines this result"}
+			next:     inv.workArgv(record, "review"), nextReason: nextReason}
 	}
 	verdict := "no read"
 	if verdicts, _ := data["readVerdicts"].([]string); len(verdicts) > 0 {
@@ -1784,14 +1791,20 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	}
 	if round.ReadModel == "" {
 		text = append(text, "No read ran this round; work review asks the committed read.")
-	} else if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
+	} else if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" && !budgetEnded {
 		text = append(text, "The build, its checks and the read finished, but the read did not return VERDICT: land; this is not a clean read.")
 	}
 	text = append(text, "A clean read of the build by another model than the builder's is the unit's read; any other read is feedback and work review asks the committed critic. Nothing is approved, certified or landed. A correction: "+shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")))
 	judged := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: text,
 		Summary: fmt.Sprintf("unit %s of %s: run %s round %d awaits judgement (%s; read verdict: %s)", record.Unit, record.Goal, record.ID, round.Number, round.Outcome, verdict)}
+	if budgetEnded {
+		judged.Summary = fmt.Sprintf("unit %s of %s: run %s round %d awaits judgement (budget-exhausted; read verdict: %s); %s", record.Unit, record.Goal, record.ID, round.Number, verdict, feedback.BudgetSummary())
+	}
 	if launch.UnitReviewReadyOutcomes[round.Outcome] {
 		judged.next, judged.nextReason = inv.workArgv(record, "review"), "the checks passed: review records this result and completes its unit read"
+		if budgetEnded {
+			judged.nextReason = "feedback was cut by its budget; review runs the complete check"
+		}
 	} else {
 		judged.next, judged.nextReason = inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE"), "the attempt did not pass its checks; a correction brief starts one new attempt"
 	}

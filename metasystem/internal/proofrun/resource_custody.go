@@ -744,10 +744,13 @@ type resourceCommandEvents struct {
 	selected  func(resourceCommandCompletion)
 }
 
+// ErrResourceStart distinguishes admission or custody startup from a workload exit.
+var ErrResourceStart = errors.New("resource command could not start")
+
 func runResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease, events *resourceCommandEvents) error {
 	finish, _, _, err := startResourceCommand(ctx, command, lease)
 	if err != nil {
-		return err
+		return errors.Join(ErrResourceStart, err)
 	}
 	waited := make(chan error, 1)
 	go func() {

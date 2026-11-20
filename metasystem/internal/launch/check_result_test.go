@@ -30,7 +30,7 @@ func TestCheckResultRequiresCompletePass(t *testing.T) {
 				t.Fatalf("outcome %q: acceptance=%v, want %v", row.outcome, result.RequirePassed() == nil, row.pass)
 			}
 			if row.pass {
-				for _, damage := range []string{"missing", "red", "error", "order", "identity"} {
+				for _, damage := range []string{"missing", "red", "error", "order", "identity", "cut"} {
 					broken := result
 					broken.Exits = append([]CheckExit(nil), result.Exits...)
 					switch damage {
@@ -42,6 +42,8 @@ func TestCheckResultRequiresCompletePass(t *testing.T) {
 						broken.Exits[0].Error = "interrupted"
 					case "order":
 						broken.Exits[0], broken.Exits[1] = broken.Exits[1], broken.Exits[0]
+					case "cut":
+						broken.Exits[0].Cut = true
 					case "identity":
 						broken.ExecutionID = ""
 					}
@@ -146,5 +148,31 @@ func TestCheckEvidenceUsesExecutionOutcome(t *testing.T) {
 		if evidence.Outcome != outcome {
 			t.Fatalf("evidence outcome=%s, want %s", evidence.Outcome, outcome)
 		}
+	}
+}
+
+func TestCheckResultLatestExecution(t *testing.T) {
+	t.Parallel()
+	round := t.TempDir()
+	for _, row := range []struct {
+		id, start string
+		outcome   CheckOutcome
+	}{
+		{"check-z", "2026-11-20T00:00:00Z", CheckBudgetExhausted},
+		{"check-a", "2026-11-20T00:01:00Z", CheckPassed},
+	} {
+		writeCheckObservation(t, round, row.id, "launch-one", row.start, "passed", "passed")
+		result := CheckResult{ExecutionID: row.id, Outcome: row.outcome}
+		if err := writeUnitJSON(filepath.Join(round, row.id, "result.json"), result, round); err != nil {
+			t.Fatal(err)
+		}
+		got, err := LatestCheckResult(round)
+		if err != nil || got.ExecutionID != row.id {
+			t.Fatalf("latest execution=%s error=%v", got.ExecutionID, err)
+		}
+	}
+	writeCheckObservation(t, round, "check-retry", "launch-one", "2026-11-20T00:02:00Z", "passed", "")
+	if _, err := LatestCheckResult(round); err == nil {
+		t.Fatal("unfinished retry inherited a previous result")
 	}
 }

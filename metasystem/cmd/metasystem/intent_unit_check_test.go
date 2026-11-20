@@ -771,6 +771,11 @@ func TestIntentDeclaredCheckEmitsFailureOutputForAttribution(t *testing.T) {
 }
 
 func TestTheUnitCheckWaitsBehindTheLanesCheckAndHandsOnItsSlot(t *testing.T) {
+	if index := slices.Index(os.Args, "unit-check-signal-child"); index >= 0 {
+		runUnitCheckSignalChild(t, os.Args[index+1], os.Args[index+2], os.Args[index+3])
+		return
+	}
+
 	marker := filepath.Join(t.TempDir(), "cheap-ran")
 	command := "test -e /dev/fd/3 && case $METASYSTEM_PROOF_RESOURCE_FDS in 3@*) ;; *) exit 19;; esac"
 	body := "proof.cheap=" + command + " && touch " + shellCommand([]string{marker}) + "\nproof.audits=" + command + "\nproof.deadline=15\n"

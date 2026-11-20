@@ -1327,6 +1327,10 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
+			check, checkErr := launch.LatestCheckResult(round.Directory)
+			if checkErr == nil && check.Outcome == launch.CheckBudgetExhausted && round.Outcome == "green" {
+				line = fmt.Sprintf("round %d: budget-exhausted; ready for review", round.Number)
+			}
 			if len(round.ExcludedDropped) > 0 {
 				state := "; excluded files kept, restore pending: "
 				if round.ExcludedRestored {
@@ -1341,11 +1345,8 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 				line += "; " + round.SizeSummary()
 			}
 			lines = append(lines, line)
-			paths, _ := filepath.Glob(filepath.Join(round.Directory, "check-*", "result.json"))
-			for _, path := range paths {
-				if result, err := launch.ReadCheckResult(filepath.Dir(path)); err == nil {
-					lines = append(lines, result.StatusLines()...)
-				}
+			if checkErr == nil {
+				lines = append(lines, check.StatusLines()...)
 			}
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,

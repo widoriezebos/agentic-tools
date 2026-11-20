@@ -214,9 +214,13 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					}
 				}
 				_, checkContext.Complete = lookup("METASYSTEM_PUBLICATION_BASE")
-				cancelled, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-				defer stopSignals()
-				checkContext.Context = cancelled
+				feedback := plan.Check.Kind() == "bounded" && !checkContext.Complete
+				checkContext.Context = context.Background()
+				if feedback {
+					cancelled, stopSignals := signal.NotifyContext(checkContext.Context, syscall.SIGTERM, syscall.SIGINT)
+					defer stopSignals()
+					checkContext.Context = cancelled
+				}
 				if inv.work().checkContext != nil {
 					inv.work().checkContext(&checkContext)
 				}
@@ -237,13 +241,16 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				if now == nil {
 					now = time.Now
 				}
-				admissionStarted := now()
+				var admissionStarted time.Time
+				if feedback {
+					admissionStarted = now()
+				}
 				unmark := func() {}
 				if os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") != "" || !fixtureauth.FixtureModeRoot(install) {
 					var admissionErr error
 					unmark, admissionErr = proofrun.MarkManagedProofProcess()
 					if admissionErr == nil {
-						ctx := proofrun.WithHostResourceWaitObserver(context.Background(), func() {
+						ctx := proofrun.WithHostResourceWaitObserver(checkContext.Context, func() {
 							fmt.Fprintln(inv.stderr, "unit check: waiting for room on this host to run tests")
 						})
 						lease, admissionErr = proofrun.AcquireHostResources(ctx, install, filepath.Join(install, "metasystem.conf"), "heavy", nil)
@@ -252,14 +259,23 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 						unmark = func() {}
 					}
 					if admissionErr != nil {
+						if checkContext.Context.Err() != nil {
+							unmark()
+							return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the unit check was cancelled while waiting for room on this host", Data: map[string]any{"checkOutcome": launch.CheckCancelled}})
+						}
 						fmt.Fprintf(inv.stderr, "unit check: the host's test admission could not be read (%v); the check runs without a slot\n", admissionErr)
 					}
 				}
-				checkContext.AdmissionWait = now().Sub(admissionStarted)
+				if feedback {
+					checkContext.AdmissionWait = now().Sub(admissionStarted)
+				}
 				checkContext.RunCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 					err := proofrun.RunResourceTreeCommand(ctx, cmd, lease)
 					if errors.Is(err, proofrun.ErrResourceUnsettled) {
 						return fmt.Errorf("%w: %v", launch.ErrCheckUnsettled, err)
+					}
+					if errors.Is(err, proofrun.ErrResourceStart) {
+						return errors.Join(launch.ErrCheckStart, err)
 					}
 					return err
 				}
@@ -270,7 +286,9 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					if err == nil {
 						err = readErr
 						if err == nil {
-							if completed.Outcome != launch.CheckBudgetExhausted || checkContext.Complete {
+							if feedback && completed.Outcome == launch.CheckPassed {
+								err = completed.RequireFeedbackPassed()
+							} else if completed.Outcome != launch.CheckBudgetExhausted || checkContext.Complete {
 								err = completed.RequirePassed()
 							}
 						}

@@ -9,10 +9,14 @@ import (
 )
 
 var ErrCheckUnsettled = errors.New("the check process cleanup is unconfirmed")
+var ErrCheckStart = errors.New("the check command could not start")
 
 // checkProcess owns timing only. The command owner settles its custody before
 // returning, including descendants that outlive the direct process.
 func checkProcess(ctx context.Context, command *exec.Cmd, progress <-chan struct{}, idle, budget time.Duration, clock CheckContext) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "cancelled", err
+	}
 	if clock.RunCommand == nil {
 		return "environment", fmt.Errorf("the check command owner is unavailable")
 	}
@@ -28,6 +32,12 @@ func checkProcess(ctx context.Context, command *exec.Cmd, progress <-chan struct
 	}
 	completed := func(err error) (string, error) {
 		if errors.Is(err, ErrCheckUnsettled) {
+			return "environment", err
+		}
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return "cancelled", err
+		}
+		if errors.Is(err, ErrCheckStart) {
 			return "environment", err
 		}
 		return "completed", err

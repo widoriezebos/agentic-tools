@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -31,6 +32,7 @@ func TestBoundedCheckProductionRoute(t *testing.T) {
 		message      string
 	}{
 		{"green", "", launch.CheckPassed, false, ""},
+		{"custody start failure", "", launch.CheckEnvironmentFailure, false, ""},
 		{"untracked changed package", "", launch.CheckPassed, false, ""},
 		{"nomination also changed", "", launch.CheckPassed, false, "RESULT: DONE\nNOMINATE: ./nominated, TestFirst, first\n"},
 		{"prerequisites outside budget", "case $1 in static|audits) printf 1200 > \"$clock\";; esac", launch.CheckPassed, false, ""},
@@ -52,11 +54,13 @@ func TestBoundedCheckProductionRoute(t *testing.T) {
 		{"budget during", "if test \"$1\" = TestSecond; then printf ready > \"$ready\"; read line < \"$hold\"; fi", launch.CheckBudgetExhausted, true, ""},
 		{"failure before budget", "test \"$1\" != TestFirst || exit 1; if test \"$1\" = TestSecond; then printf ready > \"$ready\"; read line < \"$hold\"; fi", launch.CheckFailed, false, ""},
 		{"framework red before cut", "if test \"$1\" = TestSecond; then printf '{\"Action\":\"fail\",\"Test\":\"TestSecond\"}\\n'; printf ready > \"$ready\"; read line < \"$hold\"; fi", launch.CheckFailed, true, ""},
+		{"cancelled after observed failure", "if test \"$1\" = TestSecond; then printf '{\"Action\":\"fail\",\"Test\":\"TestSecond\"}\\n'; printf ready > \"$ready\"; read line < \"$hold\"; fi", launch.CheckFailed, true, ""},
 		{"no nominations", "", launch.CheckPassed, false, "RESULT: DONE\n"},
 		{"empty nominations", "", launch.CheckPassed, false, "RESULT: DONE\n\n"},
 		{"malformed nominations", "", launch.CheckPassed, false, "RESULT: DONE\nNOMINATE: ./nominated, TestFirst, first\nNOMINATE: ./nominated, TestSecond, second\nNOMINATE: ./nominated, TestFirst\nNOMINATE: ./nominated, TestFirst, reason, extra\nNOMINATE: ./unknown, TestFirst, absent\nNOMINATE: ./nominated, [, malformed\nNOMINATE: ./nominated, TestNope, absent\nNOMINATE: ./nominated;touch bad, TestFirst, invalid\n"},
 		{"all malformed nominations", "", launch.CheckPassed, false, "RESULT: DONE\nNOMINATE: ./nominated, TestNope, absent\n"},
 		{"budget exact last", "test \"$1\" != changed || printf 360 > \"$clock\"", launch.CheckPassed, false, ""},
+		{"budget late failure", "if test \"$1\" = changed; then printf 361 > \"$clock\"; printf '{\"Action\":\"fail\",\"Test\":\"TestChanged\"}\\n'; exit 1; fi", launch.CheckFailed, false, ""},
 		{"budget late last", "test \"$1\" != changed || printf 361 > \"$clock\"", launch.CheckBudgetExhausted, false, ""},
 		{"failure then oom", "test \"$1\" != TestFirst || exit 1; if test \"$1\" = TestSecond; then printf 'fatal error: out of memory\\n'; kill -KILL $$; fi", launch.CheckFailed, false, ""},
 		{"oom then failure", "if test \"$1\" = TestFirst; then printf 'fatal error: out of memory\\n'; kill -KILL $$; fi; test \"$1\" != TestSecond || exit 1", launch.CheckEnvironmentFailure, false, ""},
@@ -151,6 +155,9 @@ func TestBoundedCheckProductionRoute(t *testing.T) {
 				}
 				o.checkContext = func(c *launch.CheckContext) {
 					c.Context = candidateResourceCustodyContext(t)
+					if row.name == "custody start failure" {
+						c.Context = proofrun.WithResourceCustodyExecutable(c.Context, filepath.Join(bin, "missing-custodian"))
+					}
 					cancelled, cancel := context.WithCancel(c.Context)
 					t.Cleanup(cancel)
 					c.Context = cancelled
@@ -170,7 +177,7 @@ func TestBoundedCheckProductionRoute(t *testing.T) {
 						if row.cut && ((row.name == "deadline" && d == 15*time.Minute) || (row.name != "deadline" && d == 6*time.Minute)) {
 							go func() {
 								testenv.Await(t, "second test started", func() bool { _, err := os.Stat(ready); return err == nil })
-								if row.name == "cancelled" {
+								if strings.Contains(row.name, "cancelled") {
 									cancel()
 								} else {
 									ch <- time.Unix(360, 0)
@@ -224,6 +231,12 @@ func TestBoundedCheckProductionRoute(t *testing.T) {
 			}
 			order, _ := os.ReadFile(log)
 			lines := strings.Fields(string(order))
+			if row.name == "custody start failure" {
+				if len(lines) != 0 {
+					t.Fatal("a command ran without custody")
+				}
+				return
+			}
 			if len(lines) < 2 || !slices.Equal(lines[:2], []string{"static", "audits"}) {
 				t.Fatalf("prerequisite order: %v", lines)
 			}
@@ -283,7 +296,7 @@ func TestBoundedCheckProductionRoute(t *testing.T) {
 				if len(retained.NotRun) == 0 || retained.RequirePassed() == nil {
 					t.Fatal("exhaustion lost its incomplete coverage")
 				}
-				if !strings.Contains(strings.Join(retained.StatusLines(), "\n"), "candidate's complete proof") {
+				if !strings.Contains(strings.Join(retained.StatusLines(), "\n"), "candidate's complete check") {
 					t.Fatal("status lost deferred coverage")
 				}
 			}
@@ -365,6 +378,9 @@ func TestBoundedRoundContinuesAndFreezesNominations(t *testing.T) {
 	if code != 0 || resultData(t, starter.checked)["checkOutcome"] != "budget-exhausted" || !slices.Contains(b.starter.launched(), "read") {
 		t.Fatalf("exhaustion blocked read: code=%d outcome=%v launches=%v summary=%s", code, resultData(t, starter.checked)["checkOutcome"], b.starter.launched(), built.Summary)
 	}
+	if !strings.Contains(built.Summary, "budget-exhausted") || !strings.Contains(built.Summary, "1 of 2 selected tests not run") || !strings.Contains(built.Summary, "prerequisites passed") || built.Next == nil || !strings.Contains(built.Next.Reason, "review runs the complete check") || strings.Contains(built.Summary, "green") || strings.Contains(built.Next.Reason, "checks passed") {
+		t.Fatalf("incomplete feedback was presented as a pass: summary=%s next=%+v", built.Summary, built.Next)
+	}
 	planPath := resultData(t, built)["plan"].(string)
 	path := filepath.Join(filepath.Dir(planPath), "nominations.json")
 	before, err := os.ReadFile(path)
@@ -398,7 +414,7 @@ func TestBoundedRoundContinuesAndFreezesNominations(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	owners := b.workOwners()
 	owners.processes.launches = func() *launch.Manager { return b.manager }
-	if code := runIntentIn(command, rest, &stdout, &stderr, b.root(), owners); code != 0 || !strings.Contains(stdout.String(), "budget-exhausted") || !strings.Contains(stdout.String(), "candidate's complete proof") {
+	if code := runIntentIn(command, rest, &stdout, &stderr, b.root(), owners); code != 0 || !strings.Contains(stdout.String(), "budget-exhausted") || !strings.Contains(stdout.String(), "candidate's complete check") {
 		t.Fatalf("public status lost feedback: code=%d %s", code, stdout.String())
 	}
 }
