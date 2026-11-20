@@ -5,12 +5,145 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 )
+
+func TestRunnerRequestsPreserveHealthRemedyAttempts(t *testing.T) {
+	t.Parallel()
+	for _, role := range []HealthRole{RoleCapabilitySnapshots, RoleLedgerAttention} {
+		t.Run(string(role), func(t *testing.T) {
+			var baseline []time.Duration
+			for _, busy := range []bool{false, true} {
+				loop := newHelmLoop(t)
+				b := newHealthBedAt(t, loop.root, EnrollmentFixture, "")
+				b.writeFile("metasystem.conf", []byte("metasystem.runtimes=claude\nlaunch.seat.runtime=claude\n"))
+				b.lookPath = func(string) (string, error) { return "/fake-path/claude", nil }
+				if err := saveLedgerAttentionState(b.root, ledgerAttentionState{
+					RemoteTip: "moved", DiffedTip: "moved", ExaminedTip: "base",
+					MovedAt: b.base.Add(-time.Hour).Format(time.RFC3339Nano),
+				}); err != nil {
+					t.Fatal(err)
+				}
+				now := b.base
+				var attempts []time.Duration
+				fail := func() error {
+					attempts = append(attempts, now.Sub(b.base))
+					return errors.New("fixture remedy unavailable")
+				}
+				healthDeps := tickHealthDependencies{
+					now: func() time.Time { return now }, lookPath: b.lookPath,
+					deliver:       func(string, string) error { return nil },
+					probeRuntime:  func(string, string) error { return fail() },
+					examineLedger: func(string, time.Time) error { return fail() },
+					evaluate: func(root, _ string, at time.Time, _ identity.Prober, _ bool) ([]RoleVerdict, SpendObservation) {
+						if role == RoleLedgerAttention {
+							return []RoleVerdict{checkLedgerAttention(root, at)}, SpendObservation{}
+						}
+						status, _ := capabilitySnapshotStatus(root, root, at, b.lookPath)
+						return []RoleVerdict{status}, SpendObservation{}
+					},
+				}
+				requests, scheduled := 0, 0
+				deps := idleRunnerDependencies(&now)
+				deps.Tick = func(root string, cfg TickConfig, _ WorkerCensus) (TickResult, error) {
+					if cfg.RequestDriven {
+						requests++
+					} else {
+						scheduled++
+					}
+					healthDeps.requestDriven = cfg.RequestDriven
+					var result TickResult
+					if err := completeTickHealthWithDependencies(root, &result, b.generation, b.runner, now, healthDeps); err != nil {
+						t.Fatal(err)
+					}
+					if cfg.RequestDriven && scheduled < healthFailureLimit {
+						record, err := loadHealthRecord(HealthRecordPath(root))
+						if err != nil || !strings.Contains(record.Verdict.Line(), "skipped until scheduled tick") {
+							t.Errorf("request cycle did not record the skipped remedy: %s, %v", record.Verdict.Line(), err)
+						}
+						narration, err := os.ReadFile(NarrationPath(root))
+						if err != nil || !strings.Contains(string(narration), "skipped until scheduled tick") {
+							t.Fatalf("request cycle did not narrate the skipped remedy: %v", err)
+						}
+					}
+					return result, nil
+				}
+				deps.Sleep = func(d time.Duration) {
+					before := now
+					now = now.Add(d)
+					if busy && before.Unix() != now.Unix() {
+						if err := tickrequest.Write(loop.root, "launch-ended:fixture", now); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if now.Sub(b.base) >= 3001*time.Second {
+						loop.stop(t)
+					}
+				}
+				if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 600*time.Second, TickConfig{Now: now}, deps); err != nil {
+					t.Fatal(err)
+				}
+				if scheduled != 6 || busy && requests != 40 || !busy && requests != 0 {
+					t.Fatalf("busy=%t scheduled=%d requests=%d", busy, scheduled, requests)
+				}
+				record, err := loadHealthRecord(HealthRecordPath(loop.root))
+				if err != nil || record.Verdict.Roles[0].FailureEscalation != AutoHealEnded || record.State.FailureCounts[role] != healthFailureLimit {
+					t.Fatalf("scheduled observations did not end healing: %+v, %v", record, err)
+				}
+				component := "capability-probe-claude"
+				if role == RoleLedgerAttention {
+					component = "ledger-examination"
+				}
+				remedy, err := loadComponentEvidence(ComponentEvidencePath(loop.root, component))
+				if err != nil || remedy.AttemptSeq != int64(len(attempts)) {
+					t.Fatalf("remedy attempt record: %+v, %v", remedy, err)
+				}
+				if !busy {
+					baseline = attempts
+					if len(baseline) != healthFailureLimit-1 {
+						t.Fatalf("baseline attempts=%v", baseline)
+					}
+				} else if !reflect.DeepEqual(attempts, baseline) {
+					t.Fatalf("requests changed remedy attempts: got %v want %v", attempts, baseline)
+				}
+			}
+		})
+	}
+}
+
+func TestRequestTickContinuationPreservesHealthRemedyPatience(t *testing.T) {
+	t.Parallel()
+	b := newHealthBed(t, EnrollmentFixture, "")
+	b.writeFile("metasystem.conf", []byte("metasystem.runtimes=claude\n"))
+	b.lookPath = func(string) (string, error) { return "/fake-path/claude", nil }
+	attention := newAttentionPolicyBed(t)
+	attention.root, attention.now = b.root, b.base
+	f := newTickContinuationFixture(t, attention, false)
+	f.cfg.RequestDriven = true
+	attempts := 0
+	f.cfg.ProbeRuntime = func(string, string) error {
+		attempts++
+		return errors.New("fixture login unavailable")
+	}
+	f.dependencies.health = tickHealthDependencies{evaluate: b.evaluate, now: f.cfg.now,
+		lookPath: b.lookPath, deliver: func(string, string) error { return nil }}
+	result, completed, err := f.runAs(t, b.runner, b.generation)
+	if err != nil || !completed {
+		t.Fatalf("request continuation: completed=%t err=%v", completed, err)
+	}
+	if attempts != 0 || result.Health.State.FailureCounts[RoleCapabilitySnapshots] != 0 {
+		t.Fatalf("request spent health patience or attempted repair: attempts=%d health=%s", attempts, result.Health.Line())
+	}
+	if !strings.Contains(result.Health.Line(), "skipped until scheduled tick") {
+		t.Fatalf("request did not explain the skipped remedy: %s", result.Health.Line())
+	}
+}
 
 // The command bed runs this same fixture in a child with its own PATH.
 var remedyHealthRoot = flag.String("remedy-health-root", "", "write the failed-probe fixture at this root")

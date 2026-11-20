@@ -551,6 +551,7 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 }
 
 func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus, generation int, process identity.Ref, tickAttemptSeq int64, goalStops []BreachStopReport, dependencies tickContinuationDependencies) (TickResult, bool, error) {
+	dependencies.health.requestDriven = cfg.RequestDriven
 	if cfg.GoalProjection != nil {
 		dependencies.openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
 	}
@@ -860,9 +861,10 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if err := requestWatcherRepair(repoRoot, health, healthNow()); err != nil {
 		return fmt.Errorf("request watcher repair: %w", err)
 	}
+	beforeRemedies := health.Line()
 	remedyErr := remedyHealthRoles(repoRoot, health, generation, process, healthNow, dependencies)
 	health.FindingDigest = healthFindingDigest(health.Roles)
-	if health.FindingDigest != result.Health.FindingDigest {
+	if health.Line() != beforeRemedies {
 		if err := saveRemediedHealth(repoRoot, health); err != nil {
 			return fmt.Errorf("record remedy health: %w", err)
 		}
@@ -929,12 +931,12 @@ func remedyHealthRoles(repoRoot string, health HealthVerdict, generation int, pr
 			}
 			_, stale := capabilitySnapshotStatus(repoRoot, repoRoot, now(), lookPath)
 			for _, runtime := range stale {
-				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "capability-probe-"+runtime, role, generation, process, now,
+				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "capability-probe-"+runtime, role, generation, process, now, dependencies.requestDriven,
 					func() error { return dependencies.probeRuntime(repoRoot, runtime) }))
 			}
 		case RoleLedgerAttention:
 			if dependencies.examineLedger != nil {
-				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "ledger-examination", role, generation, process, now,
+				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "ledger-examination", role, generation, process, now, dependencies.requestDriven,
 					func() error { return dependencies.examineLedger(repoRoot, now()) }))
 			}
 		}
@@ -944,7 +946,13 @@ func remedyHealthRoles(repoRoot string, health HealthVerdict, generation int, pr
 
 // A remedy's result belongs to its health role. Only a failure to record
 // that result prevents the tick from completing its mandatory work.
-func recordHealthRemedy(root, component string, role *RoleVerdict, generation int, process identity.Ref, now func() time.Time, run func() error) error {
+// These remedies have no attempt cap apart from the health patience
+// counter, so they may run only when a scheduled tick advances it.
+func recordHealthRemedy(root, component string, role *RoleVerdict, generation int, process identity.Ref, now func() time.Time, requestDriven bool, run func() error) error {
+	if requestDriven {
+		role.Reason += "; " + component + ": skipped until scheduled tick (attempts capped by health patience)"
+		return nil
+	}
 	attempt, err := beginComponentAttempt(root, component, generation, process, now())
 	if err != nil {
 		return err
