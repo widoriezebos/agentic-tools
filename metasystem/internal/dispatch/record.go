@@ -95,7 +95,7 @@ var immutableFields = map[string]bool{
 	"configurationObligations": true, "launchCapability": true,
 	"fenceGeneration":    true,
 	"reviewChainCounted": true,
-	"unitRun":            true, "unitRound": true,
+	"unitRun":            true, "unitRound": true, "unitRoundRole": true,
 	"aliasedFrom": true, "rosterAliasedFrom": true,
 	"declaredOutputs": true, "declaredOutputsDigest": true, "declaredOutputsSource": true,
 	"design":      true,

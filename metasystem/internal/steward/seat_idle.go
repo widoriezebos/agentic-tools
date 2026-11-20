@@ -223,16 +223,36 @@ func seatReservationEnded(store launch.Store, id, createdAt string, options Seat
 type UncollectedRun = goal.UncollectedRun
 
 func orphanStep(store launch.Store, run launch.UnitRunRecord, probe func(identity.Ref) identity.Liveness) (*launch.UnitStep, launch.Record, bool) {
-	step, _ := currentSeatRunStep(run)
-	if run.State != "running" && run.State != launch.UnitStepEnded || step == nil || step.State == launch.StepStarting {
-		return step, launch.Record{}, false
+	if run.State != "running" && run.State != launch.UnitStepEnded || len(run.Rounds) == 0 {
+		return nil, launch.Record{}, false
 	}
-	record, err := store.Read(step.LaunchID)
-	if err != nil || record.State == launch.Running && (record.Supervisor == nil || probe(*record.Supervisor) == identity.Unknown) {
-		return step, launch.Record{}, false
+	var ended, starting *launch.UnitStep
+	var endedRecord launch.Record
+	for i := range run.Rounds[len(run.Rounds)-1].Steps {
+		step := &run.Rounds[len(run.Rounds)-1].Steps[i]
+		switch {
+		case step.State == launch.StepStarting:
+			starting = step
+			if _, err := store.Read(step.LaunchID); err != nil {
+				continue
+			}
+		case step.State == launch.StepRunning, step.EndBooking != nil && step.EndBooking.CollectedAt == "":
+		default:
+			continue
+		}
+		record, err := store.Read(step.LaunchID)
+		if err != nil || record.State == launch.Running && (record.Supervisor == nil || probe(*record.Supervisor) == identity.Unknown) {
+			return step, launch.Record{}, false
+		}
+		if record.State == launch.Starting || record.State == launch.Running && probe(*record.Supervisor) == identity.Alive {
+			return step, record, false
+		}
+		ended, endedRecord = step, record
 	}
-	live := record.State == launch.Starting || record.State == launch.Running && probe(*record.Supervisor) == identity.Alive
-	return step, record, !live
+	if starting != nil {
+		return starting, launch.Record{}, false
+	}
+	return ended, endedRecord, ended != nil
 }
 
 func roundPerson(run launch.UnitRunRecord) string {
@@ -266,27 +286,6 @@ func uncollectedRunsAt(home string, goals []string, probe func(identity.Ref) ide
 		return nil, fmt.Errorf("uncollected rounds: %d unreadable records", skipped)
 	}
 	return runs, nil
-}
-
-func currentSeatRunStep(run launch.UnitRunRecord) (*launch.UnitStep, time.Time) {
-	var first time.Time
-	var current *launch.UnitStep
-	for _, round := range run.Rounds {
-		current = nil
-		for _, step := range round.Steps {
-			at, _ := time.Parse(time.RFC3339, step.StartedAt)
-			if !at.IsZero() && (first.IsZero() || at.Before(first)) {
-				first = at
-			}
-			// Booking ends execution, but collection still belongs to a session.
-			if step.State == launch.StepRunning || step.State == launch.StepStarting ||
-				step.EndBooking != nil && step.EndBooking.CollectedAt == "" {
-				copy := step
-				current = &copy
-			}
-		}
-	}
-	return current, first
 }
 
 func readHeldSeatRecord(path, goalField string, held map[string]bool, record any, ancestry ...map[string]bool) (bool, error) {

@@ -313,3 +313,29 @@ func TestSeatBusyUsesOnlyTheCurrentRound(t *testing.T) {
 		t.Fatalf("historical step counted as live work: %v %q %d", busy, reason, skipped)
 	}
 }
+
+func TestBusyRoundIncludesEverySibling(t *testing.T) {
+	for _, live := range []string{"proof", "read"} {
+		t.Run(live, func(t *testing.T) {
+			bed, units, work, options := seatBusyFixture(t)
+			store := launch.Store{Root: filepath.Join(filepath.Dir(units), "launch")}
+			steps := []launch.UnitStep{}
+			for _, kind := range []string{"proof", "read"} {
+				r := launch.Record{ID: kind, State: launch.Completed}
+				if live == kind {
+					r.State = launch.Running
+					r.Supervisor = &identity.Ref{Pid: 41, StartedAtSec: 100}
+				}
+				if err := store.Create(r); err != nil {
+					t.Fatal(err)
+				}
+				steps = append(steps, launch.UnitStep{Name: kind, LaunchID: kind, State: launch.StepRunning})
+			}
+			writeStewardRecord(t, filepath.Join(units, "run-1", "run.json"), map[string]any{"id": "run-1", "goal": "held", "state": "running", "rounds": []launch.UnitRound{{Steps: steps}}})
+			options.Orphan = func(UncollectedRun, string) { t.Error("marked live round uncollected") }
+			if busy, _, skipped := SeatBusyAt(bed.root, units, work, options); !busy || skipped != 0 {
+				t.Fatalf("busy=%v skipped=%d", busy, skipped)
+			}
+		})
+	}
+}

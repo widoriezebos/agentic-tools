@@ -90,6 +90,14 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 					step.State, step.Cause, step.Reason = StepFailed, "unclassified", snapErr.Error()
 					return Record{}, driver.save()
 				}
+				if spec.Kind == "read" && driver.round.ReadCheckout != "" {
+					step.ExaminedTree = before.TreeID
+					if driver.round.Result == nil || before.TreeID != driver.round.Result.Tree || strings.TrimSpace(before.Head) != driver.round.Result.Parent {
+						step.State, step.Cause, step.Reason = StepFailed, "environment", "the frozen read tree changed before the read"
+						step.Moved = []string{"the frozen read tree"}
+						return Record{}, driver.save()
+					}
+				}
 				step.Before = &before
 			}
 			state, stateErr := driver.manager.Store.StateDir(step.LaunchID)

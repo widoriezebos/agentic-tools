@@ -785,6 +785,9 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	// The machine's one retry of a unit check is charged as an attempt of its own.
 	round := record.Rounds[len(record.Rounds)-1]
 	retry := strings.HasSuffix(spec.ID, "-retry") && slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool { return step.LaunchID == spec.ID && step.RetryBy == "machine" })
+	if round.ReadCheckout != "" && !round.CheckoutRemoved && (spec.Kind == "proof" || spec.Kind == "read") {
+		return dispatchcore.ReserveRoundLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, round.Number, cap, now, retry, spec.Kind)
+	}
 	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, round.Number, cap, now, retry)
 }
 
@@ -1893,7 +1896,7 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 	verdicts, findings := []string{}, []string{}
 	clean := false
 	for index, step := range round.Steps {
-		if !strings.HasPrefix(step.Name, "read") || step.State != launch.StepPassed || readStepHasCountingRerun(round.Steps, index) {
+		if step.Unattached || !strings.HasPrefix(step.Name, "read") || step.State != launch.StepPassed || readStepHasCountingRerun(round.Steps, index) {
 			continue
 		}
 		verdict := chooseUnitValue(step.Verdict, "none")

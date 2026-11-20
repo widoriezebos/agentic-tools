@@ -15,18 +15,19 @@ import (
 )
 
 type UnitPlan struct {
-	FullArgv []string       `json:"fullArgv,omitempty"`
-	Estimate *UnitEstimate  `json:"estimate,omitempty"`
-	Check    *UnitCheck     `json:"check,omitempty"`
-	Whole    bool           `json:"whole,omitempty"`
-	Unit     string         `json:"unit"`
-	Goal     string         `json:"goal"`
-	Worktree string         `json:"worktree"`
-	Base     string         `json:"base"`
-	Build    UnitBuildPlan  `json:"build"`
-	Read     UnitReadPlan   `json:"read,omitzero"`
-	Proof    []ProofCommand `json:"proof"`
-	Path     string         `json:"-"`
+	PairedReads bool           `json:"pairedReads,omitempty"`
+	FullArgv    []string       `json:"fullArgv,omitempty"`
+	Estimate    *UnitEstimate  `json:"estimate,omitempty"`
+	Check       *UnitCheck     `json:"check,omitempty"`
+	Whole       bool           `json:"whole,omitempty"`
+	Unit        string         `json:"unit"`
+	Goal        string         `json:"goal"`
+	Worktree    string         `json:"worktree"`
+	Base        string         `json:"base"`
+	Build       UnitBuildPlan  `json:"build"`
+	Read        UnitReadPlan   `json:"read,omitzero"`
+	Proof       []ProofCommand `json:"proof"`
+	Path        string         `json:"-"`
 }
 
 // UnitEstimate is the design row frozen at the goal unit's first admission.
@@ -143,8 +144,9 @@ func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, erro
 	}
 	var raw struct {
 		rawUnitPlan
-		FullArgv []string      `json:"fullArgv"`
-		Estimate *UnitEstimate `json:"estimate"`
+		PairedReads bool          `json:"pairedReads,omitempty"`
+		FullArgv    []string      `json:"fullArgv"`
+		Estimate    *UnitEstimate `json:"estimate"`
 	}
 	var target any = &raw.rawUnitPlan
 	if retained {
@@ -189,7 +191,7 @@ func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, erro
 			return UnitPlan{}, planInvalid(item.name, nil)
 		}
 	}
-	plan := UnitPlan{Check: raw.Check, Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
+	plan := UnitPlan{PairedReads: raw.PairedReads, Check: raw.Check, Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
 		Estimate: raw.Estimate, FullArgv: raw.FullArgv,
 		Build: UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
 		Path:  abs}

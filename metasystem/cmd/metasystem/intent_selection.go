@@ -71,6 +71,17 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 	case work.Record.State == launch.UnitStepEnded:
 		return "step ended; awaiting collection by a session"
 	case work.Running():
+		if rounds := work.Record.Rounds; len(rounds) > 0 {
+			var active []string
+			for _, step := range rounds[len(rounds)-1].Steps {
+				if step.State == launch.StepRunning {
+					active = append(active, step.Name)
+				}
+			}
+			if len(active) > 1 {
+				return "running " + strings.Join(active, ", ")
+			}
+		}
 		return "running"
 	}
 	if subject := currentSubject(work); subject != nil && subject.Drop != nil {

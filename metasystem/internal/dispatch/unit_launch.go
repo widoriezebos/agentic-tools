@@ -31,6 +31,16 @@ func UnitLaunchEnded(record map[string]any, launchStatus func(string) (string, e
 // round before it starts. Repeating the same admission joins that reservation.
 // A retry is its own attempt, not part of the round's counted one.
 func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool, homes ...string) error {
+	return reserveRoundLaunch(root, id, run, file, round, cap, now, retry, "", homes...)
+}
+
+// ReserveRoundLaunch charges each physical launch its minutes. Checks and
+// reads of one frozen subject occupy one active unit job until the last ends.
+func ReserveRoundLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool, kind string) error {
+	return reserveRoundLaunch(root, id, run, file, round, cap, now, retry, kind)
+}
+
+func reserveRoundLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool, kind string, homes ...string) error {
 	if file == nil || file.Claimed == nil {
 		return fmt.Errorf("the unit launch has no claimed goal")
 	}
@@ -41,73 +51,82 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 	if id == "" || run == "" || goal == "" || revision == 0 || round < 1 || cap < 1 {
 		return fmt.Errorf("the unit launch has no complete reservation identity or cap")
 	}
-	return withRecordLock(root, id, func(path string) error {
-		joined := false
-		record, err := readObject(path)
-		if err == nil {
-			rev, _ := numInt(record["goalRevision"])
-			n, _ := numInt(record["unitRound"])
-			minutes, _ := numInt(record["capMin"])
-			if asString(record["jobId"]) != id || asString(record["unitRun"]) != run || asString(record["goalId"]) != goal || uint64(rev) != revision || int(n) != round || minutes != cap {
-				return fmt.Errorf("the physical launch %s already belongs to a different reservation", id)
+	return withOperationPublicationLock(root, func() error {
+		return withRecordLock(root, id, func(path string) error {
+			joined := false
+			record, err := readObject(path)
+			if err == nil {
+				rev, _ := numInt(record["goalRevision"])
+				n, _ := numInt(record["unitRound"])
+				minutes, _ := numInt(record["capMin"])
+				if asString(record["jobId"]) != id || asString(record["unitRun"]) != run || asString(record["goalId"]) != goal || uint64(rev) != revision || int(n) != round || minutes != cap {
+					return fmt.Errorf("the physical launch %s already belongs to a different reservation", id)
+				}
+				joined = !TerminalStatus(asString(record["status"]))
+				if !joined && (record["unitExecuted"] != false || record["unitEnvironment"] != true) {
+					return fmt.Errorf("the physical launch %s already ended; a retry needs a new launch identity", id)
+				}
 			}
-			joined = !TerminalStatus(asString(record["status"]))
-			if !joined && (record["unitExecuted"] != false || record["unitEnvironment"] != true) {
-				return fmt.Errorf("the physical launch %s already ended; a retry needs a new launch identity", id)
+			if err != nil && !os.IsNotExist(err) {
+				return err
 			}
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		projection := ProjectBudget(root, file, now, homes...)
-		remedy := fmt.Sprintf("a person sets its budget: metasystem goal budget %s BOX", goal)
-		if projection.Status != BudgetKnown {
-			return refusal.New("BUDGET_UNKNOWN", "record="+projection.Unknown.Record+" reason="+projection.Unknown.Reason,
-				fmt.Errorf("goal %s has unreadable spending evidence in %s, so this launch does not start; repair that record; %s", goal, projection.Unknown.Record, remedy))
-		}
-		admission, attempt := projection, fmt.Sprintf("%s/%d", run, round)
-		if retry {
-			attempt += "/" + id
-		}
-		// Joining a pending reservation requests only its existing capacity.
-		if joined {
-			if projection.unitAttempts[attempt] {
-				admission.ReservedJobMinutes -= uint64(cap)
+			projection := ProjectBudget(root, file, now, homes...)
+			remedy := fmt.Sprintf("a person sets its budget: metasystem goal budget %s BOX", goal)
+			if projection.Status != BudgetKnown {
+				return refusal.New("BUDGET_UNKNOWN", "record="+projection.Unknown.Record+" reason="+projection.Unknown.Reason,
+					fmt.Errorf("goal %s has unreadable spending evidence in %s, so this launch does not start; repair that record; %s", goal, projection.Unknown.Record, remedy))
 			}
-			admission.OpenCapMinutes -= uint64(cap)
-			admission.ActiveJobs--
-		}
-		// A round already counted by another execution uses no new attempt.
-		if projection.unitAttempts[attempt] && admission.Attempts <= admission.Limits.AttemptLimit {
-			admission.Attempts--
-		}
-		breaches := budgetAdmissionBreaches(admission)
-		breaches = append(breaches, projection.Breaches...)
-		beforeElapsedWaiver := len(breaches)
-		if projection.unitRunsExecuted[run] {
-			breaches = slices.DeleteFunc(breaches, func(b BudgetBreach) bool { return b.Field == "elapsedLimit" })
-		}
-		elapsedWaived := len(breaches) < beforeElapsedWaiver
-		if admission.ReservedJobMinutes < admission.Limits.ReservedJobMinutesLimit && uint64(cap) > admission.Limits.ReservedJobMinutesLimit-admission.ReservedJobMinutes {
-			breaches = append(breaches, BudgetBreach{Field: "reservedJobMinutesLimit", Used: fmt.Sprintf("%d+%d proposed", admission.ReservedJobMinutes, cap), Limit: fmt.Sprint(admission.Limits.ReservedJobMinutesLimit)})
-		}
-		if file.StopFence != nil || len(breaches) > 0 {
-			return refusal.New("BUDGET_REFUSED", formatRefusalDetail(breaches, reservedMinutesEvidence(projection)),
-				fmt.Errorf("goal %s has no budget for this launch, so it does not start; %s", goal, remedy))
-		}
-		if joined {
-			return nil
-		}
-		reservation := map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
-			"goalId": goal, "goalRevision": revision, "machineId": file.Claimed.Machine, "claimEpoch": file.StopCapability.ClaimEpoch,
-			"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)}
-		if elapsedWaived {
-			reservation["elapsedOverrunMin"] = int64(max(0, projection.Elapsed-projection.Limits.ElapsedDuration()) / time.Minute)
-		}
-		if retry {
-			reservation["unitRetryAttempt"] = true
-		}
-		return writeRecord(path, reservation)
+			admission, attempt := projection, fmt.Sprintf("%s/%d", run, round)
+			pair := kind == "proof" || kind == "read"
+			sharesJob := pair && projection.activeRounds[attempt]
+			if retry {
+				attempt += "/" + id
+			}
+			// Joining a pending reservation requests only its existing capacity.
+			if joined {
+				if projection.unitAttempts[attempt] {
+					admission.ReservedJobMinutes -= uint64(cap)
+				}
+				admission.OpenCapMinutes -= uint64(cap)
+			}
+			if joined || sharesJob {
+				admission.ActiveJobs--
+			}
+			// A round already counted by another execution uses no new attempt.
+			if projection.unitAttempts[attempt] && admission.Attempts <= admission.Limits.AttemptLimit {
+				admission.Attempts--
+			}
+			breaches := budgetAdmissionBreaches(admission)
+			breaches = append(breaches, projection.Breaches...)
+			beforeElapsedWaiver := len(breaches)
+			if projection.unitRunsExecuted[run] {
+				breaches = slices.DeleteFunc(breaches, func(b BudgetBreach) bool { return b.Field == "elapsedLimit" })
+			}
+			elapsedWaived := len(breaches) < beforeElapsedWaiver
+			if admission.ReservedJobMinutes < admission.Limits.ReservedJobMinutesLimit && uint64(cap) > admission.Limits.ReservedJobMinutesLimit-admission.ReservedJobMinutes {
+				breaches = append(breaches, BudgetBreach{Field: "reservedJobMinutesLimit", Used: fmt.Sprintf("%d+%d proposed", admission.ReservedJobMinutes, cap), Limit: fmt.Sprint(admission.Limits.ReservedJobMinutesLimit)})
+			}
+			if file.StopFence != nil || len(breaches) > 0 {
+				return refusal.New("BUDGET_REFUSED", formatRefusalDetail(breaches, reservedMinutesEvidence(projection)),
+					fmt.Errorf("goal %s has no budget for this launch, so it does not start; %s", goal, remedy))
+			}
+			if joined {
+				return nil
+			}
+			reservation := map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
+				"goalId": goal, "goalRevision": revision, "machineId": file.Claimed.Machine, "claimEpoch": file.StopCapability.ClaimEpoch,
+				"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)}
+			if pair {
+				reservation["unitRoundRole"] = kind
+			}
+			if elapsedWaived {
+				reservation["elapsedOverrunMin"] = int64(max(0, projection.Elapsed-projection.Limits.ElapsedDuration()) / time.Minute)
+			}
+			if retry {
+				reservation["unitRetryAttempt"] = true
+			}
+			return writeRecord(path, reservation)
+		})
 	})
 }
 

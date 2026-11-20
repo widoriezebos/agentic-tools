@@ -288,6 +288,8 @@ type workGit struct{ bed *workBed }
 func (g workGit) Run(directory string, _ []string, args ...string) ([]byte, error) {
 	joined := strings.Join(args, " ")
 	switch {
+	case len(args) == 6 && args[0] == "clone":
+		return nil, os.MkdirAll(filepath.Join(args[5], ".git", "objects"), 0700)
 	case joined == "symbolic-ref --short HEAD":
 		return []byte("goal/" + g.bed.id + "\n"), nil
 	case joined == "rev-parse --show-toplevel":

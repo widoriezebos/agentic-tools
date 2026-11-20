@@ -238,6 +238,9 @@ func (git *attributionGit) Run(dir string, env []string, args ...string) ([]byte
 	if slices.Equal(args, []string{"rev-parse", "--verify", "main-commit^{tree}"}) {
 		return []byte(git.mainTree), nil
 	}
+	if args[0] == "clone" || dir == git.fixture.git.checkout {
+		return git.fixture.git.Run(dir, env, args...)
+	}
 	if dir != git.fixture.worktree {
 		return git.baseline.Run(dir, env, args...)
 	}

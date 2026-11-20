@@ -146,3 +146,40 @@ func TestASweptReservationTakesItsRealOutcome(t *testing.T) {
 		t.Fatalf("a refused collection changed the started record:\nbefore %s\nafter  %s", before, after)
 	}
 }
+
+func TestPairedUnitLaunchSharesOnlyItsRoundJob(t *testing.T) {
+	root, file, now := unitRetryGoal(t, 3)
+	file.Budget.ActiveJobLimit = 1
+	reserve := func(id, run string, round int, kind string, cap int64, retry bool) error {
+		return ReserveRoundLaunch(root, id, run, file, round, cap, now, retry, kind)
+	}
+	for _, id := range []string{"proof", "read-a", "read-b"} {
+		kind := "read"
+		if id == "proof" {
+			kind = id
+		}
+		if err := reserve(id, "run", 1, kind, 5, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := ProjectBudget(root, file, now)
+	if p.Attempts != 1 || p.ActiveJobs != 1 || p.OpenCapMinutes != 15 {
+		t.Fatalf("pair spending: %+v", p)
+	}
+	for _, args := range []struct {
+		run   string
+		round int
+		kind  string
+		cap   int64
+	}{{"other", 1, "read", 5}, {"run", 2, "proof", 5}, {"run", 1, "build", 5}, {"run", 1, "read", 1000}} {
+		if err := reserve("unrelated", args.run, args.round, args.kind, args.cap, false); refusal.CodeOf(err) != "BUDGET_REFUSED" {
+			t.Fatalf("unexpected admission: %v", err)
+		}
+	}
+	if err := reserve("proof-retry", "run", 1, "proof", 5, true); err != nil {
+		t.Fatal(err)
+	}
+	if p := ProjectBudget(root, file, now); p.Attempts != 2 || p.ActiveJobs != 1 {
+		t.Fatalf("retry spending: %+v", p)
+	}
+}

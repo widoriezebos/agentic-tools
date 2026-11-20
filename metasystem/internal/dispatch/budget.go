@@ -66,6 +66,7 @@ type BudgetBreach struct {
 // to land, Wait is its open wait, already taken off Elapsed.
 type BudgetProjection struct {
 	goal.LaneBudgetRecord
+	activeRounds            map[string]bool
 	unitAttempts            map[string]bool
 	unitRunsExecuted        map[string]bool
 	Status                  BudgetProjectionStatus
@@ -409,6 +410,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	var elapsedFallback string
 	operations := make(map[string]string)
 	unitAttempts := make(map[string]bool)
+	projection.activeRounds = make(map[string]bool)
 	projection.unitAttempts = unitAttempts
 	projection.unitRunsExecuted = make(map[string]bool)
 	for _, entry := range entries {
@@ -545,6 +547,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
+		activeRound := ""
 		unitAttempt, retryAttempt := "", false
 		if run, present := record["unitRun"]; present {
 			runID, typed := run.(string)
@@ -580,6 +583,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				}
 			}
 			unitAttempt = fmt.Sprintf("%s/%d", runID, round)
+			if role := asString(record["unitRoundRole"]); role == "read" || role == "proof" {
+				activeRound = unitAttempt
+			}
 			if retryAttempt {
 				unitAttempt += "/" + jobID
 			}
@@ -671,6 +677,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				return unknownBudget(file.Id, revision, logicalPath, "open-cap minute accounting overflowed")
 			}
 			projection.OpenCapMinutes += charge
+			if activeRound != "" {
+				if projection.activeRounds[activeRound] {
+					continue
+				}
+				projection.activeRounds[activeRound] = true
+			}
 			if projection.ActiveJobs == math.MaxUint64 {
 				return unknownBudget(file.Id, revision, logicalPath, "active-job accounting overflowed")
 			}

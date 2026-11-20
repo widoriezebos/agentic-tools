@@ -107,3 +107,65 @@ func TestBookedStepKeepsTheWorktreeUntilStopped(t *testing.T) {
 		t.Fatal("person's stop did not release the worktree", err)
 	}
 }
+
+func TestBookingAndResumingAnOverlappingRound(t *testing.T) {
+	for _, both := range []bool{false, true} {
+		t.Run(map[bool]string{false: "proof-ended", true: "both-ended"}[both], func(t *testing.T) {
+			f := newUnitFixture(t, "", "branch", "round", "branch")
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "proof" || r.Kind == "read" {
+					f.starter.holdKind = r.Kind
+				}
+				return nil
+			}
+			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("first wait: %v", err)
+			}
+			round := first.Record.Rounds[0]
+			ids := len(f.starter.ids)
+			for _, step := range round.Steps[1:] {
+				if !both && step.Kind == "read" {
+					continue
+				}
+				_, err := f.manager.Store.Update(step.LaunchID, func(r *Record) error {
+					r.State = Failed
+					code := 1
+					r.ExitCode = &code
+					r.Supervisor = nil
+					r.Child = nil
+					r.FinishedAt = f.manager.Now().Format(time.RFC3339Nano)
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.manager.Sleep(time.Minute)
+			booked, err := f.runner.BookEndedSteps(first.Record.ID, f.manager.Now(), func(UnitRunRecord, Record) bool { return true })
+			want := 1
+			state := "running"
+			if both {
+				want = 2
+				state = UnitStepEnded
+			}
+			if err != nil || len(booked) != want {
+				t.Fatalf("bookings %v: %v", booked, err)
+			}
+			current, err := f.runner.Status(first.Record.ID)
+			if err != nil || current.State != state {
+				t.Fatalf("during booking: %s, %v", current.State, err)
+			}
+			f.manager.Prober.(*fakeProber).states[10] = identity.Dead
+			f.manager.Prober.(*fakeProber).states[20] = identity.Dead
+			last, err := f.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := last.Record.Rounds[0]
+			if done.Outcome != "proof-red" || len(f.starter.ids) != ids || done.Steps[1].EndBooking.CollectedAt == "" || len(done.Reads) > 0 || !done.CheckoutRemoved {
+				t.Fatalf("join after booking: %+v", done)
+			}
+		})
+	}
+}

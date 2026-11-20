@@ -112,7 +112,7 @@ func (runner *UnitRunner) collectRoundRead(record *UnitRunRecord, round *UnitRou
 	var collectErr error
 	returnPath := ""
 	for _, step := range round.Steps {
-		if !strings.HasPrefix(step.Name, "read") || step.LaunchID == "" || step.State == StepSkipped {
+		if step.Unattached || !strings.HasPrefix(step.Name, "read") || step.LaunchID == "" || step.State == StepSkipped {
 			continue
 		}
 		launch, err := runner.Manager.Store.Read(step.LaunchID)

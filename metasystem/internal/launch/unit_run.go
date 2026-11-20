@@ -95,6 +95,11 @@ type RefMove struct {
 }
 
 type UnitRound struct {
+	JoiningOutcome  string `json:"joiningOutcome,omitempty"`
+	ReadStore       string `json:"readStore,omitempty"`
+	ReadCheckout    string `json:"readCheckout,omitempty"`
+	CheckoutRemoved bool   `json:"checkoutRemoved,omitempty"`
+
 	StartingResult     string `json:"startingResult,omitempty"`
 	ProductionLines    *int64 `json:"productionLines,omitempty"`
 	DeclaredProduction *int64 `json:"declaredProduction,omitempty"`
@@ -149,6 +154,9 @@ type EndBooking struct {
 const UnitStepEnded = "step-ended"
 
 type UnitStep struct {
+	Unattached   bool   `json:"unattached,omitempty"`
+	ExaminedTree string `json:"examinedTree,omitempty"`
+
 	EndBooking         *EndBooking   `json:"endBooking,omitempty"`
 	Kind               string        `json:"kind,omitempty"`
 	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
@@ -421,9 +429,12 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	deadline := runner.Manager.Now().Add(time.Duration(settings.WaitCapSeconds) * time.Second)
 	if request.Resume != "" {
 		round := &record.Rounds[len(record.Rounds)-1]
+		if round.JoiningOutcome != "" {
+			return runner.finish(&record, round, round.JoiningOutcome)
+		}
 		for index := range round.Steps {
 			step := &round.Steps[index]
-			if round.Outcome != "" || step.State != StepFailed || !strings.HasPrefix(step.Name, "proof:") {
+			if round.ReadCheckout != "" || round.Outcome != "" || step.State != StepFailed || !strings.HasPrefix(step.Name, "proof:") {
 				continue
 			}
 			if step.Retained != nil {
@@ -706,11 +717,56 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	commands := proofCommands(plan)
 	beforeProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	if IsCode(err, "UNIT_TREE_CHANGED") && round.ReadStore != "" && !round.CheckoutRemoved {
+		round.InputsChanged = strings.TrimPrefix(err.Error(), "the check's inputs changed during the step: ")
+		if err = runner.discardRoundReads(record, round, "proof-wrote:"+round.InputsChanged); err == nil {
+			err = readJSONFile(filepath.Join(round.Directory, "proof-before.json"), &beforeProof)
+		}
+		if err == nil {
+			err = runner.save(*record)
+		}
+	}
 	if IsCode(err, "UNIT_TREE_CHANGED") {
 		return runner.treeMoved(record, round, strings.TrimPrefix(err.Error(), "the check's inputs changed during the step: "))
 	}
 	if err != nil {
 		return UnitResult{}, err
+	}
+	if beforeProof.TreeID != round.Result.Tree || strings.TrimSpace(beforeProof.Head) != round.Result.Parent {
+		return runner.treeMoved(record, round, "the frozen build tree")
+	}
+	readStart := len(round.Steps)
+	var sequence readSequence
+	hasRead := plan.HasRead() && !runner.resolving
+	coldRead := round.InputsChanged == "" && hasRead && !slices.ContainsFunc(record.Rounds[:len(record.Rounds)-1], func(prior UnitRound) bool { return len(prior.Reads) > 0 })
+	if hasRead {
+		inputs := append(append([]string{}, plan.Read.Inputs...), previous...)
+		if round.FollowUp != "" {
+			inputs = append(inputs, round.FollowUp)
+		}
+		sequence = runner.readSequence(record, round, plan, inputs, filepath.Join(round.Directory, "worktree.diff"))
+		readStart, err = sequence.plan()
+		if err != nil {
+			return UnitResult{}, err
+		}
+		// A retained reader from an earlier engine finishes in its original checkout.
+		if round.ReadCheckout != "" || !slices.ContainsFunc(round.Steps[readStart:], func(s UnitStep) bool { return s.LaunchID != "" && s.Retained != nil }) {
+			dir, err := runner.frozenReadCheckout(record, round, plan)
+			if IsCode(err, "UNIT_TREE_CHANGED") {
+				return runner.treeMoved(record, round, "the frozen build tree")
+			}
+			if err != nil {
+				return UnitResult{}, err
+			}
+			sequence.spec.WorkingDirectory = dir
+		} else {
+			coldRead = false
+		}
+		if coldRead {
+			if err := runner.prepareRoundReadBrief(record, round, plan, &sequence); err != nil {
+				return UnitResult{}, err
+			}
+		}
 	}
 	red := false
 	for offset, command := range commands {
@@ -724,7 +780,16 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			}
 		}
 		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct, HostGated: true}
-		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
+		driver := runner.driver(record, round)
+		if _, err := driver.startStep(index, spec); err != nil {
+			return runner.result(*record, round, &round.Steps[index], false), err
+		}
+		if coldRead && round.Steps[index].State == StepRunning {
+			if err := runner.readBesideProof(sequence, readStart, index, deadline); err != nil {
+				return runner.result(*record, round, &round.Steps[index], false), err
+			}
+		}
+		if capped, err := driver.waitStep(index, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
 		if capped, err := runner.attributeProof(record, round, index, plan, deadline); err != nil || capped {
@@ -750,7 +815,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		round.ProofRefsNoted = true
 	}
 	var moved []string
-	round.InputsChanged = inputNames(beforeProof, afterProof)
+	if names := inputNames(beforeProof, afterProof); names != "" {
+		round.InputsChanged = names
+	}
 	if round.InputsChanged != "" {
 		moved = append(moved, round.InputsChanged)
 	}
@@ -758,34 +825,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		moved = append(moved, step.Moved...)
 	}
 	if len(moved) > 0 {
+		if round.InputsChanged == "" {
+			round.InputsChanged = strings.Join(moved, ",")
+		}
 		round.Cause = "environment"
-	}
-	diffPath := filepath.Join(round.Directory, "worktree.diff")
-	if _, err := os.Stat(diffPath); os.IsNotExist(err) {
-		if err := runner.writeDiff(plan.Worktree, plan.Base, diffPath); err != nil {
-			return UnitResult{}, err
-		}
-	}
-	readInputs := append(append(append([]string{}, plan.Read.Inputs...), previous...), round.FollowUp)
-	if runner.resolving {
-		if len(moved) != 0 {
-			return runner.finish(record, round, "proof-wrote")
-		}
-		if red {
-			return runner.finish(record, round, "proof-red")
-		}
-		return runner.finish(record, round, "green")
-	}
-	if round.FollowUp == "" {
-		readInputs = readInputs[:len(readInputs)-1]
-	}
-	sequence := runner.readSequence(record, round, plan, readInputs, diffPath)
-	readStart := len(round.Steps)
-	if plan.HasRead() {
-		readStart, err = sequence.plan()
-		if err != nil {
-			return UnitResult{}, err
-		}
 	}
 	if len(moved) != 0 {
 		names := round.InputsChanged
@@ -803,43 +846,12 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		return runner.finish(record, round, "proof-red")
 	}
-	packet, err := runner.warmRead(*record, *round)
-	if err != nil {
-		return UnitResult{}, err
-	}
-	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0 || len(round.ExcludedDropped) > 0) {
-		brief, err := os.ReadFile(plan.Read.Brief)
-		if err != nil {
+	if hasRead && !coldRead {
+		if err := runner.prepareRoundReadBrief(record, round, plan, &sequence); err != nil {
 			return UnitResult{}, err
 		}
-		text := string(brief)
-		if packet != "" {
-			text = strings.Replace(text, "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1) + packet
-		}
-		if len(round.RefMoves) > 0 {
-			var moves []string
-			for _, move := range round.RefMoves {
-				before, after := fmt.Sprintf("%.10s", move.Before), fmt.Sprintf("%.10s", move.After)
-				if before == "" {
-					before = "created"
-				}
-				if after == "" {
-					after = "deleted"
-				}
-				moves = append(moves, move.Ref+" "+before+" to "+after)
-			}
-			text += "\n\nWhile the checks ran, these refs moved; the check reads none of them: " + strings.Join(moves, "; ") + ".\n"
-		}
-		if len(round.ExcludedDropped) > 0 {
-			text += "\n\nThe worktree held excluded differences from the branch in engine-written files; the engine kept them in " + filepath.Join(round.Directory, "excluded") + "/ and put them back before the check, so they are not part of this change: " + strings.Join(round.ExcludedDropped, ", ") + ".\n"
-		}
-		path := filepath.Join(round.Directory, "read-brief.md")
-		if _, err := atomicfile.WriteText(path, text, runner.root()); err != nil {
-			return UnitResult{}, err
-		}
-		sequence.spec.Brief = path
 	}
-	if !plan.HasRead() {
+	if !hasRead {
 		return runner.finish(record, round, "green")
 	}
 	outcome, stop, capped, err := sequence.advance(readStart, deadline)
@@ -855,6 +867,22 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	if names := inputNames(afterProof, afterRead); names != "" {
 		return runner.treeMoved(record, round, names)
+	}
+	noteRefMoves(round, "read", afterProof, afterRead)
+	if round.ReadCheckout != "" {
+		observed, err := runner.snapshotRepository(sequence.spec.WorkingDirectory)
+		if err != nil {
+			return UnitResult{}, err
+		}
+		for _, step := range round.Steps[readStart:] {
+			if len(step.Moved) > 0 || (step.State == StepPassed && step.ExaminedTree != round.Result.Tree) || observed.TreeID != round.Result.Tree {
+				names := strings.TrimPrefix(step.Reason, "the check's inputs changed during the step: ")
+				if names == "" {
+					names = "the frozen read tree"
+				}
+				return runner.treeMoved(record, round, names)
+			}
+		}
 	}
 	return runner.finish(record, round, outcome)
 }
@@ -1167,6 +1195,27 @@ func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, fro
 }
 
 func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcome string) (UnitResult, error) {
+	if round.ReadCheckout != "" && !round.CheckoutRemoved {
+		if round.JoiningOutcome == "" {
+			round.JoiningOutcome = outcome
+			if err := runner.save(*record); err != nil {
+				return UnitResult{}, err
+			}
+		}
+		if strings.HasPrefix(outcome, "proof-") {
+			reason := outcome
+			if outcome == "proof-wrote" {
+				reason += ":" + round.InputsChanged
+			}
+			if err := runner.discardRoundReads(record, round, reason); err != nil {
+				return UnitResult{Record: *record}, err
+			}
+		}
+		if err := runner.releaseFrozenReads(record, round); err != nil {
+			return UnitResult{Record: *record}, err
+		}
+	}
+	round.JoiningOutcome = ""
 	round.Outcome, record.State = outcome, "awaiting-judgement"
 	if round.Cause == "" {
 		round.Cause = roundCause(round.Steps)
@@ -1496,7 +1545,7 @@ func (runner *UnitRunner) CheckTree(worktree string) (string, error) {
 	return snapshot.TreeID, err
 }
 
-func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (repositorySnapshot, error) {
+func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool, retainObjects ...string) (repositorySnapshot, error) {
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}
@@ -1591,6 +1640,11 @@ func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (re
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
+	if len(retainObjects) > 0 {
+		if err := os.CopyFS(retainObjects[0], os.DirFS(objectDir)); err != nil {
+			return repositorySnapshot{}, err
+		}
+	}
 	return repositorySnapshot{TreeID: strings.TrimSpace(string(treeID)), Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest.Sum(nil)), Tree: string(tree)}, nil
 }
 
@@ -1625,7 +1679,7 @@ func readOutputs(manager *Manager, round UnitRound) []string {
 		}
 	}
 	for _, step := range round.Steps {
-		if strings.HasPrefix(step.Name, "read") && step.LaunchID != "" {
+		if strings.HasPrefix(step.Name, "read") && step.State == StepPassed && !step.Unattached && step.Verdict != "" && step.LaunchID != "" {
 			if record, err := manager.Store.Read(step.LaunchID); err == nil {
 				for _, output := range record.Outputs {
 					if _, err := os.Stat(output.Path); !os.IsNotExist(err) {

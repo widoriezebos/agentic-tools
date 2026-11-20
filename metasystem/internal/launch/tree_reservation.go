@@ -327,7 +327,8 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 	if !runner.treeChildrenEnded(children) {
 		return record, runner.childCustodyError(children, errors.New("the run's children are not proven dead; its worktree remains reserved"))
 	}
-	for _, round := range record.Rounds {
+	for i := range record.Rounds {
+		round := record.Rounds[i]
 		if err := runner.collectLaunches(record, round); err != nil {
 			return record, err
 		}
@@ -342,6 +343,14 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		}
 	}
 	err = runner.treeLocked(record.Worktree, func(path string, owner *treeReservation) error {
+		for i := range record.Rounds {
+			if err := runner.releaseFrozenReads(&record, &record.Rounds[i]); err != nil {
+				return err
+			}
+		}
+		if err := writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root()); err != nil {
+			return err
+		}
 		if owner.Run != id {
 			return nil
 		}
@@ -428,7 +437,7 @@ func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound, nam
 	round.InputsChanged = names
 	for i := range round.Steps {
 		step := &round.Steps[i]
-		if step.State == StepRunning || i == len(round.Steps)-1 {
+		if !strings.HasPrefix(step.Name, "read") && (step.State == StepRunning || i == len(round.Steps)-1) {
 			step.State, step.Cause, step.Reason = StepFailed, "environment", "the check's inputs changed during the step: "+names
 			break
 		}

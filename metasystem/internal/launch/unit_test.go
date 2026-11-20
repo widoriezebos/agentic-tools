@@ -32,6 +32,7 @@ type stubGit struct {
 	normalize    func([]string) []string
 	snapshot     []testgit.Expectation
 	snapshotStub *testgit.Stub
+	checkout     string
 	snapshotNext int
 	reporter     testgit.Reporter
 	worktree     string
@@ -39,6 +40,16 @@ type stubGit struct {
 
 func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
 	git.once.Do(func() { git.stub = git.makeStub() })
+	if len(args) == 6 && slices.Equal(args[:4], []string{"clone", "--shared", "--no-checkout", "--"}) && args[4] == git.worktree {
+		git.checkout = args[5]
+		return nil, os.MkdirAll(filepath.Join(git.checkout, ".git", "objects"), 0700)
+	}
+	if directory == git.checkout && git.checkout != "" {
+		if slices.Equal(args, []string{"checkout", "--detach", "head"}) || slices.Equal(args, []string{"read-tree", "--reset", "-u", "round-tree"}) {
+			return nil, nil
+		}
+		directory = git.worktree
+	}
 	if git.worktree != "" {
 		actual, err := filepath.EvalSymlinks(directory)
 		expected, expectedErr := filepath.EvalSymlinks(git.worktree)
@@ -81,12 +92,14 @@ func (git *stubGit) Run(directory string, environment []string, args ...string) 
 }
 
 type recordingOSGit struct {
+	dirs   []string
 	runner OSGitRunner
 	calls  [][]string
 	envs   [][]string
 }
 
 func (git *recordingOSGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
+	git.dirs = append(git.dirs, directory)
 	git.calls = append(git.calls, append([]string(nil), args...))
 	git.envs = append(git.envs, append([]string(nil), environment...))
 	return git.runner.Run(directory, environment, args...)
@@ -128,6 +141,7 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 			return nil
 		}
 		current.State = Completed
+		current.FinishedAt = starter.m.Now().Format(time.RFC3339Nano)
 		code := 0
 		if record.Kind == starter.failKind {
 			current.State, current.Reason, code = Failed, "fixture-red", 1
@@ -707,11 +721,151 @@ func TestRunStopsAtTheCapAndResumeContinues(t *testing.T) {
 	}
 }
 
-func TestProofRunsBeforeTheRead(t *testing.T) {
-	fixture := newUnitFixture(t, "")
-	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
-	if err != nil || !slices.Equal(fixture.starter.order, []string{"build", "proof", "read"}) {
-		t.Fatalf("order=%v err=%v", fixture.starter.order, err)
+func TestFrozenReadsJoinTheRoundCheck(t *testing.T) {
+	for _, scenario := range []string{"land", "completed-then-red", "live-then-red", "stop", "budget-waits", "read-failed", "read-writes", "check-writes"} {
+		t.Run(scenario, func(t *testing.T) {
+			f, repo := newGitUnitFixture(t)
+			f.starter.readVerdict = "land"
+			f.starter.holdKind = "proof"
+			var checkout string
+			var proofID string
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "proof" {
+					proofID = r.ID
+				}
+				if r.Kind != "read" {
+					return nil
+				}
+				checkout = r.WorkingDirectory
+				if checkout == repo {
+					t.Fatal("read used the live worktree")
+				}
+				run, err := f.runner.Status(strings.Split(r.ID, "-r1-")[0])
+				if err != nil {
+					return err
+				}
+				round := run.Rounds[0]
+				if _, err := os.Stat(filepath.Join(round.Directory, "proof-before.json")); err != nil {
+					return err
+				}
+				if got := strings.TrimSpace(runGit(t, checkout, "write-tree")); got != round.Result.Tree {
+					t.Fatalf("reader sees %s, frozen %s", got, round.Result.Tree)
+				}
+				if _, err := os.Stat(filepath.Join(checkout, ".git")); err != nil {
+					return err
+				}
+				switch scenario {
+				case "live-then-red", "stop":
+					f.starter.holdKind = "read"
+				case "read-failed":
+					f.starter.failKind = "read"
+				case "read-writes":
+					writeFile(t, filepath.Join(checkout, "read-only-change"), "changed")
+				case "check-writes":
+					writeFile(t, filepath.Join(repo, "live-only-change"), "changed")
+				}
+				return nil
+			}
+			if scenario == "budget-waits" {
+				f.runner.BeforeModelLaunch = func(_ UnitRunRecord, s StartSpec) error {
+					if s.Kind == "read" {
+						p, _ := f.manager.Store.Read(proofID)
+						if !p.State.Terminal() {
+							return refusal.New("BUDGET_REFUSED", "reservedJobMinutesLimit", errors.New("check uses the remaining cap"))
+						}
+					}
+					return nil
+				}
+			}
+			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil || !first.Capped || first.Step != "proof:check" {
+				t.Fatalf("first wait: %s, %v", first.Step, err)
+			}
+			if scenario == "budget-waits" {
+				if checkout != "" {
+					t.Fatal("read started before its cap fit")
+				}
+			} else if checkout == "" {
+				t.Fatal("proof reached its wait cap without starting its read")
+			}
+			if _, err := f.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, Brief: []byte("correct")}); err == nil {
+				t.Fatal("correction admitted during check")
+			}
+			if scenario == "stop" {
+				f.manager.Prober.(*fakeProber).states[10] = identity.Dead
+				f.manager.Prober.(*fakeProber).states[20] = identity.Dead
+				r, err := f.runner.CancelRun(first.Record.ID)
+				if err != nil || r.State != "cancelled" {
+					t.Fatalf("stop: %s %v", r.State, err)
+				}
+			} else {
+				_, err = f.manager.Store.Update(proofID, func(r *Record) error {
+					r.State = Completed
+					code := 0
+					if strings.HasSuffix(scenario, "red") {
+						r.State = Failed
+						code = 1
+					}
+					r.ExitCode = &code
+					r.Supervisor = nil
+					r.Child = nil
+					r.FinishedAt = f.manager.Now().Format(time.RFC3339Nano)
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "live-then-red" {
+					f.manager.Prober.(*fakeProber).states[10] = identity.Dead
+					f.manager.Prober.(*fakeProber).states[20] = identity.Dead
+				}
+				f.starter.holdKind = ""
+				last, err := f.runner.Advance(UnitRequest{Resume: first.Record.ID})
+				if err != nil {
+					t.Fatal(err)
+				}
+				round := last.Record.Rounds[0]
+				read := stepNamed(t, round, "read")
+				proof := stepNamed(t, round, "proof:check")
+				if last.Record.State != "awaiting-judgement" {
+					t.Fatalf("join state %s", last.Record.State)
+				}
+				firstRead := stepNamed(t, first.Record.Rounds[0], "read")
+				if scenario != "budget-waits" && (firstRead.ExecutionStartedAt == "" || firstRead.ExecutionStartedAt >= proof.ExecutionEndedAt) {
+					t.Fatalf("no recorded overlap: read %s proof end %s", read.ExecutionStartedAt, proof.ExecutionEndedAt)
+				}
+				switch scenario {
+				case "live-then-red", "completed-then-red":
+					if round.Outcome != "proof-red" || len(round.Reads) > 0 || round.Material != -1 || len(readOutputs(f.manager, round)) != 0 {
+						t.Fatalf("red joined a read: %+v", round)
+					}
+					if scenario == "completed-then-red" && (read.State != StepPassed || read.Verdict != "land") {
+						t.Fatalf("lost completed read: %+v", read)
+					}
+					if scenario == "live-then-red" && (read.State != StepSkipped || read.Reason != "proof-red") {
+						t.Fatalf("lost read stop: %+v", read)
+					}
+				case "check-writes", "read-writes":
+					if round.Outcome != "proof-wrote" || round.Cause != "environment" {
+						t.Fatalf("missed mutation: %+v", round)
+					}
+					if _, err := os.Stat(filepath.Join(repo, "read-only-change")); !os.IsNotExist(err) {
+						t.Fatal("reader wrote live tree")
+					}
+				case "read-failed":
+					if round.Outcome != "read-failed" {
+						t.Fatalf("outcome %s", round.Outcome)
+					}
+				default:
+					if round.Outcome != "green" || round.Material != 0 || len(round.Reads) == 0 {
+						t.Fatalf("missing joined verdict: %+v", round)
+					}
+				}
+			}
+			if _, err := os.Stat(checkout); !os.IsNotExist(err) {
+				t.Fatalf("checkout retained: %s", checkout)
+			}
+		})
 	}
 }
 
@@ -1030,6 +1184,7 @@ func TestResumedSplitReadsWaitForTheRunningRead(t *testing.T) {
 		t.Fatalf("second read moved while the first ran: %+v", second)
 	}
 	fixture.manager.Store.Update(held.Launch, func(record *Record) error {
+		record.Supervisor, record.Child = nil, nil
 		yes, code := true, 0
 		record.State, record.ExitCode, record.VerdictCounts, record.Measurement.Verdict = Completed, &code, &yes, "pass"
 		return nil
@@ -1203,7 +1358,7 @@ func TestAMoveOutsideTheCheckDoesNotStopIt(t *testing.T) {
 					to = want.After[:10]
 				}
 				paragraph := "While the checks ran, these refs moved; the check reads none of them: " + want.Ref + " " + from + " to " + to
-				if err != nil || !strings.Contains(string(brief), paragraph) || !strings.HasPrefix(string(brief), "read it\n") {
+				if err != nil || strings.Contains(string(brief), paragraph) || !strings.HasPrefix(string(brief), "read it\n") {
 					t.Fatalf("round-one read brief: %q, error=%v; want %q", brief, err, paragraph)
 				}
 			}
@@ -1247,7 +1402,11 @@ func TestTheFactKeepsTheLatestMove(t *testing.T) {
 				t.Fatalf("reader continuation: %+v %v", again, err)
 			}
 			fixture.starter.failKind, fixture.starter.holdKind = "", ""
-			if _, err := fixture.manager.Store.Update(first.Launch, func(record *Record) error { record.State = Completed; return nil }); err != nil {
+			if _, err := fixture.manager.Store.Update(first.Launch, func(record *Record) error {
+				record.Supervisor, record.Child = nil, nil
+				record.State = Completed
+				return nil
+			}); err != nil {
 				t.Fatal(err)
 			}
 			last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
@@ -1358,10 +1517,23 @@ func TestARefOnlyReentryKeepsTheBaseline(t *testing.T) {
 				t.Fatal(err)
 			}
 			if changedFile {
-				step := stepNamed(t, again.Record.Rounds[0], "proof:check")
-				if step.State != StepFailed || step.Reason != "the check's inputs changed during the step: worktree file tracked" {
-					t.Fatalf("reentry lost changed input: %+v", again.Record)
+				round := again.Record.Rounds[0]
+				if !again.Capped || round.InputsChanged != "worktree file tracked" || !stepNamed(t, round, "read").Unattached {
+					t.Fatalf("changed input did not detach read: %+v", round)
 				}
+				fixture.starter.holdKind = ""
+				if _, err := fixture.manager.Store.Update(first.Launch, func(r *Record) error {
+					r.State = Completed
+					r.FinishedAt = fixture.manager.Now().Format(time.RFC3339Nano)
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				final, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+				if err != nil || final.Record.Rounds[0].Outcome != "proof-wrote" {
+					t.Fatalf("moved join: %v %v", final.Record.Rounds, err)
+				}
+
 				return
 			}
 			after, err := os.ReadFile(path)
@@ -1681,6 +1853,9 @@ func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 	}
 	git := fixture.runner.Git.(*recordingOSGit)
 	for index, call := range git.calls {
+		if git.dirs[index] != repo {
+			continue
+		}
 		if !slices.Contains([]string{"symbolic-ref", "rev-parse", "for-each-ref", "ls-files", "diff-index", "add", "diff", "read-tree", "write-tree", "apply"}, call[0]) {
 			t.Fatalf("git call=%v", call)
 		}
@@ -2878,5 +3053,62 @@ func TestALateFreshReadIsBookedOnceAndNotBeforeItEnds(t *testing.T) {
 		if err != nil || string(after) != string(before[i]) {
 			t.Fatalf("second resume rewrote %s: %v", path, err)
 		}
+	}
+}
+
+func TestSplitReadersOverlapUnderTheirOutputPolicy(t *testing.T) {
+	diff := "diff --git a/a/x.go b/a/x.go\n--- a/a/x.go\n+++ b/a/x.go\n+x\ndiff --git a/b/y.go b/b/y.go\n--- a/b/y.go\n+++ b/b/y.go\n+y\n"
+	for _, mode := range []string{"parallel", "shared-output", "rerun"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newUnitFixture(t, diff)
+			f.manager.Settings.ReadSplitLines = 1
+			if mode == "shared-output" {
+				plan, err := ReadUnitPlan(f.plan)
+				if err != nil {
+					t.Fatal(err)
+				}
+				plan.Read.Outputs = []string{filepath.Join(t.TempDir(), "report.md")}
+				if err := writeUnitJSON(f.plan, plan, filepath.Dir(f.plan)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "rerun" {
+				f.manager.Settings.ReadSplitLines = 500
+				f.starter.readCounts = []bool{false, true, true}
+			}
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "proof" || r.Kind == "read" && mode != "rerun" {
+					f.starter.holdKind = r.Kind
+				}
+				return nil
+			}
+			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("first wait: %v", err)
+			}
+			steps := first.Record.Rounds[0].Steps
+			switch mode {
+			case "parallel":
+				if len(steps) != 4 || steps[2].State != StepRunning || steps[3].State != StepRunning {
+					t.Fatalf("independent split: %+v", steps)
+				}
+			case "shared-output":
+				if len(steps) != 4 || steps[2].State != StepRunning || steps[3].State != StepPending {
+					t.Fatalf("shared output: %+v", steps)
+				}
+			case "rerun":
+				if len(steps) != 5 || !steps[3].Rerun || !steps[4].Rerun || steps[4].State != StepPassed {
+					t.Fatalf("compaction reruns: %+v", steps)
+				}
+			}
+			if steps[1].State != StepRunning {
+				t.Fatal("read advanced past the check")
+			}
+			f.manager.Prober.(*fakeProber).states[10] = identity.Dead
+			f.manager.Prober.(*fakeProber).states[20] = identity.Dead
+			if _, err := f.runner.CancelRun(first.Record.ID); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

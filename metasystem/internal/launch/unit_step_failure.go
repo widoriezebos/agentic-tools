@@ -139,6 +139,9 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 	// The machine retries a provider refusal or a unit check's proof.deadline
 	// once; any other deadline waits for a person.
 	machine := step.Name == "proof:unit-check" && step.Deadline && step.Cause == "environment"
+	if step.Kind == "read" && len(step.Moved) > 0 {
+		return false, nil
+	}
 	if step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != "" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine || step.Name == FreshReadStep {
 		return false, nil
 	}
@@ -289,7 +292,9 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 			round.ProductionLines, round.DeclaredProduction = nil, nil
 		}
 		for later := index + 1; later < len(round.Steps); later++ {
-			if round.Steps[later].State == StepSkipped {
+			if round.Steps[later].State == StepSkipped || round.Steps[later].Unattached {
+				round.Steps[later].Unattached = false
+				round.Steps[later].Before = nil
 				round.Steps[later].State, round.Steps[later].Reason = StepPending, ""
 			}
 		}

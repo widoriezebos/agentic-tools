@@ -196,7 +196,7 @@ func TestUnitContinueKeepsPassedBuildWithLatePartialResult(t *testing.T) {
 				t.Fatalf("start=%+v err=%v", first, err)
 			}
 			round := first.Record.Rounds[0]
-			if len(round.Steps) != 2 || round.Steps[0].State != StepPassed || round.Steps[1].State != StepRunning {
+			if len(round.Steps) != 3 || round.Steps[2].State != StepPassed || round.Steps[0].State != StepPassed || round.Steps[1].State != StepRunning {
 				t.Fatalf("build did not pass before the proof started: %+v", round.Steps)
 			}
 			build := round.Steps[0]
@@ -221,7 +221,7 @@ func TestUnitContinueKeepsPassedBuildWithLatePartialResult(t *testing.T) {
 				t.Fatalf("continuation orphaned the running proof: %+v err=%v", held, err)
 			}
 			round = held.Record.Rounds[0]
-			if len(round.Steps) != 2 || round.Steps[0].State != StepPassed || round.Steps[0].Reason != build.Reason || round.Steps[1].LaunchID != first.Launch || round.Outcome != "" || len(f.starter.ids) != 2 {
+			if len(round.Steps) != 3 || round.Steps[2].State != StepPassed || round.Steps[0].State != StepPassed || round.Steps[0].Reason != build.Reason || round.Steps[1].LaunchID != first.Launch || round.Outcome != "" || len(f.starter.ids) != 3 {
 				t.Fatalf("continuation rewrote the build or duplicated steps: %+v launches=%v", round, f.starter.ids)
 			}
 			proof, err := f.manager.Store.Read(first.Launch)
@@ -373,7 +373,7 @@ func TestUnitContinueRecordedDeadlineAllowsRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	round = retried.Record.Rounds[0]
-	if impacts != 1 || retried.Record.State != "running" || round.Stop != nil || round.Outcome != "" || round.Cause != "" || round.Steps[0].State != StepPassed || round.Steps[1].State != StepPending || round.Steps[1].RetryBy != "person" || round.Steps[1].Deadline || round.Steps[2].State != StepPending || len(f.starter.ids) != 2 {
+	if impacts != 1 || retried.Record.State != "running" || round.Stop != nil || round.Outcome != "" || round.Cause != "" || round.Steps[0].State != StepPassed || round.Steps[1].State != StepPending || round.Steps[1].RetryBy != "person" || round.Steps[1].Deadline || round.Steps[2].State != StepPending || len(f.starter.ids) != len(first.Record.Rounds[0].Steps) {
 		t.Fatalf("retry=%+v impacts=%d launches=%v", retried, impacts, f.starter.ids)
 	}
 }

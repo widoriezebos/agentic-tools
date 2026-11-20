@@ -215,6 +215,12 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	data := map[string]any{"run": record.ID, "unit": unit, "goal": goalID, "round": review.Round.Number,
 		"outcome": review.Round.Outcome, "worktree": worktree, "expectedParent": review.Head, "carried": []string{}}
 	var carriedLines []string
+	if len(review.Round.RefMoves) > 0 {
+		data["refMoves"] = review.Round.RefMoves
+		for _, move := range review.Round.RefMoves {
+			carriedLines = append(carriedLines, fmt.Sprintf("During %s, %s moved from %.10s to %.10s.", move.Step, move.Ref, move.Before, move.After))
+		}
+	}
 	// refuse says what stopped the commit in plain words and runs next;
 	// the owner's own account, codes included, is the detail.
 	retry := inv.sameCommand()
@@ -737,6 +743,9 @@ func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, rev
 		return nil, "the round must have exactly one read step"
 	}
 	step := reads[0]
+	if step.Unattached || review.Round.ReadCheckout != "" && (review.Round.Result == nil || step.ExaminedTree != subject.StagedTree || step.ExaminedTree != review.Round.Result.Tree || review.Round.Result.Parent != review.Base) {
+		return nil, "the read did not examine the publication subject"
+	}
 	if revision == 0 || len(report) == 0 || len(readJSON) == 0 || read.State != launch.Completed || read.Kind != "read" || !read.VerdictIsCounting() {
 		return nil, "the read's report, completed launch or goal revision is unavailable"
 	}
@@ -790,7 +799,7 @@ func readPromotion(runner *launch.UnitRunner, review launch.UnitReview, subject 
 		for _, step := range review.Round.Steps {
 			if strings.HasPrefix(step.Name, "build") {
 				build, _ = runner.Manager.Store.Read(step.LaunchID)
-			} else if strings.HasPrefix(step.Name, "read") {
+			} else if !step.Unattached && strings.HasPrefix(step.Name, "read") {
 				read, _ = runner.Manager.Store.Read(step.LaunchID)
 				for _, output := range read.Outputs {
 					if strings.HasSuffix(output.Path, ".md") {
