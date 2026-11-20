@@ -92,6 +92,10 @@ func TestOther(t *testing.T) {
 			}
 		}
 		getenv := func(key string) string {
+			// This generated module has no Git checkout to certify.
+			if key == "LANDING_COMMIT" {
+				return ""
+			}
 			value := commandEnv(cmd, key)
 			if value == "missing" {
 				return ""

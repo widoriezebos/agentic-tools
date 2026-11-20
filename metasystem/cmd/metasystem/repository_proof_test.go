@@ -77,36 +77,36 @@ func TestRepositoryLandingProofRunsHostSuiteAndReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	repo := t.TempDir()
+	proofDir := filepath.Join(repo, "metasystem", "proof")
+	helmMust(t, os.MkdirAll(proofDir, 0755))
+	helmMust(t, os.WriteFile(filepath.Join(proofDir, "full.sh"), script, 0644))
+	contract, err := os.ReadFile("../../testing.json")
+	helmMust(t, err)
+	helmMust(t, os.WriteFile(filepath.Join(repo, "metasystem", "testing.json"), contract, 0644))
+	connectionGit(t, repo, "init", "-q")
+	connectionGit(t, repo, "add", "metasystem")
+	connectionGit(t, repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "proof candidate")
+	head := connectionGit(t, repo, "rev-parse", "HEAD")
 	tools, binary := repositoryProofTools(t)
 	b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
 		case "rev-parse --verify HEAD^{commit}":
-			return "head", nil
+			return head, nil
 		case "rev-parse --verify HEAD^{tree}":
 			return "tree", nil
-		case "show head:metasystem/metasystem.conf":
+		case "show " + head + ":metasystem/metasystem.conf":
 			return string(conf), nil
-		case "cat-file -e head^{commit}", "worktree prune":
+		case "cat-file -e " + head + "^{commit}", "worktree prune":
 			return "", nil
 		case "show origin/main:metasystem/testing.json", "show origin/main:metasystem/plans/goals/trunk-red.json":
 			return "", errors.New("not declared")
 		}
 		if len(args) == 5 && args[0] == "worktree" && args[1] == "add" {
-			dir := filepath.Join(args[3], "metasystem", "proof")
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return "", err
-			}
-			if err := os.WriteFile(filepath.Join(dir, "full.sh"), script, 0o644); err != nil {
-				return "", err
-			}
-			contract, err := os.ReadFile("../../testing.json")
-			if err != nil {
-				return "", err
-			}
-			return "", os.WriteFile(filepath.Join(dir, "..", "testing.json"), contract, 0o644)
+			return connectionGit(t, repo, args...), nil
 		}
 		if len(args) == 4 && args[0] == "worktree" && args[1] == "remove" {
-			return "", nil
+			return connectionGit(t, repo, args...), nil
 		}
 		return "", fmt.Errorf("unexpected stub Git: %v", args)
 	}, Command: func(command *exec.Cmd) error {
@@ -120,8 +120,12 @@ func TestRepositoryLandingProofRunsHostSuiteAndReports(t *testing.T) {
 		t.Fatalf("landing prove: %d %s, %v", code, output, err)
 	}
 	log, err := os.ReadFile(result.Data.Log)
-	if err != nil || !strings.Contains(string(log), `"Package":"fixture/package"`) || !strings.HasSuffix(string(log), "LANDING-CHECKED\t0\n") {
-		t.Fatalf("proof log: %q, %v", log, err)
+	if err != nil || !strings.Contains(string(log), `"Package":"fixture/package"`) {
+		t.Fatalf("missing package execution in proof output: %v", err)
+	}
+	bound, err := repoproof.ReadPlatformProof(result.Data.Log)
+	if err != nil || bound.Commit != head || bound.Route != "host" || bound.Verdict != "green" {
+		t.Fatalf("native proof of checkout: commit=%s verdict=%s error=%v", bound.Commit, bound.Verdict, err)
 	}
 }
 
@@ -156,7 +160,8 @@ func TestRepositoryBatchtestFailureReplaysAndStaysRed(t *testing.T) {
 			}
 			tools, binary := repositoryProofTools(t)
 			b.fail = func(command *exec.Cmd, _ string) (string, error) {
-				command.Env = append(command.Env, "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_BATCH_FAILURE="+failure)
+				// The replay worktree uses symbolic commits and contains no Git objects.
+				command.Env = append(command.Env, "LANDING_COMMIT=", "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_BATCH_FAILURE="+failure)
 				var output bytes.Buffer
 				stdout := command.Stdout
 				defer func() { command.Stdout = stdout }()
@@ -236,7 +241,7 @@ func TestRepositoryProofScriptKeepsFailureReportLast(t *testing.T) {
 	t.Parallel()
 	tools, binary := repositoryProofTools(t)
 	command := exec.Command("/bin/sh", repositoryProofScript(t))
-	command.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_TEST_RED=1", "LANDING_ONLY=")
+	command.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_TEST_RED=1", "LANDING_ONLY=", "LANDING_COMMIT=")
 	output, err := command.CombinedOutput()
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.HasSuffix(string(output), "LANDING-FAILED\tfixture/package\tTestBroken\nLANDING-CHECKED\t1\n") {
@@ -248,7 +253,7 @@ func TestRepositoryProofScriptHostModeNeedsNoLaneSettings(t *testing.T) {
 	t.Parallel()
 	tools, binary := repositoryProofTools(t)
 	command := exec.Command("/bin/sh", repositoryProofScript(t), "--host")
-	command.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_TEST_HOST=1", "LANDING_ONLY=")
+	command.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_TEST_HOST=1", "LANDING_ONLY=", "LANDING_COMMIT=")
 	output, err := command.CombinedOutput()
 	if err != nil || !strings.HasSuffix(string(output), "LANDING-CHECKED\t0\n") {
 		t.Fatalf("host script: output=%s error=%v", output, err)
@@ -311,7 +316,7 @@ func TestRepositoryProofProcess(t *testing.T) {
 }
 
 func repositoryProofRunners() repoproof.HostRunners {
-	return repoproof.HostRunners{Environment: func() (string, error) { return "fixture toolchain", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+	return repoproof.HostRunners{Environment: func() (string, error) { return `go version fixture; GOOS="linux"; GOARCH="amd64"`, nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 		result := proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/package", Shard: 1, Status: "ok"}}, Output: []byte(`{"Action":"pass","Package":"fixture/package"}` + "\n")}
 		if failure := os.Getenv("REPOSITORY_PROOF_BATCH_FAILURE"); failure != "" && len(request.BuildTags) > 0 {
 			const pkg = "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem"

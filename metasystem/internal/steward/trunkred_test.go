@@ -100,7 +100,8 @@ func healthTrunkRedEntry(id, machine string, opened time.Time) goal.TrunkRedEntr
 
 func TestPlatformIncidentNotifiesOnceWhileRoleStaysAlive(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
+	delivery := newNotifyFixture(t, notifyRead{command: "exit 1"}, notifyRead{command: "default"})
+	root := delivery.root
 	now := bedTime()
 	entry := healthTrunkRedEntry("platform:darwin/arm64:fast", "", now)
 	entry.Class, entry.Platform = "platform", "darwin/arm64"
@@ -125,13 +126,25 @@ func TestPlatformIncidentNotifiesOnceWhileRoleStaysAlive(t *testing.T) {
 		t.Fatalf("first notice: %+v %v", pending, err)
 	}
 	observe()
-	if err := MarkDelivered(root, pending[0].Nonce); err != nil {
-		t.Fatal(err)
+	if _, err := delivery.pending(); err == nil {
+		t.Fatal("failed delivery lost its retry")
+	}
+	observe()
+	if delivered, err := delivery.pending(); err != nil || delivered != 1 {
+		t.Fatalf("retry delivered %d notices: %v", delivered, err)
 	}
 	observe()
 	pending, err = PendingNotifications(root)
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("duplicate notice: %+v %v", pending, err)
+	}
+	owned := entry
+	owned.ID += "-owned"
+	owned.Owner.Machine = "mac-fixer"
+	entries = append(entries, owned)
+	observe()
+	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
+		t.Fatal("owned platform incident asked for a responder")
 	}
 	entry.ID += "-2"
 	entries = append(entries, entry)

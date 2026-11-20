@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,28 @@ func TestProofOutputReadLogRequiresARegularPath(t *testing.T) {
 			observed.readLog(test.path, test.offset)
 			if observed.environment != "" || observed.report.kind != "" || len(observed.ran) != 0 || len(observed.packages) != 0 {
 				t.Fatalf("unreadable log supplied observations: %+v", observed)
+			}
+		})
+	}
+}
+
+func TestTerminalPlatformSummaryPreservesTheLaneReport(t *testing.T) {
+	t.Parallel()
+	names := strings.Repeat("TestLong ", 4800) + "TestLast"
+	legacy := "LANDING-FAILED\tunit\t" + names + "\nLANDING-CHECKED\t1\n"
+	summary := "landing result " + `{"failed":{"unit":["` + strings.ReplaceAll(names, " ", `","`) + `"]}} ` + "\n"
+	for _, tc := range []struct{ name, suffix, kind string }{
+		{"complete", summary, "complete"}, {"later truncated protocol", summary + "LANDING-", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "proof.log")
+			if err := os.WriteFile(path, []byte(legacy+tc.suffix), 0600); err != nil {
+				t.Fatal(err)
+			}
+			output := proofOutput{output: io.Discard}
+			output.readLog(path, 0)
+			if output.report.kind != tc.kind || tc.kind == "complete" && (len(output.report.failed) != 1 || len(output.report.failed[0].Tests) != 4801) {
+				t.Fatalf("lane lost the proof footer: %s", output.report.kind)
 			}
 		})
 	}

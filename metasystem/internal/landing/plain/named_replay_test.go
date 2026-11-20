@@ -85,7 +85,8 @@ func TestReplayParsesRealRedAndUsesItsNamedSelection(t *testing.T) {
 		}
 		child := exec.Command(reporter, "--host")
 		child.Dir, child.Stdout, child.Stderr = cmd.Dir, cmd.Stdout, cmd.Stderr
-		child.Env = proofrun.TestingEnvironment(cmd.Env, map[string]string{"GOWORK": "off", "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off", "METASYSTEM_TESTING_WORKERS": "9"})
+		// The historical red is replayed against a generated module without Git objects.
+		child.Env = proofrun.TestingEnvironment(cmd.Env, map[string]string{"LANDING_COMMIT": "", "GOWORK": "off", "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off", "METASYSTEM_TESTING_WORKERS": "9"})
 		return child.Run()
 	}
 	result := classifyReplay(b.seams, b.install, b.checkout, "fixture", Running{Attempt: "named", Trunk: true, Commit: red.Commit}, red, Result{}, []replayTree{{Running: Running{Commit: "commit"}, Main: true}, {Running: Running{Commit: red.Commit}, Goal: red.BatchMembers[0]}})

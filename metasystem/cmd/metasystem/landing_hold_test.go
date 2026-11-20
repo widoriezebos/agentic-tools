@@ -221,6 +221,16 @@ func TestLandingStatusTrunkRedHoldsAndWake(t *testing.T) {
 			if held && !strings.Contains(result.Data.Queue[0].Reason, holdIncidentID) {
 				t.Fatalf("hold lacks incident: %s", text)
 			}
+			if name == "platform" {
+				code, words := b.run(t, b.root, "status")
+				if code != 0 || strings.Contains(oneSpaced(words), "waiting (held)") {
+					t.Fatalf("platform entry held the queue: %s", words)
+				}
+				requests, err := plain.PolicyRequests(b.install, b.owners.landing.plainProve)
+				if err != nil || len(requests) > 0 {
+					t.Fatalf("platform entry requested permission: %+v %v", requests, err)
+				}
+			}
 			if held {
 				code, words := b.run(t, b.root, "status")
 				if code != 0 || !strings.Contains(oneSpaced(words), "waiting (held)") || !strings.Contains(words, holdIncidentID) {

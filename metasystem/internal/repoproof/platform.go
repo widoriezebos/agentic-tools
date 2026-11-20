@@ -15,7 +15,8 @@ import (
 	"strings"
 )
 
-const summaryPrefix = "landing result "
+// SummaryPrefix starts the final machine-readable proof record.
+const SummaryPrefix = "landing result "
 const coveragePrefix = "landing passed "
 
 // ProofSummary binds the native reporter's final verdict to its checkout and selection.
@@ -105,7 +106,7 @@ func ReadPlatformProof(path string) (PlatformProof, error) {
 			return p, incomplete
 		}
 		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-		if summarySeen || checked >= 0 && !strings.HasPrefix(line, summaryPrefix) {
+		if summarySeen || checked >= 0 && !strings.HasPrefix(line, SummaryPrefix) {
 			return p, incomplete
 		}
 		switch {
@@ -138,8 +139,8 @@ func ReadPlatformProof(path string) (PlatformProof, error) {
 			if err != nil || checked != len(failed) {
 				return p, incomplete
 			}
-		case strings.HasPrefix(line, summaryPrefix):
-			if checked < 0 || json.Unmarshal([]byte(strings.TrimPrefix(line, summaryPrefix)), &p.ProofSummary) != nil {
+		case strings.HasPrefix(line, SummaryPrefix):
+			if checked < 0 || json.Unmarshal([]byte(strings.TrimPrefix(line, SummaryPrefix)), &p.ProofSummary) != nil {
 				return p, incomplete
 			}
 			summarySeen = true

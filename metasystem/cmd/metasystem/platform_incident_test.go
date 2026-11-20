@@ -110,6 +110,10 @@ func TestPlatformIncidentLifecycle(t *testing.T) {
 	log := platformFixtureLog(commit, "darwin/arm64", "host", "complete", "red", map[string][]string{"internal/unit": {"TestOne", "TestTwo"}, "build": {}}, nil)
 	write(log)
 	act(false, "incident", "file", path, "--platform", "linux/amd64")
+	partial := platformFixtureLog(commit, "darwin/arm64", "host", "complete", "red", map[string][]string{"build": {}}, nil)
+	write(partial)
+	act(true, "incident", "file", path)
+	write(log)
 	act(true, "incident", "file", path)
 	entries := platformEntries(t, b)
 	if len(entries) != 3 {
@@ -124,6 +128,9 @@ func TestPlatformIncidentLifecycle(t *testing.T) {
 		}
 		t.Fatalf("absent %s", id)
 		return goal.TrunkRedEntry{}
+	}
+	if len(find("platform:darwin/arm64:build").Sightings) != 2 {
+		t.Fatal("multi-unit filing lost the earlier sighting")
 	}
 	p := find(platformFixtureID)
 	s := p.Sightings[0]
@@ -185,6 +192,11 @@ func TestPlatformIncidentLifecycle(t *testing.T) {
 	helmMust(t, owners.clearLandingIncidents(b.root(), green))
 	if find(red.ID).Closed == nil || !reflect.DeepEqual(find(platformFixtureID), p) {
 		t.Fatal("Linux green crossed identities")
+	}
+	green.Scope, green.Ran = "scoped", []string{"internal/unit"}
+	helmMust(t, owners.clearLandingIncidents(b.root(), green))
+	if !reflect.DeepEqual(find(platformFixtureID), p) {
+		t.Fatal("scoped Linux green changed the platform incident")
 	}
 	repair := b.repo.accepted
 	parent := b.repo.commit(commit).parent

@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -357,18 +358,19 @@ func (d scopeDecision) writeRecord(install string, result Result, observed *proo
 // proofOutput passes every byte through while reading complete protocol lines.
 // Only the command's exit decides green; these lines describe what it ran.
 type proofOutput struct {
-	mu          sync.Mutex
-	output      io.Writer
-	pending     string
-	environment string
-	static      string
-	envSeen     bool
-	ran         []string
-	durations   map[string]int64
-	packages    []PackageTiming
-	outcomes    []testOutcome
-	events      map[string][]testOutcome
-	report      checkReport
+	mu                sync.Mutex
+	output            io.Writer
+	pending           string
+	finalSummaryBytes int64
+	environment       string
+	static            string
+	envSeen           bool
+	ran               []string
+	durations         map[string]int64
+	packages          []PackageTiming
+	outcomes          []testOutcome
+	events            map[string][]testOutcome
+	report            checkReport
 }
 
 // readLog observes only this command's bytes after the shell exits. The size
@@ -390,13 +392,25 @@ func (p *proofOutput) readLog(path string, offset int64) {
 	if _, err := log.Seek(offset, io.SeekStart); err != nil {
 		return
 	}
-	copied := &commandTail{output: io.Discard}
-	if _, err := io.Copy(io.MultiWriter(p, copied), io.LimitReader(log, info.Size()-offset)); err != nil {
+	if _, err := io.Copy(p, io.LimitReader(log, info.Size()-offset)); err != nil {
 		p.environment, p.pending = "", ""
 		p.ran, p.durations, p.packages = nil, nil, nil
 		return
 	}
-	p.report = readReport(copied.tail)
+	// The native summary follows the ordinary footer and can repeat a large
+	// failure list. Preserve the lane's full 64 KiB allowance for its footer.
+	end := info.Size()
+	if p.pending == "" {
+		end -= p.finalSummaryBytes
+	}
+	size := min(end-offset, int64(64<<10))
+	if size <= 0 {
+		return
+	}
+	tail := make([]byte, size)
+	if _, err := log.ReadAt(tail, end-size); err == nil {
+		p.report = readReport(tail)
+	}
 }
 
 func (p *proofOutput) Write(data []byte) (int, error) {
@@ -408,6 +422,10 @@ func (p *proofOutput) Write(data []byte) (int, error) {
 		line, rest, found := strings.Cut(p.pending, "\n")
 		if !found {
 			break
+		}
+		p.finalSummaryBytes = 0
+		if strings.HasPrefix(line, repoproof.SummaryPrefix) {
+			p.finalSummaryBytes = int64(len(line) + 1)
 		}
 		p.line(strings.TrimSuffix(line, "\r"))
 		p.pending = rest

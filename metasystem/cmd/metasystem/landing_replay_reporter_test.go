@@ -188,7 +188,8 @@ func newOneGoalReplayBed(t *testing.T) *oneGoalReplayBed {
 		helmMust(t, err)
 		child := exec.Command(commandTestExecutable(t), "-test.run", "^TestLandingReplayReporterProcess$", "-test.timeout=30m")
 		child.Dir, child.Stdout, child.Stderr = cmd.Dir, cmd.Stdout, cmd.Stderr
-		child.Env = append(cmd.Env, "LANDING_REPLAY_REPORTER=1", "LANDING_REPLAY_FAILURES="+string(data))
+		// The generated replay tree uses symbolic revisions and has no Git checkout.
+		child.Env = append(cmd.Env, "LANDING_COMMIT=", "LANDING_REPLAY_REPORTER=1", "LANDING_REPLAY_FAILURES="+string(data))
 		err = child.Run()
 		if only == "" && b.move {
 			b.main = "main-moved"

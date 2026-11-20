@@ -2,7 +2,6 @@ package plain
 
 import (
 	"fmt"
-	"io"
 	"math"
 	"slices"
 	"strconv"
@@ -12,28 +11,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
-
-// commandTail retains only the command's last 64 KiB as it copies its output.
-// A report larger than the tail cannot authorize a repeat with a partial count.
-type commandTail struct {
-	output io.Writer
-	tail   []byte
-}
-
-func (w *commandTail) Write(p []byte) (int, error) {
-	n, err := w.output.Write(p)
-	const limit = 64 * 1024
-	p = p[:n]
-	if len(p) >= limit {
-		w.tail = append(w.tail[:0], p[len(p)-limit:]...)
-	} else {
-		if extra := len(w.tail) + len(p) - limit; extra > 0 {
-			w.tail = w.tail[extra:]
-		}
-		w.tail = append(w.tail, p...)
-	}
-	return n, err
-}
 
 type checkReport struct {
 	loadStart, loadEnd *hostload.Sample

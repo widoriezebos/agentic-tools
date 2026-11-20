@@ -472,7 +472,7 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		}
 		summary.Failed = failed
 		record, _ := json.Marshal(summary)
-		fmt.Fprintf(stdout, "%s%s\n", summaryPrefix, record)
+		fmt.Fprintf(stdout, "%s%s\n", SummaryPrefix, record)
 	}
 	if len(units) > 0 {
 		return 1
@@ -538,7 +538,7 @@ func runVM(stdout, stderr io.Writer, getenv func(string) string, command Command
 	}
 	lines := strings.Split(strings.TrimSpace(report.String()), "\n")
 	last := lines[len(lines)-1]
-	if strings.HasPrefix(last, summaryPrefix) && len(lines) > 1 {
+	if strings.HasPrefix(last, SummaryPrefix) && len(lines) > 1 {
 		last = lines[len(lines)-2]
 	}
 	if last == "LANDING-NOT-RUN\tenvironment" {
