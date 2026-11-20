@@ -48,11 +48,12 @@ func TestLocalSettingPublication(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := newHelmBed(t, 20, false)
-			path := filepath.Join(b.inst, "metasystem.conf.local")
+			inst := realpathOf(t, b.inst)
+			path := filepath.Join(inst, "metasystem.conf.local")
 			if !tc.first {
 				helmMust(t, os.WriteFile(path, []byte(key+"=old\n"), 0600))
 			}
-			f := settingBarriers{path: b.inst, nth: tc.nth}
+			f := settingBarriers{path: inst, nth: tc.nth}
 			b.owners.syncDir = f.sync
 			code, result := runSettingsSet(t, b.root, b.owners, key, "new")
 			v, found, err := config.ConfLookup(path, key)
@@ -63,7 +64,7 @@ func TestLocalSettingPublication(t *testing.T) {
 				}
 				return
 			}
-			if code != 0 || !found || v != "new" || !slices.Equal(f.dirs, []string{b.inst, b.inst}) {
+			if code != 0 || !found || v != "new" || !slices.Equal(f.dirs, []string{inst, inst}) {
 				t.Fatalf("set or installation barriers failed: %d %v", code, f.dirs)
 			}
 			data := resultData(t, result)
