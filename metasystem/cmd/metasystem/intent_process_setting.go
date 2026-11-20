@@ -54,14 +54,7 @@ func (inv *intentInvocation) runProcessSetting(key, value string) int {
 	if applied.Status == "superseded" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the process act was superseded; the setting was preserved", Data: applied, next: remedy, nextReason: "run this at your enrolled terminal to replace the current value"})
 	}
-	if applied.Status == "unchanged" {
-		suffix := "; nothing was changed"
-		if strings.Contains(applied.SettingAuthor, "reaffirmed by ") {
-			suffix = "; " + applied.SettingAuthor
-		}
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: []intentTarget{{Kind: "setting", ID: key}}, Summary: key + " already holds that value in " + params.ConfPath + ".local" + suffix, Data: map[string]any{"key": key, "value": value, "file": params.ConfPath + ".local"}, view: settingSetView(key + " already holds " + value + " in " + inv.shownPath(params.ConfPath+".local") + suffix)})
-	}
-	if applied.Status != "applied" && applied.Status != "unconfirmed" {
+	if applied.Status != "applied" && applied.Status != "unchanged" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the setting awaits a person's exact act; its value was preserved", Data: applied, next: append(remedy, "--act", applied.ID), nextReason: "run this at your enrolled terminal to apply this proposal"})
 	}
 	summary := key + " is set to " + value
@@ -71,11 +64,18 @@ func (inv *intentInvocation) runProcessSetting(key, value string) int {
 	if applied.SettingAuthor == "author unknown" || strings.Contains(applied.SettingAuthor, "reaffirmed by ") {
 		summary += "; " + applied.SettingAuthor
 	}
-	if applied.Status == "unconfirmed" {
-		if applied.ID != "" {
+	if applied.Durable != nil && !*applied.Durable {
+		if applied.ID != "" && applied.Undo == "" {
 			remedy = append(remedy, "--act", applied.ID)
 		}
 		return inv.render(intentResult{Outcome: intentPartial, published: true, Summary: summary + "; survival after a crash is not confirmed", Data: applied, next: remedy, nextReason: "repeat this setting at your enrolled terminal"})
+	}
+	if applied.Status == "unchanged" {
+		suffix := "; nothing was changed"
+		if strings.Contains(applied.SettingAuthor, "reaffirmed by ") {
+			suffix = "; " + applied.SettingAuthor
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: []intentTarget{{Kind: "setting", ID: key}}, Summary: key + " already holds that value in " + params.ConfPath + ".local" + suffix, Data: map[string]any{"key": key, "value": value, "file": params.ConfPath + ".local"}, view: settingSetView(key + " already holds " + value + " in " + inv.shownPath(params.ConfPath+".local") + suffix)})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, Data: applied})
 }

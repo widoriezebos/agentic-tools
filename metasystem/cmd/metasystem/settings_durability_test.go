@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 )
 
 // Fail one actual directory barrier, leaving file sync and rename untouched.
@@ -275,7 +277,8 @@ func TestRetainedProcessSettingPublication(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, local := processSettingBed(t)
 			_, r, _ := b.run(t, b.seat, "set", key, value)
-			id := processAct(t, r).ID
+			proposal := processAct(t, r)
+			id := proposal.ID
 			b.owners.prove = enrolledPersonProver(t, b.seat, b.now)
 			common := filepath.Join(b.seat, ".git")
 			f := settingBarriers{path: map[string]string{"value": filepath.Dir(local), "common": common, "policy": filepath.Join(common, "metasystem", "policy")}[tc.where], nth: tc.nth}
@@ -283,15 +286,25 @@ func TestRetainedProcessSettingPublication(t *testing.T) {
 			c, r, _ := b.run(t, b.seat, "set", key, value, "--act", id)
 			v, ok, err := config.ConfLookup(local, key)
 			helmMust(t, err)
-			if c != 0 || !ok || v != value || !strings.Contains(r.Summary, "survival") || resultData(t, r)["durable"] != false || processAct(t, r).Status == "applied" {
-				t.Fatalf("act reported an unconfirmed change incorrectly: %d %s", c, r.Summary)
+			if c != 0 || !ok || v != value || !strings.Contains(r.Summary, "survival") || resultData(t, r)["durable"] != false {
+				t.Fatalf("publication warning missing or value lost: %d %s", c, r.Summary)
+			}
+			applied := processAct(t, r)
+			if applied.Status != "applied" || !applied.AppliedAt.Equal(b.now) || applied.AppliedProof.TerminalGeneration == 0 {
+				t.Errorf("published act has status %q, time %v, terminal generation %d", applied.Status, applied.AppliedAt, applied.AppliedProof.TerminalGeneration)
+			}
+			q, err := channel.ReadQuestion(b.seat, proposal.Question)
+			helmMust(t, err)
+			if q.ProcessAct != id || q.State != "closed" {
+				t.Errorf("published act's question is %q", q.State)
 			}
 			b.now = b.now.Add(time.Hour)
 			_, err = humanauthority.Enroll(b.seat, 20, person(), "Noor", b.now)
 			helmMust(t, err)
 			c, r, _ = b.run(t, b.seat, "set", key, value, "--act", id)
-			if c != 0 || processAct(t, r).Status != "applied" || processAct(t, r).AppliedAt.IsZero() {
-				t.Fatal("retained act did not complete")
+			retry := processAct(t, r)
+			if c != 0 || retry.Status != "applied" || !retry.AppliedAt.Equal(applied.AppliedAt) || resultData(t, r)["durable"] != true {
+				t.Fatal("exact repeat did not confirm the original publication")
 			}
 			var record config.PolicyRecord
 			helmMust(t, json.Unmarshal(policyBytes(t, b.seat, key), &record))
@@ -346,8 +359,9 @@ func TestProcessSettingRepeatWithNoActID(t *testing.T) {
 	f := settingBarriers{path: filepath.Join(b.seat, ".git"), nth: 1}
 	b.owners.syncDir = f.sync
 	c, r, _ := b.run(t, b.seat, "set", key, "danger-full-access")
-	if c != 0 || processAct(t, r).Status != "unconfirmed" || r.Next == nil || !slices.Contains(r.Next.Argv, "--act") {
-		t.Fatal("missing remedy for the retained act")
+	first := processAct(t, r)
+	if c != 0 || first.ID == "" || !strings.Contains(r.Summary, "survival after a crash is not confirmed") || resultData(t, r)["durable"] != false || r.Next == nil || !slices.Contains(r.Next.Argv, "--act") {
+		t.Fatal("missing publication warning or exact retry command")
 	}
 	b.now = b.now.Add(time.Hour)
 	_, err := humanauthority.Enroll(b.seat, 20, person(), "Noor", b.now)
@@ -356,10 +370,42 @@ func TestProcessSettingRepeatWithNoActID(t *testing.T) {
 	if c != 0 || r.Outcome != intentUnchanged || !strings.Contains(r.Summary, "reaffirmed by Noor") {
 		t.Fatal("direct repeat lost its reaffirmation")
 	}
+	// The ordinary repeat also reports a fresh failure to confirm the same bytes.
+	f.nth = 1
+	c, r, _ = b.run(t, b.seat, "set", key, "danger-full-access")
+	if c != 0 || processAct(t, r).Status != "unchanged" || resultData(t, r)["durable"] != false || !strings.Contains(r.Summary, "survival after a crash is not confirmed") {
+		t.Fatal("ordinary repeat must report its own durability warning")
+	}
+	acts, unknown, err := processchange.ReadActs(b.seat, "")
+	helmMust(t, err)
+	if len(unknown) != 0 || len(acts) != 1 || acts[0].ID != first.ID || acts[0].Status != "applied" || !acts[0].AppliedAt.Equal(b.now.Add(-time.Hour)) {
+		t.Fatal("ordinary repeat must preserve the single original applied act")
+	}
 	v, _, err := config.ConfLookup(local, key)
 	helmMust(t, err)
 	if v != "danger-full-access" {
 		t.Fatal("direct repeat lost the value")
+	}
+}
+
+func TestProcessSettingUndoAfterDurabilityWarning(t *testing.T) {
+	t.Parallel()
+	b, local := processSettingBed(t)
+	b.owners.prove = enrolledPersonProver(t, b.seat, b.now)
+	const key = "launch.codex.sandbox"
+	f := settingBarriers{path: filepath.Dir(local), nth: 2}
+	b.owners.syncDir = f.sync
+	c, r, _ := b.run(t, b.seat, "set", key, "danger-full-access")
+	original := processAct(t, r)
+	if c != 0 || resultData(t, r)["durable"] != false || !strings.Contains(r.Summary, "survival after a crash is not confirmed") {
+		t.Fatal("published act lost its warning")
+	}
+	c, r, _ = b.run(t, b.seat, "set", key, "workspace-write", "--undo", original.ID)
+	undo := processAct(t, r)
+	v, ok, err := config.ConfLookup(local, key)
+	helmMust(t, err)
+	if c != 0 || undo.Status != "applied" || undo.Undo != original.ID || !ok || v != "workspace-write" {
+		t.Fatalf("undo after the warning: exit %d, %s", c, r.Summary)
 	}
 }
 

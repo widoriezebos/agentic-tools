@@ -152,9 +152,6 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 		if err := s.publish(&act); err != nil {
 			return err
 		}
-		if !*act.Durable {
-			return save(roots.Installation(s.Root), path, act)
-		}
 		act.Status, act.AppliedProof = "applied", s.ProcessAct.Proof
 		if local, err := os.ReadFile(s.Conf + ".local"); err == nil {
 			act.SettingsSHA256 = fmt.Sprintf("%x", sha256.Sum256(local))
@@ -173,9 +170,6 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 func (s Setting) publish(act *ProcessAct) error {
 	attribution, _, durable, err := validate.SetAttributed(act.Checkout, s.Conf, validate.ConfSetting{Key: act.Key, Value: act.After, Unset: act.Unset}, s.PersonName, s.Now, s.SyncDir)
 	act.Durable, act.SettingAuthor = &durable, attribution.SetBy
-	if !durable && err == nil {
-		act.Status = "unconfirmed"
-	}
 	return err
 }
 
