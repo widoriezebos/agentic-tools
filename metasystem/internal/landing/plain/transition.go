@@ -90,6 +90,11 @@ func transitionWrite(install, kind, by string, now time.Time, to string, raw fun
 		}
 		next := ShadowOf(after.Status, after.Status.Raw)
 		diff := state.Diff(old, next)
+		// Recording a stop before its question opens changes the history while
+		// leaving the lane running. Preserve that writer event as well.
+		if kind == "stop" && !reflect.DeepEqual(before.Status.StopHistory, after.Status.StopHistory) {
+			diff = append(diff, "stops.jsonl")
+		}
 		if len(diff) == 0 && !retirement {
 			return nil
 		}
