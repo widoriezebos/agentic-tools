@@ -26,7 +26,7 @@ var publicPairs = []string{
 	"test run", "test impact", "test groups", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"agent ask", "agent reply", "agent inbox",
-	"incident list", "incident claim", "incident close",
+	"incident list", "incident claim", "incident close", "incident file", "incident prove-closed",
 	"status", "channel status",
 	"helm take", "helm return", "helm status",
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",

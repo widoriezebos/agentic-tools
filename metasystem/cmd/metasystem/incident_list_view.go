@@ -12,7 +12,7 @@ import (
 // incidentListView is incident list's page: how many tests fail on main
 // and whether someone fixes each, then the tracked flakes and hangs apart,
 // since they never hold a landing.
-func incidentListView(listed, tracked []goal.TrunkRedEntry, all bool) func(*textui.Page) {
+func incidentListView(listed, tracked, platform []goal.TrunkRedEntry, all bool) func(*textui.Page) {
 	return func(page *textui.Page) {
 		env := page.Env()
 		unowned := 0
@@ -62,6 +62,12 @@ func incidentListView(listed, tracked []goal.TrunkRedEntry, all bool) func(*text
 				table.Row(textui.Marked(state, entry.ID), textui.Plain(entry.Group), textui.Plain(words+incidentEvidence(entry)))
 			}
 		}
+		if len(platform) > 0 {
+			table := page.Section("Platform incidents", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			for _, entry := range platform {
+				table.Row(textui.Plain(entry.ID), textui.Plain(platformIncidentDetail(entry)))
+			}
+		}
 		if len(tracked) > 0 {
 			table := page.Section("Tracked", "they never hold a landing").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true, Wrap: true})
 			for _, entry := range tracked {
@@ -95,6 +101,24 @@ func incidentEvidence(entry goal.TrunkRedEntry) string {
 	}
 	if until, err := time.Parse(time.RFC3339, entry.AllowanceUntil); err == nil {
 		words += "; allowance until " + until.Local().Format("2006-01-02 15:04 MST")
+	}
+	return words
+}
+
+func platformIncidentDetail(e goal.TrunkRedEntry) string {
+	s := e.Sightings[len(e.Sightings)-1]
+	words := e.Platform + " · " + e.TestUnit + " " + e.TestName + " · failed at " + s.BaseCommit
+	if e.Owner.Machine == "" {
+		words += " · unowned"
+	} else {
+		words += " · " + e.Owner.Machine + " fixes it with goal " + e.FixGoal
+	}
+	if c := e.Closed; c != nil {
+		if c.How == "green" {
+			words += " · closed by " + c.Platform + " proof at " + c.BaseCommit
+		} else {
+			words += " · closed by " + c.By + " · " + c.Why
+		}
 	}
 	return words
 }

@@ -771,3 +771,86 @@ func TestTrunkRedConcurrentFindersPublishOneIncident(t *testing.T) {
 		t.Fatalf("concurrent findings duplicated the incident: %+v %v (parent=%s; base=%s)", p.Tree, err, parent, base)
 	}
 }
+
+func TestPlatformIncidentRegisterRejectsMixedIdentityAndMissingEvidence(t *testing.T) {
+	t.Parallel()
+	for _, mutate := range []func(*TrunkRedEntry){
+		func(e *TrunkRedEntry) { e.Platform = "" }, func(e *TrunkRedEntry) { e.ID = "red:fast"; e.Identity = e.ID }, func(e *TrunkRedEntry) { e.Class = "" }, func(e *TrunkRedEntry) { e.Sightings[0].LogDigest = "" }, func(e *TrunkRedEntry) { e.Sightings[0].BaseCommit = "" }, func(e *TrunkRedEntry) { e.Sightings[0].LogPath = "" }, func(e *TrunkRedEntry) { e.Holds = []string{"batch"} }, func(e *TrunkRedEntry) { e.Platform = "linux/amd64" },
+	} {
+		id := "platform:darwin/arm64:fast"
+		entry := testTrunkRedEntry(id, id, "2026-11-20T12:00:00Z")
+		entry.Class, entry.Platform, entry.TestUnit, entry.Holds = "platform", "darwin/arm64", "fast", nil
+		entry.Sightings[0].BaseCommit, entry.Sightings[0].LogPath, entry.Sightings[0].LogDigest = strings.Repeat("a", 40), "proof.log", strings.Repeat("b", 64)
+		if _, p := ParseTrunkRed(RenderTrunkRed([]TrunkRedEntry{entry})); len(p) != 0 {
+			t.Fatal(p)
+		}
+		mutate(&entry)
+		if _, p := ParseTrunkRed(RenderTrunkRed([]TrunkRedEntry{entry})); len(p) == 0 {
+			t.Fatalf("invalid platform entry accepted: %+v", entry)
+		}
+	}
+}
+
+func TestPlatformIncidentJournalRecoveryAndIndependentConcurrentRed(t *testing.T) {
+	t.Parallel()
+	endpoint := localTrunkRedEndpoint(t)
+	client := endpoint.Repository.(*fakeGoalRepository)
+	base := client.store.canonical
+	client.store.commits[base].files["metasystem.conf"] = []byte("landing.deciding-platforms=linux/amd64\n")
+	const id = "platform:darwin/arm64:fast"
+	r := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S1", "detector")
+	args := TrunkRedRecordArgs{Class: TrunkRedClassPlatform, Platform: "darwin/arm64", Attempt: "nightly", BaseCommit: base, SeenAt: r.stamp(), Groups: []TrunkRedRecordGroup{{Identity: id, Group: "fast", Status: "failed", LogPath: "red.log", LogDigest: strings.Repeat("a", 64)}}}
+	request := trunkRedRecordRequest(r, args)
+	createDeadTrunkRedEntry(t, endpoint.Root, request)
+	peer := localTrunkRedPeer(t, endpoint)
+	start := make(chan struct{})
+	finished := make(chan error, 2)
+	go func() { <-start; _, err := Recover(endpoint); finished <- err }()
+	go func() {
+		<-start
+		r := trunkRedVerbReqFor(peer, "01J5X0000000000000000000S2", "linux")
+		res, err := RecordTrunkRed(r, trunkRedRecordFixture("red:fast", "linux", "run", base, r.stamp()))
+		if err == nil && res.Outcome != OutcomeConfirmed {
+			err = fmt.Errorf("red: %s", res.Outcome)
+		}
+		finished <- err
+	}()
+	close(start)
+	for range 2 {
+		if err := <-finished; err != nil {
+			t.Fatal(err)
+		}
+	}
+	tip := client.store.canonical
+	p, err := trunkRedProjectAt(endpoint, tip)
+	if err != nil || len(p.Tree.TrunkRed) != 2 || trunkRedByID(p.Tree.TrunkRed, id) == nil || trunkRedByID(p.Tree.TrunkRed, "red:fast") == nil {
+		t.Fatalf("both incidents must survive: %v %+v", err, p.Tree)
+	}
+	client.accepted = tip
+	platform := *trunkRedByID(p.Tree.TrunkRed, id)
+	for i := range 3 {
+		pass := trunkRedVerbReqFor(endpoint, fmt.Sprintf("01J5X0000000000000000000P%d", i), "linux")
+		res, err := ClearTrunkRed(pass, TrunkRedClearArgs{Entry: id, ExpectedEntry: platform, Attempt: fmt.Sprint(i), Executed: true, BaseCommit: tip, FixCommit: tip})
+		if err == nil && res.Outcome == OutcomeConfirmed {
+			t.Fatal("flake pass accepted for platform")
+		}
+	}
+	closer := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S3", "detector")
+	clear := platformClearRequest(closer, platformClear{Entry: id, Unit: "fast", Platform: "darwin/arm64", Commit: tip, LogPath: "green.log", LogDigest: strings.Repeat("b", 64), At: closer.stamp()})
+	createDeadTrunkRedEntry(t, endpoint.Root, clear)
+	if _, err := Recover(endpoint); err != nil {
+		t.Fatal(err)
+	}
+	after := acceptedTipForEndpoint(t, endpoint)
+	p, err = trunkRedProjectAt(endpoint, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := trunkRedByID(p.Tree.TrunkRed, id)
+	if e.Closed == nil || e.Closed.Opid != clear.Opid || e.FixProof != nil || len(e.Sightings) != 1 || trunkRedByID(p.Tree.TrunkRed, "red:fast").Closed != nil {
+		t.Fatalf("recovered wrong state: %+v", e)
+	}
+	if _, err := Recover(endpoint); err != nil || acceptedTipForEndpoint(t, endpoint) != after {
+		t.Fatalf("recovery repeated a publication: %v", err)
+	}
+}

@@ -68,7 +68,7 @@ func (listing goalListing) view(page *textui.Page) {
 		banners = append(banners, textui.Attention{State: textui.Alert, Text: strings.Join(strings.Fields(notice), " ")})
 	}
 	for _, entry := range listing.trunkRed {
-		if entry.Closed != nil {
+		if entry.Closed != nil || entry.Class == goal.TrunkRedClassPlatform {
 			continue
 		}
 		owner := entry.Owner.Machine

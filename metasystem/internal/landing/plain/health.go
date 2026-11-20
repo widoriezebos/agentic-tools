@@ -142,6 +142,7 @@ type QuestionHealth struct {
 	WaitsFor string  `json:"waits_for"`
 }
 type IncidentHealth struct {
+	Platform    string `json:"platform,omitempty"`
 	ID          string `json:"id"`
 	Commit      string `json:"commit"`
 	Test        string `json:"test"`
@@ -486,7 +487,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		if incident.Closed != nil || incident.EntryClass() == goal.TrunkRedClassFlake {
 			continue
 		}
-		fact := IncidentHealth{ID: incident.ID, Test: strings.TrimSpace(incident.TestUnit + " " + incident.TestName), Class: incident.EntryClass(), Repeat: "none"}
+		fact := IncidentHealth{ID: incident.ID, Platform: incident.Platform, Test: strings.TrimSpace(incident.TestUnit + " " + incident.TestName), Class: incident.EntryClass(), Repeat: "none"}
 		if len(incident.Sightings) > 0 {
 			sight := incident.Sightings[len(incident.Sightings)-1]
 			fact.Commit = sight.BaseCommit
@@ -500,7 +501,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			}
 		}
 		fact.MainMoved = fact.Commit != "" && main != fact.Commit
-		fact.Unproven = fact.MainMoved && !proven
+		fact.Unproven = fact.MainMoved && !proven && incident.Class != goal.TrunkRedClassPlatform
 		h.Incidents = append(h.Incidents, fact)
 	}
 	if batch != nil {
@@ -859,6 +860,10 @@ func (h Health) Text() string {
 		fmt.Fprintln(&out, "incidents:")
 	}
 	for _, i := range h.Incidents {
+		if i.Platform != "" {
+			fmt.Fprintf(&out, "  %s: tracked on %s, commit %s, %s\n", i.ID, i.Platform, i.Commit, i.Test)
+			continue
+		}
 		fmt.Fprintf(&out, "  %s: commit %s, %s, class %s, attribution %v, repeat %s, main moved %t, unproven %t\n", i.ID, i.Commit, i.Test, i.Class, i.Attribution, i.Repeat, i.MainMoved, i.Unproven)
 	}
 	known := "unknown"

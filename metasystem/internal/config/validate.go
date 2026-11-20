@@ -100,7 +100,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		add("%v", SettingKeyProblem("landing.prove.command"))
 	}
 	for _, setting := range compiledSettings {
-		if !setting.CommittedOnly || setting.Default != "" {
+		if !setting.CommittedOnly || setting.Default != "" || setting.EmptyDefault {
 			continue
 		}
 		if _, present := values[setting.Key]; !present {

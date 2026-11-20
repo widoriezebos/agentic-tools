@@ -685,3 +685,34 @@ func TestLandingHealthListsInitializingRegistrationsWithoutRemoving(t *testing.T
 		t.Fatal(h.Text())
 	}
 }
+
+func TestPlatformIncidentKeepsLaneStandingAndHealth(t *testing.T) {
+	t.Parallel()
+	b := newStatusBed(t)
+	s := healthSeams(bedNow)
+	p := goal.TrunkRedEntry{ID: "platform:darwin/arm64:unit:TestRed", Identity: "platform:darwin/arm64:unit:TestRed", Class: goal.TrunkRedClassPlatform, Platform: "darwin/arm64", Group: "unit", TestUnit: "unit", TestName: "TestRed", FixGoal: "g", Sightings: []goal.TrunkRedSighting{{Attempt: "night", BaseCommit: "old"}}}
+	entries := []goal.TrunkRedEntry{p}
+	s.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return entries, nil }
+	h := readHealthBed(t, b, s).Health
+	if len(h.Incidents) != 1 || h.Incidents[0].Platform != p.Platform || healthRow(h, "unproven-incidents") != nil || !strings.Contains(h.Text(), "tracked on "+p.Platform) {
+		t.Fatalf("platform health: %+v", h.Incidents)
+	}
+	seams := ProveSeams{Incidents: s.Incidents, Git: func(string, ...string) (string, error) { return "", nil }}
+	red := Result{Attempt: "lane", Commit: "old", Tree: "tree", Trunk: true, At: bedNow.Format(time.RFC3339), Result: Red, Cause: &Cause{Kind: "main"}, Failed: []FailedUnit{{Unit: "unit", Tests: []string{"TestRed"}}}}
+	if ids := red.incidentIDs(entries); len(ids) != 0 {
+		t.Fatalf("platform in trunk status: %v", ids)
+	}
+	if incidentFix(Entry{Goal: p.FixGoal}, entries) {
+		t.Fatal("platform repair restarted batch")
+	}
+	if moved, err := movedIncidentMain(b.install, b.checkout, "main", entries, seams); err != nil || moved {
+		t.Fatalf("trunk recovery: %t %v", moved, err)
+	}
+	if standing, why := selectStanding(b.install, b.checkout, Running{Commit: "main"}, []Result{red}, seams); standing != nil || why != "" {
+		t.Fatalf("standing: %+v %s", standing, why)
+	}
+	red.Outcomes = []testOutcome{{Unit: "unit", Test: "TestRed", Status: "pass"}}
+	if kept := seams.retainOutcomes(b.install, b.checkout, red); len(kept.Outcomes) > 0 {
+		t.Fatal("retained trunk evidence for platform")
+	}
+}

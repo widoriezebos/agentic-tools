@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func TestTrunkRedRoleVerdicts(t *testing.T) {
@@ -95,4 +96,48 @@ func healthTrunkRedEntry(id, machine string, opened time.Time) goal.TrunkRedEntr
 	return goal.TrunkRedEntry{ID: id, Identity: id, Group: "fast", Status: "failed", Failures: []goal.TrunkRedFailure{},
 		Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", Batch: "batch-1", BaseCommit: "base-1", SeenAt: stamp,
 			Opid: goal.Opid("01J5X0000000000000000000W1", "bed-m1", "lineage")}}, Owner: owner, Holds: []string{"batch-1"}, Opened: stamp}
+}
+
+func TestPlatformIncidentNotifiesOnceWhileRoleStaysAlive(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := bedTime()
+	entry := healthTrunkRedEntry("platform:darwin/arm64:fast", "", now)
+	entry.Class, entry.Platform = "platform", "darwin/arm64"
+	entries := []goal.TrunkRedEntry{entry}
+	observe := func() {
+		t.Helper()
+		now = now.Add(time.Minute)
+		_, err := observeHealthWithEvaluation(root, now, nil, func(string, string, time.Time, identity.Prober, bool) ([]RoleVerdict, SpendObservation) {
+			role := checkTrunkRedFromProjection(root, now, goal.Projection{Tree: &goal.TreeGoals{TrunkRed: entries}}, nil)
+			if role.Status != HealthAlive || !strings.Contains(role.Reason, "platform") {
+				t.Fatalf("role: %+v", role)
+			}
+			return []RoleVerdict{role}, SpendObservation{}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe()
+	pending, err := PendingNotifications(root)
+	if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, entry.ID) {
+		t.Fatalf("first notice: %+v %v", pending, err)
+	}
+	observe()
+	if err := MarkDelivered(root, pending[0].Nonce); err != nil {
+		t.Fatal(err)
+	}
+	observe()
+	pending, err = PendingNotifications(root)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("duplicate notice: %+v %v", pending, err)
+	}
+	entry.ID += "-2"
+	entries = append(entries, entry)
+	observe()
+	pending, err = PendingNotifications(root)
+	if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, entry.ID) {
+		t.Fatalf("second incident: %+v %v", pending, err)
+	}
 }

@@ -139,9 +139,29 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	if hooks.Environment == nil {
 		hooks.Environment = func() (string, error) { return proofrun.LandingEnvironment(ctx, root, environment) }
 	}
-	err = proofrun.WriteLandingEnvironment(stdout, hooks.Environment)
+	var fingerprint string
+	err = proofrun.WriteLandingEnvironment(stdout, func() (string, error) {
+		var err error
+		fingerprint, err = hooks.Environment()
+		return fingerprint, err
+	})
 	if err != nil {
 		return notRun(err)
+	}
+	summary, err := hostSummary(root, fingerprint, getenv, command)
+	if err != nil {
+		return notRun(err)
+	}
+	passed := map[string][]string{}
+	pass := func(unit, name string) {
+		if summary == nil {
+			return
+		}
+		if name != "" {
+			passed[unit] = append(passed[unit], name)
+		} else if _, ok := passed[unit]; !ok {
+			passed[unit] = []string{}
+		}
 	}
 	contract, err := testpolicy.Load(contractPath)
 	if err != nil {
@@ -203,8 +223,19 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			status := group.Status
 			if group.NotRun {
 				status = "blocked"
+				if summary != nil && summary.Scope == "complete" {
+					summary.Scope = "incomplete"
+				}
 			}
 			fmt.Fprintf(stdout, "landing group %s %s %d\n", group.ID, status, group.DurationMS)
+			if group.Status == "green" && !group.NotRun {
+				pass(group.ID, "")
+				for _, test := range group.Observed {
+					if test.Status == "passed" {
+						pass(packageUnit(test.Classname), test.Name)
+					}
+				}
+			}
 			if group.Status != "green" {
 				named := false
 				for _, test := range group.Observed {
@@ -273,6 +304,9 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			if slices.Contains(tags, "batchtest") {
 				unit = "go-batchtest"
 			}
+			if execution.Status == "ok" {
+				pass(unit, "")
+			}
 			if execution.Status != "ok" {
 				if _, ok := failed[unit]; !ok {
 					failed[unit] = nil
@@ -286,6 +320,13 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				if only != "" && len(tests) > 0 && index == 1 && identity.Classname == "" && identity.Status == "missing" && slices.Contains(tests, identity.Name) {
 					fmt.Fprintf(stdout, "landing dropped %s: absent on replay tree\n", identity.Name)
 					continue
+				}
+				if index == 0 && identity.Status == "passed" {
+					unit := packageUnit(identity.Classname)
+					if batch {
+						unit = "go-batchtest"
+					}
+					pass(unit, identity.Name)
 				}
 				if index != 2 && (identity.Status == "passed" || identity.Status == "skipped") {
 					continue
@@ -395,6 +436,8 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				if leg.Status == "failed" || *leg.NativeExitStatus != 0 {
 					failed[leg.ID] = nil
 					hasFailure = true
+				} else {
+					pass(leg.ID, "")
 				}
 			}
 			if !found || (err != nil && !hasFailure) {
@@ -407,12 +450,30 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		units = append(units, unit)
 	}
 	sort.Strings(units)
+	if summary != nil {
+		for unit, names := range passed {
+			sort.Strings(names)
+			passed[unit] = slices.Compact(names)
+		}
+		coverage, _ := json.Marshal(passed)
+		fmt.Fprintf(stdout, "%s%s\n", coveragePrefix, coverage)
+	}
 	fmt.Fprintf(stdout, "landing clock total %d\n", hooks.Now().Sub(started).Milliseconds())
 	for _, unit := range units {
 		sort.Strings(failed[unit])
-		fmt.Fprintf(stdout, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(slices.Compact(failed[unit]), " "))
+		failed[unit] = slices.Compact(failed[unit])
+		fmt.Fprintf(stdout, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(failed[unit], " "))
 	}
 	fmt.Fprintf(stdout, "LANDING-CHECKED\t%d\n", len(units))
+	if summary != nil {
+		summary.Verdict = "green"
+		if len(units) > 0 {
+			summary.Verdict = "red"
+		}
+		summary.Failed = failed
+		record, _ := json.Marshal(summary)
+		fmt.Fprintf(stdout, "%s%s\n", summaryPrefix, record)
+	}
 	if len(units) > 0 {
 		return 1
 	}
@@ -466,7 +527,7 @@ func runVM(stdout, stderr io.Writer, getenv func(string) string, command Command
 		" && git -C " + shellQuote(dir) + " checkout --force --detach " + shellQuote(commit) +
 		" && test -f " + shellQuote(dir+"/metasystem/proof/full.sh") +
 		"); then printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; fi; cd " + shellQuote(dir+"/metasystem") +
-		" || { printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; }; LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " LANDING_ONLY_TESTS=" + shellQuote(getenv("LANDING_ONLY_TESTS")) + " sh proof/full.sh --host"
+		" || { printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; }; LANDING_PROOF_ROUTE=vm LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " LANDING_ONLY_TESTS=" + shellQuote(getenv("LANDING_ONLY_TESTS")) + " sh proof/full.sh --host"
 	pipeline := "cat " + shellQuote(bundle) + " | limactl shell " + shellQuote(vm) + " -- bash -c " + shellQuote(remote) + `; statuses=("${PIPESTATUS[@]}"); if [ "${statuses[0]}" -ne 0 ]; then exit 2; fi; exit "${statuses[1]}"`
 	var report bytes.Buffer
 	err = command([]string{"bash", "-c", pipeline}, io.MultiWriter(stdout, &report), stderr)
@@ -477,6 +538,9 @@ func runVM(stdout, stderr io.Writer, getenv func(string) string, command Command
 	}
 	lines := strings.Split(strings.TrimSpace(report.String()), "\n")
 	last := lines[len(lines)-1]
+	if strings.HasPrefix(last, summaryPrefix) && len(lines) > 1 {
+		last = lines[len(lines)-2]
+	}
 	if last == "LANDING-NOT-RUN\tenvironment" {
 		return 1
 	}

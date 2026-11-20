@@ -24,10 +24,18 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	}
 
 	var open []goal.TrunkRedEntry
-	var unowned []string
+	var unowned, platformUnowned []string
+	platforms := 0
 	tracked := 0
 	for _, entry := range projection.Tree.TrunkRed {
 		if entry.Closed != nil {
+			continue
+		}
+		if entry.Class == goal.TrunkRedClassPlatform {
+			platforms++
+			if entry.Owner.Machine == "" {
+				platformUnowned = append(platformUnowned, entry.ID)
+			}
 			continue
 		}
 		if entry.EntryClass() != goal.TrunkRedClassTrunkRed {
@@ -43,14 +51,23 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	}
 	if len(unowned) > 0 {
 		verdict := roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "), "", RemedyFact{Cause: CauseTrunkRedUnowned, Incident: unowned[0]})
+		verdict.UnownedPlatformIncidents = platformUnowned
 		return verdict
 	}
 	defects := ""
 	if tracked > 0 {
 		defects = fmt.Sprintf("; %d flake or hang entr%s tracked separately (metasystem incident list)", tracked, map[bool]string{true: "y", false: "ies"}[tracked == 1])
 	}
+	if platforms > 0 {
+		defects += fmt.Sprintf("; %d platform incident(s) tracked (metasystem incident list)", platforms)
+	}
+	alive := func(reason string) RoleVerdict {
+		v := roleAlive(RoleTrunkRed, reason)
+		v.UnownedPlatformIncidents = platformUnowned
+		return v
+	}
 	if len(open) == 0 {
-		return roleAlive(RoleTrunkRed, "no open trunk red"+defects)
+		return alive("no open trunk red" + defects)
 	}
 	oldest, _ := time.Parse(time.RFC3339, open[0].Opened)
 	for _, entry := range open[1:] {
@@ -59,5 +76,5 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 			oldest = opened
 		}
 	}
-	return roleAlive(RoleTrunkRed, fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest))+defects)
+	return alive(fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest)) + defects)
 }

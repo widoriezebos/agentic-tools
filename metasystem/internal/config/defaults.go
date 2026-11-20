@@ -20,6 +20,8 @@ type Setting struct {
 	// CommittedOnly declares a repository value; Default may supply its absence.
 	// Flags, environment variables and local settings cannot replace it.
 	CommittedOnly bool
+	// EmptyDefault permits an omitted committed setting to resolve to the empty string.
+	EmptyDefault bool
 	// Default is the compiled value; empty when Computed names the owner
 	// that derives it.
 	Default string
@@ -69,6 +71,7 @@ var coreSettings = []Setting{
 	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},
 	{Key: "landing.agent-idle-minutes", Default: "10", Meaning: "minutes without a step after an empty batch before reporting an idle agent"},
 	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
+	{Key: DecidingPlatformsKey, CommittedOnly: true, EmptyDefault: true, Meaning: "space-separated goos/goarch pairs that decide landings; empty until every incident reader is upgraded"},
 	{Key: "landing.fix-rounds", Default: "1", Meaning: "fix rounds the lane allows per red batch proof attempt, independent of the goal budget"},
 	{Key: "landing.fix-minutes", Default: "120", Meaning: "minutes allowed for each lane fix job, independent of the goal budget"},
 	{Key: "landing.full-from-tier", Default: "3", Meaning: "the lowest batch member tier that requires a full proof"},
@@ -544,7 +547,7 @@ func SettingKeyProblem(key string) error {
 // runtime binding. It is for readers that hold no configuration context.
 func CompiledDefault(key string) (string, bool) {
 	setting, ok := compiledSetting(key)
-	if !ok || setting.Computed != "" || (setting.CommittedOnly && setting.Default == "") {
+	if !ok || setting.Computed != "" || (setting.CommittedOnly && setting.Default == "" && !setting.EmptyDefault) {
 		return "", false
 	}
 	return setting.Default, true
@@ -629,7 +632,7 @@ func runtimeSelected(runtimes, runtime string) bool {
 // given runtime selection. runtimes is resolved only for a runtime-bound key.
 func applicableDefault(key string, runtimes func() string) (string, bool) {
 	setting, ok := compiledSetting(key)
-	if !ok || setting.Computed != "" || (setting.CommittedOnly && setting.Default == "") {
+	if !ok || setting.Computed != "" || (setting.CommittedOnly && setting.Default == "" && !setting.EmptyDefault) {
 		return "", false
 	}
 	if setting.Runtime != "" && !runtimeSelected(runtimes(), setting.Runtime) {

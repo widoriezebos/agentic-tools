@@ -30,6 +30,8 @@ func init() {
 	registerIdempotency("question list", idemRead, "", nil)
 	registerIdempotency("question wait", idemRead, "", nil)
 
+	registerIdempotency("incident file", idemStateful, "the same log adds no sighting", func(t *testing.T) { witnessPlatformRepeat(t, false) })
+	registerIdempotency("incident prove-closed", idemStateful, "the same closing check keeps its original closure", func(t *testing.T) { witnessPlatformRepeat(t, true) })
 	registerIdempotency("incident list", idemRead, "", nil)
 	registerIdempotency("incident claim", idemStateful, "the same owner and fix goal already recorded publishes nothing; another owner or goal is a change", witnessIncidentClaim)
 	registerIdempotency("incident close", idemStateful, "a closed incident publishes nothing", witnessIncidentClose)

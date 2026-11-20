@@ -74,6 +74,9 @@ func SettingValueProblem(key, value string) error {
 	if PolicyScope(key) != "" {
 		return policyValueProblem(key, value)
 	}
+	if key == DecidingPlatformsKey {
+		return validateDecidingPlatforms(value)
+	}
 	if CommittedOnly(key) && (strings.TrimSpace(value) == "" || strings.ContainsAny(value, "\r\n")) {
 		return fmt.Errorf("%s must be a non-empty, one-line command in metasystem.conf", key)
 	}

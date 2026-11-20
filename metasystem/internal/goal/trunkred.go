@@ -33,6 +33,7 @@ const (
 	TrunkRedClassKnownFlake   = "known-flake"
 	TrunkRedClassHang         = "hang"
 	TrunkRedClassQuality      = "quality"
+	TrunkRedClassPlatform     = "platform"
 	flakeClosingPasses        = 3
 )
 
@@ -132,6 +133,10 @@ func (branch TrunkRedBranch) Validate() error {
 }
 
 type TrunkRedClosure struct {
+	LogPath   string `json:"logPath,omitempty"`
+	LogDigest string `json:"logDigest,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+
 	At         string `json:"at"`
 	Attempt    string `json:"attempt"`
 	BaseCommit string `json:"baseCommit"`
@@ -142,6 +147,8 @@ type TrunkRedClosure struct {
 }
 
 type TrunkRedEntry struct {
+	Platform string `json:"platform,omitempty"`
+
 	FixOpenedAt  string             `json:"fixOpenedAt,omitempty"`
 	TestUnit     string             `json:"testUnit,omitempty"`
 	TestName     string             `json:"testName,omitempty"`
@@ -350,8 +357,11 @@ func validateTrunkRedOwner(label string, owner TrunkRedOwner, addf func(string, 
 }
 
 func validateTrunkRedClass(label string, entry *TrunkRedEntry, addf func(string, ...any)) {
+	if err := validatePlatformEntry(entry); err != nil {
+		addf("%s: %v", label, err)
+	}
 	switch entry.Class {
-	case "", TrunkRedClassTrunkRed, TrunkRedClassFlake, TrunkRedClassPendingFlake, TrunkRedClassHang, TrunkRedClassQuality:
+	case "", TrunkRedClassTrunkRed, TrunkRedClassPlatform, TrunkRedClassFlake, TrunkRedClassPendingFlake, TrunkRedClassHang, TrunkRedClassQuality:
 		if entry.AllowanceUntil != "" {
 			addf("%s allowanceUntil belongs to a known flake only", label)
 		}
@@ -517,6 +527,8 @@ func cleanTrunkRedEntry(entry TrunkRedEntry) TrunkRedEntry {
 }
 
 type TrunkRedRecordArgs struct {
+	Platform string `json:"platform,omitempty"`
+
 	Batch            string                `json:"batch"`
 	Attempt          string                `json:"attempt"`
 	BaseCommit       string                `json:"baseCommit"`
@@ -583,6 +595,12 @@ func PromoteKnownFlake(r VerbRequest, args TrunkRedRecordArgs, loc *time.Locatio
 }
 
 func validateTrunkRedRecordClass(args TrunkRedRecordArgs) error {
+	for _, group := range args.Groups {
+		if strings.HasPrefix(group.Identity, "platform:") {
+			return errors.New("a platform sighting needs the incident file command")
+		}
+	}
+
 	rerunOK := args.Rerun != nil && args.Rerun.Attempt != "" && args.Rerun.Attempt != args.Attempt && args.Attempt != ""
 	switch args.Class {
 	case "", TrunkRedClassTrunkRed:
@@ -638,6 +656,11 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 			if err != nil {
 				return nil, err
 			}
+			if args.Class == TrunkRedClassPlatform {
+				if err := platformFilingAllowed(r.Endpoint, tip, args.Platform); err != nil {
+					return nil, err
+				}
+			}
 			handled, cadenceAlready, err := applyCadenceRecord(tree, r, args)
 			if err != nil {
 				return nil, err
@@ -650,6 +673,13 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 			}
 			already := 0
 			repeated := func(group TrunkRedRecordGroup) bool {
+				if args.Class == TrunkRedClassPlatform {
+					for _, prior := range tree.TrunkRed {
+						if prior.Identity == group.Identity && slices.ContainsFunc(prior.Sightings, func(s TrunkRedSighting) bool { return s.LogDigest == group.LogDigest }) {
+							return true
+						}
+					}
+				}
 				entry := openTrunkRedByIdentity(tree.TrunkRed, group.Identity)
 				return trunkRedSightingExists(tree.TrunkRed, group.Identity, r.opid()) ||
 					(args.Class == "" || args.Class == TrunkRedClassTrunkRed) && entry != nil && entry.EntryClass() == TrunkRedClassTrunkRed
@@ -660,6 +690,9 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 				}
 			}
 			if already == len(args.Groups) && (cadenceAlready || args.Cadence == nil && len(args.Groups) > 0) {
+				if args.Class == TrunkRedClassPlatform && !trunkRedSightingExists(tree.TrunkRed, args.Groups[0].Identity, r.opid()) {
+					return nil, AlreadyHolds{Reason: "these platform failures are already recorded"}
+				}
 				return nil, AlreadyApplied{}
 			}
 			for _, group := range args.Groups {
@@ -705,12 +738,15 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 						owner, allowance = approver, args.AllowanceUntil
 					}
 					testUnit, testName := "", ""
-					if class == TrunkRedClassFlake && len(group.Failures) == 1 {
+					if class == TrunkRedClassPlatform {
+						testUnit = group.Group
+					}
+					if (class == TrunkRedClassFlake || class == TrunkRedClassPlatform) && len(group.Failures) == 1 {
 						testUnit, testName = group.Group, group.Failures[0].Name
 					}
 					tree.TrunkRed = append(tree.TrunkRed, TrunkRedEntry{ID: id, Identity: group.Identity, Group: group.Group, TestUnit: testUnit, TestName: testName,
 						Status: group.Status, Failures: append([]TrunkRedFailure(nil), group.Failures...), NotRunReason: group.NotRunReason,
-						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: holds, Opened: args.SeenAt, Class: class, AllowanceUntil: allowance})
+						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: holds, Opened: args.SeenAt, Class: class, Platform: args.Platform, AllowanceUntil: allowance})
 					continue
 				}
 				if class != "" {
@@ -912,6 +948,9 @@ func applyTrunkRedClear(tree *TreeGoals, r VerbRequest, args TrunkRedClearArgs, 
 		}
 	}
 	if entry.EntryClass() != TrunkRedClassTrunkRed {
+		if entry.Class == TrunkRedClassPlatform {
+			return errors.New("a platform incident needs a complete passing check on its platform")
+		}
 		return countFlakePass(entry, args, r)
 	}
 	entry.Closed = &TrunkRedClosure{At: r.stamp(), Attempt: args.Attempt, BaseCommit: args.BaseCommit, How: "green", Opid: r.opid()}

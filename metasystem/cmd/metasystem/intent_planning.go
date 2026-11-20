@@ -431,9 +431,15 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentGrantList,
 		},
 		{
-			object: "incident", action: "list", audience: "both", laidOut: true, summary: "the broken-main incidents",
+			object: "incident", action: "file", audience: "both", summary: "record the failures in a complete native platform proof",
+			usage: []string{"metasystem incident file LOG"}, examples: []string{"metasystem incident file nightly.log"}, flags: intentHumanActFlags, maxArgs: 1, run: runIntentPlatformProof,
+		}, {
+			object: "incident", action: "prove-closed", audience: "both", summary: "close a platform incident with a complete native proof",
+			usage: []string{"metasystem incident prove-closed I LOG"}, examples: []string{"metasystem incident prove-closed platform:darwin/arm64:build repair.log"}, flags: intentHumanActFlags, maxArgs: 2, run: runIntentPlatformProof,
+		}, {
+			object: "incident", action: "list", audience: "both", laidOut: true, summary: "failures on main and tracked incidents",
 			usage:    []string{"metasystem incident list [--all]"},
-			details:  []string{"An incident is a failure on main that someone must own."},
+			details:  []string{"Shows failures on main and platform incidents with their responders."},
 			flags:    []intentFlag{{name: "all", usage: "include closed incidents"}},
 			maxArgs:  0,
 			examples: []string{"metasystem incident list"},
@@ -2467,8 +2473,13 @@ func runIntentIncidents(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	lines, listed, tracked := []string{}, []goal.TrunkRedEntry{}, []goal.TrunkRedEntry{}
+	var platform []goal.TrunkRedEntry
 	for _, entry := range projection.Tree.TrunkRed {
 		if entry.Closed != nil && !inv.input.switched("all") {
+			continue
+		}
+		if entry.Class == goal.TrunkRedClassPlatform {
+			platform = append(platform, entry)
 			continue
 		}
 		if entry.EntryClass() == goal.TrunkRedClassFlake && !slices.ContainsFunc(entry.Sightings, func(s goal.TrunkRedSighting) bool { return s.Where == "" }) {
@@ -2500,8 +2511,17 @@ func runIntentIncidents(inv *intentInvocation) int {
 		}
 		summary += fmt.Sprintf("; %d tracked flake or hang entr%s", len(tracked), map[bool]string{true: "y", false: "ies"}[len(tracked) == 1])
 	}
-	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed, "trackedDefects": tracked},
-		Summary: summary, view: incidentListView(listed, tracked, inv.input.switched("all"))}
+	data := map[string]any{"incidents": listed, "trackedDefects": tracked}
+	if len(platform) > 0 {
+		data["platformIncidents"] = platform
+		summary += fmt.Sprintf("; %d platform incident(s)", len(platform))
+		lines = append(lines, "Platform incidents")
+		for _, e := range platform {
+			lines = append(lines, e.ID+"  "+platformIncidentDetail(e))
+		}
+	}
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: data,
+		Summary: summary, view: incidentListView(listed, tracked, platform, inv.input.switched("all"))}
 	for _, entry := range listed {
 		if entry.Closed == nil && entry.FixGoal == "" {
 			result.next, result.nextReason = []string{"metasystem", "incident", "claim", entry.ID, "--goal", "G"}, "an unowned incident needs a goal that fixes it"
@@ -2566,7 +2586,11 @@ func runIntentIncidentAct(inv *intentInvocation, sub string) int {
 	return inv.render(inv.ownerCall(target, func(dependencies syncRequestDependencies) int {
 		return runGoalTrunkRedWithDependencies(args, inv.requestBuilder(proof, false), nil, dependencies)
 	}, func() intentResult {
-		return intentResult{Summary: "trunk red " + entry + ": " + sub + " confirmed", Data: map[string]any{"entry": entry}}
+		kind := "trunk red "
+		if strings.HasPrefix(entry, "platform:") {
+			kind = "platform incident "
+		}
+		return intentResult{Summary: kind + entry + ": " + sub + " confirmed", Data: map[string]any{"entry": entry}}
 	}))
 }
 
@@ -2686,4 +2710,37 @@ func grantListView(grants []grantShown, all bool) func(*textui.Page) {
 			card.KV("id", textui.Plain(entry.ID))
 		}
 	}
+}
+
+func runIntentPlatformProof(inv *intentInvocation) int {
+	closing := inv.command.action == "prove-closed"
+	count := 1
+	if closing {
+		count = 2
+	}
+	if len(inv.input.args) != count {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "Name the saved check output and, when closing, its incident", next: inv.publicArgv("help", "incident", inv.command.action), nextReason: "shows the arguments"})
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	path := inv.input.args[count-1]
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(inv.cwd, path)
+	}
+	id := ""
+	if closing {
+		id = inv.input.args[0]
+	}
+	actor, proof, problem := inv.actingAs(inv.command.name, id, actorEither)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	args := append([]string{"--root", inv.stateRoot}, actor...)
+	run := inv.syncOwner(inv.command.name, args, proof, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+		return goal.RecordPlatformProof(req, path, id)
+	})
+	return inv.callOwner(nil, run, func() intentResult {
+		return intentResult{Summary: "Recorded the platform check", next: inv.publicArgv("incident", "list", "--all"), nextReason: "shows the recorded incidents", Data: map[string]any{"log": path}}
+	})
 }

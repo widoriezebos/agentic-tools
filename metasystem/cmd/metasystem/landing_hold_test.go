@@ -159,7 +159,7 @@ func holdLaneFixture(t *testing.T, entries []goal.TrunkRedEntry) (*resolveVerbFi
 
 func TestLandingStatusTrunkRedHoldsAndWake(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"red", "fix", "closed", "flake", "hang", "exception", "conflict", "bad register"} {
+	for _, name := range []string{"red", "fix", "closed", "flake", "hang", "platform", "exception", "conflict", "bad register"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			register := holdIncidentFixture(t, newIntentBed(t, false, nil))
@@ -170,6 +170,13 @@ func TestLandingStatusTrunkRedHoldsAndWake(t *testing.T) {
 				register[0].Closed = &goal.TrunkRedClosure{At: register[0].Opened, How: "hand", By: "Wido", Why: "fixed", Opid: register[0].Sightings[0].Opid}
 			case "flake":
 				register[0].Class = goal.TrunkRedClassPendingFlake
+			case "platform":
+				register[0].Class, register[0].Platform = "platform", "darwin/arm64"
+				register[0].ID = "platform:darwin/arm64:build"
+				register[0].Identity, register[0].Group, register[0].TestUnit = register[0].ID, "build", "build"
+				register[0].TestName, register[0].Failures, register[0].Holds = "", nil, nil
+				register[0].Sightings[0].LogDigest, register[0].Sightings[0].LogPath = strings.Repeat("a", 64), "night.log"
+				register[0].Sightings[0].BaseCommit = strings.Repeat("1", 40)
 			case "hang":
 				register[0].Class = goal.TrunkRedClassHang
 			}

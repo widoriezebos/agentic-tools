@@ -121,17 +121,18 @@ func KnownHealthRole(role HealthRole) bool {
 // RoleVerdict is one total role judgment and the exact command that repairs a
 // non-alive result with the surface available today.
 type RoleVerdict struct {
-	Role                HealthRole   `json:"role"`
-	Status              HealthStatus `json:"status"`
-	Reason              string       `json:"reason"`
-	Cause               string       `json:"cause,omitempty"`
-	Standing            bool         `json:"standing,omitempty"`
-	Remedy              string       `json:"remedy,omitempty"`
-	DurationMillis      int64        `json:"durationMillis,omitempty"`
-	ConsecutiveUnknown  int          `json:"consecutiveUnknown,omitempty"`
-	ConsecutiveFailures int          `json:"consecutiveFailures,omitempty"`
-	FailureEscalation   string       `json:"failureEscalation,omitempty"`
-	NoAutomaticRemedy   bool         `json:"noAutomaticRemedy,omitempty"`
+	UnownedPlatformIncidents []string     `json:"unownedPlatformIncidents,omitempty"`
+	Role                     HealthRole   `json:"role"`
+	Status                   HealthStatus `json:"status"`
+	Reason                   string       `json:"reason"`
+	Cause                    string       `json:"cause,omitempty"`
+	Standing                 bool         `json:"standing,omitempty"`
+	Remedy                   string       `json:"remedy,omitempty"`
+	DurationMillis           int64        `json:"durationMillis,omitempty"`
+	ConsecutiveUnknown       int          `json:"consecutiveUnknown,omitempty"`
+	ConsecutiveFailures      int          `json:"consecutiveFailures,omitempty"`
+	FailureEscalation        string       `json:"failureEscalation,omitempty"`
+	NoAutomaticRemedy        bool         `json:"noAutomaticRemedy,omitempty"`
 	// RemedyFacts are the typed causes behind an unhealthy verdict, one per
 	// affected goal, so a caller can name the public act without reading
 	// the reason text.
@@ -211,12 +212,13 @@ const (
 // grace for each unknown role, and the failure episodes that survive healthy
 // resets long enough to expose repeated heal-and-fail cycles.
 type HealthObservationState struct {
-	Sequence        int64                      `json:"sequence"`
-	ObservedAt      time.Time                  `json:"observedAt"`
-	UnknownCounts   map[HealthRole]int         `json:"unknownCounts"`
-	FailureCounts   map[HealthRole]int         `json:"failureCounts"`
-	FailureCauses   map[HealthRole]string      `json:"failureCauses,omitempty"`
-	FailureEpisodes map[HealthRole][]time.Time `json:"failureEpisodes,omitempty"`
+	NotifiedPlatformIncidents []string                   `json:"notifiedPlatformIncidents,omitempty"`
+	Sequence                  int64                      `json:"sequence"`
+	ObservedAt                time.Time                  `json:"observedAt"`
+	UnknownCounts             map[HealthRole]int         `json:"unknownCounts"`
+	FailureCounts             map[HealthRole]int         `json:"failureCounts"`
+	FailureCauses             map[HealthRole]string      `json:"failureCauses,omitempty"`
+	FailureEpisodes           map[HealthRole][]time.Time `json:"failureEpisodes,omitempty"`
 }
 
 // HealthVerdict is the typed result of one completed health observation.
@@ -468,6 +470,22 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 	}
 	verdict := applyHealthObservation(repoRoot, previous.State, roles, now.UTC())
 	verdict.Spend = spendObservation
+	for _, role := range verdict.Roles {
+		if role.Role != RoleTrunkRed || role.Status == HealthUnknown {
+			continue
+		}
+		for _, id := range role.UnownedPlatformIncidents {
+			if slices.Contains(previous.State.NotifiedPlatformIncidents, id) {
+				continue
+			}
+			nonce := fmt.Sprintf("platform-incident-%x", sha256.Sum256([]byte(id)))
+			if err := QueueNotification(repoRoot, PendingNotification{Nonce: nonce, Message: "Platform incident " + id + " needs a responder. Use metasystem incident claim " + id + " --goal G."}); err != nil {
+				return HealthVerdict{}, err
+			}
+		}
+		verdict.State.NotifiedPlatformIncidents = role.UnownedPlatformIncidents
+	}
+
 	if err := saveHealthRecord(repoRoot, HealthRecordPath(repoRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
 		return HealthVerdict{}, err
 	}
@@ -985,7 +1003,7 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 		delete(failureCauses, role.Role)
 	}
 	state := HealthObservationState{
-		Sequence: previous.Sequence + 1, ObservedAt: observedAt,
+		Sequence: previous.Sequence + 1, ObservedAt: observedAt, NotifiedPlatformIncidents: previous.NotifiedPlatformIncidents,
 		UnknownCounts: unknownCounts, FailureCounts: failureCounts, FailureCauses: failureCauses, FailureEpisodes: failureEpisodes,
 	}
 	ordered = standingRoles(state, ordered)

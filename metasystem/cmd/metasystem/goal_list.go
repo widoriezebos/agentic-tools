@@ -46,7 +46,7 @@ func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip s
 	}
 	openRed := make([]goal.TrunkRedEntry, 0, len(trunkRed))
 	for _, entry := range trunkRed {
-		if entry.Closed == nil {
+		if entry.Closed == nil && entry.Class != goal.TrunkRedClassPlatform {
 			openRed = append(openRed, entry)
 		}
 	}

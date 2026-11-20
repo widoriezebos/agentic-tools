@@ -834,7 +834,7 @@ func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, 
 	v := NextVerdict{}
 	t := p.Tree
 	for _, entry := range t.TrunkRed {
-		if entry.Closed != nil {
+		if entry.Closed != nil || entry.Class == TrunkRedClassPlatform {
 			continue
 		}
 		if entry.Owner.Machine == machine {

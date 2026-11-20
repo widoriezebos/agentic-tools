@@ -402,6 +402,12 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			return PublishRequest{}, fmt.Errorf("the stored trunk-red record is malformed; close it by hand: %v", err)
 		}
 		return trunkRedRecordRequest(r, args), nil
+	case "platform-clear":
+		var args platformClear
+		if err := json.Unmarshal([]byte(in.Args["proof"]), &args); err != nil {
+			return PublishRequest{}, err
+		}
+		return platformClearRequest(r, args), nil
 	case "trunk-red-own":
 		return trunkRedOwnRequest(r, TrunkRedOwnArgs{Entry: target, Goal: in.Args["goal"], Branch: in.Args["branch"],
 			BranchCommit: in.Args["branchCommit"], To: in.Args["to"], By: in.Args["by"]}), nil
