@@ -118,7 +118,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 			} else {
 				q.Thread = &ref
 			}
-			if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+			if err = writeQuestion(c.RepoRoot, *q); err != nil {
 				return result, err
 			}
 			result.Dispositions++
@@ -242,7 +242,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 			return err
 		}
 		a.Phase = "recorded"
-		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+		if err := writeQuestion(c.RepoRoot, *q); err != nil {
 			return err
 		}
 		if err := fail(c, "recorded"); err != nil {
@@ -288,7 +288,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 			return err
 		}
 		a.Phase = "recorded"
-		if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+		if err = writeQuestion(c.RepoRoot, *q); err != nil {
 			return err
 		}
 		if err = fail(c, "recorded"); err != nil {
@@ -320,7 +320,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 		if a.Act != nil {
 			q.ClosedAt = a.At
 		}
-		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+		if err := writeQuestion(c.RepoRoot, *q); err != nil {
 			return err
 		}
 		if err := fail(c, "closed"); err != nil {
@@ -406,7 +406,7 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 			return err
 		}
 	}
-	if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+	if err := writeQuestion(c.RepoRoot, *q); err != nil {
 		return err
 	}
 	return fail(c, "settled")

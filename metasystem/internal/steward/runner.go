@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -37,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 )
 
 func runnerDir(repoRoot string) string {
@@ -162,15 +162,17 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 }
 
 type runnerLoopDependencies struct {
-	ProviderHome   string
-	Self           identity.Prober
-	ExamineLedger  func(string, time.Time) error
-	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
-	DeliverPending func(string) (int, error)
-	Resumable      func(string) (string, bool, error)
-	Channel        func(context.Context, string) (int, error)
-	SettleReplies  func(context.Context, string) (int, error)
-	ReplyEndpoint  func(string) (goal.Endpoint, error)
+	Wake            func() bool
+	ProviderProbeAt *time.Time
+	ProviderHome    string
+	Self            identity.Prober
+	ExamineLedger   func(string, time.Time) error
+	Tick            func(string, TickConfig, WorkerCensus) (TickResult, error)
+	DeliverPending  func(string) (int, error)
+	Resumable       func(string) (string, bool, error)
+	Channel         func(context.Context, string) (int, error)
+	SettleReplies   func(context.Context, string) (int, error)
+	ReplyEndpoint   func(string) (goal.Endpoint, error)
 	// TrimCaches trims the machine caches as the cycle's last step; nil
 	// trims nothing.
 	TrimCaches           func(context.Context, string, TickConfig) error
@@ -315,7 +317,26 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		defer bridge.Close()
 	}
 	bridgeLine := ""
-	keeping := &laneKeeping{step: cfg.KeepLandingLane}
+	schedule, scheduleErr := readCycleSchedule(top, deps.Now())
+	if scheduleErr != nil {
+		return scheduleErr
+	}
+	keeping := &laneKeeping{step: cfg.KeepLandingLane, root: top, now: deps.Now}
+	var served tickrequest.Request
+	var requestWake, unreadableRequest bool
+	var requestDiagnostic string
+	probeAt := deps.Now().Add(limitProbe)
+	deps.ProviderProbeAt = &probeAt
+	reportRequest := func(line string) {
+		if strings.HasPrefix(line, "ignored tick request:") {
+			if line == requestDiagnostic {
+				return
+			}
+			requestDiagnostic = line
+		}
+		fmt.Fprintln(logFile, line)
+	}
+	readRequest := func() tickrequest.Request { return pendingRequest(top, deps.Now, reportRequest, &unreadableRequest) }
 	channelDuty := func() {
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
 		undelivered, channelErr := deps.Channel(channelContext, top)
@@ -336,10 +357,22 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	wait := func(keeper *laneKeeping) bool {
 		work := deps.Now().Sub(started)
+		if ackErr := tickrequest.Acknowledge(top, served); ackErr != nil {
+			reportRequest("tick request acknowledgement failed: " + ackErr.Error())
+		}
+		schedule.LastEnd = deps.Now()
+		if saveErr := writeJSONAtomic(cycleSchedulePath(top), schedule); saveErr != nil {
+			reportRequest("cycle schedule could not be recorded: " + saveErr.Error())
+		}
 		var slept time.Duration
 		waiting := deps
 		waiting.Sleep = func(d time.Duration) { before := deps.Now(); deps.Sleep(d); slept += deps.Now().Sub(before) }
-		stopped := runnerWait(top, interval-work, waiting, drain, keeper, cfg.ProbeProvider)
+		waiting.Wake = func() bool {
+			pending := readRequest().Batch != ""
+			requestWake = pending && deps.Now().Before(schedule.NextTick) && !deps.Now().Before(schedule.due(deps.Now(), pending))
+			return requestWake
+		}
+		stopped := runnerWait(top, schedule.NextTick.Sub(deps.Now()), waiting, drain, keeper, cfg.ProbeProvider)
 		logTick(work, slept)
 		return stopped
 	}
@@ -352,6 +385,21 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		reads.tick++
 		reads.Unlock()
 		started, timed.elapsed, paged = deps.Now(), 0, 0
+		cfg.RequestDriven = requestWake
+		requestWake = false
+		unreadableRequest = false
+		served = readRequest()
+		cause := "scheduled tick"
+		if cfg.RequestDriven {
+			schedule.Requests++
+			cause = "request-driven cycle"
+		} else {
+			schedule.Requests = 0
+			schedule.NextTick = started.Add(interval)
+		}
+		if served.Batch != "" {
+			fmt.Fprintf(logFile, "%s: %s (%d requests)\n", cause, served.Reason, served.Count)
+		}
 		result, err = deps.Tick(top, cfg, timed)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
@@ -497,10 +545,14 @@ const limitProbe = outage.ProbeInterval
 // agent, another hold or, idle, a hand-in. A lane not kept, paused or failed
 // does not wait; its keeper is stepped once per cycle.
 type laneKeeping struct {
-	step    func() lane.AgentRun
-	log     io.Writer
-	line    string
-	waiting bool
+	root     string
+	now      func() time.Time
+	outcome  lane.AgentOutcome
+	observed bool
+	step     func() lane.AgentRun
+	log      io.Writer
+	line     string
+	waiting  bool
 }
 
 // run steps the keeper once and prints its line when it changed.
@@ -509,6 +561,10 @@ func (k *laneKeeping) run() {
 		return
 	}
 	run := k.step()
+	if k.observed && k.outcome != run.Outcome && (run.Outcome == lane.AgentPaused || run.Outcome == lane.AgentFailed || run.Outcome == lane.AgentNotKept) && k.root != "" {
+		_ = tickrequest.Write(k.root, "lane keeper changed: "+string(run.Outcome), k.now())
+	}
+	k.outcome, k.observed = run.Outcome, true
 	if run.Line != k.line {
 		output := k.log
 		if output == nil {
@@ -533,6 +589,9 @@ func (k *laneKeeping) run() {
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
 	start := deps.Now()
 	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
+	if deps.ProviderProbeAt != nil {
+		probeAt = *deps.ProviderProbeAt
+	}
 	settings, settingsErr := launch.ResolveSettings(filepath.Join(top, "metasystem.conf"), nil)
 	mark, standing := standingProviderOutage(settings.SeatRuntime, start, nil, deps.ProviderHome)
 	if settingsErr != nil {
@@ -543,6 +602,9 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 	for deps.Now().Before(deadline) {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return true
+		}
+		if deps.Wake != nil && deps.Wake() {
+			return false
 		}
 		if !deps.Now().Before(recheck) {
 			if keeping != nil && keeping.waiting {
@@ -576,7 +638,10 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 				fmt.Fprintln(os.Stderr, line)
 				probeLine = line
 			}
-			probeAt = probeAt.Add(limitProbe)
+			probeAt = deps.Now().Add(limitProbe)
+			if deps.ProviderProbeAt != nil {
+				*deps.ProviderProbeAt = probeAt
+			}
 		}
 		if remaining := deadline.Sub(deps.Now()); remaining > 0 {
 			deps.Sleep(min(200*time.Millisecond, remaining))

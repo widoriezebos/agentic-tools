@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 )
 
 type Option struct {
@@ -170,8 +171,20 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
-	return writeDurable(path, b)
+	return writeDurable(path, append(b, '\n'))
+}
+
+// writeQuestion publishes the durable transition before asking its checkout's
+// steward to observe it. Rewriting a closed answer is not another completion.
+func writeQuestion(root string, q Question) error {
+	previous, readErr := ReadQuestion(root, q.ID)
+	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+		return err
+	}
+	if readErr == nil && previous.State != q.State && q.Goal != "" && (q.State == "answered" || q.State == "closed") {
+		_ = tickrequest.Write(root, "question-"+q.State+":"+q.ID, time.Now())
+	}
+	return nil
 }
 func writeDurable(path string, b []byte) error {
 	_, err := atomicfile.WriteFile(path, b, 0o600, "")
@@ -394,7 +407,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		}
 	}
 	q.Text = renderQuestion(r.RepoRoot, q)
-	if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
+	if err = writeQuestion(r.RepoRoot, q); err != nil {
 		return Question{}, false, err
 	}
 	if r.Provider != nil {
@@ -408,7 +421,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		} else {
 			q.Undelivered++
 		}
-		if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
+		if err = writeQuestion(r.RepoRoot, q); err != nil {
 			return q, false, err
 		}
 	}
@@ -685,7 +698,7 @@ func plainSentence(s string, capital bool) string {
 func ensureText(repo string, q *Question) error {
 	if q.Text == "" {
 		q.Text = renderQuestion(repo, *q)
-		return writeJSON(questionPath(repo, q.ID), q)
+		return writeQuestion(repo, *q)
 	}
 	return nil
 }
@@ -761,7 +774,7 @@ func Retire(repo, id, because string, now time.Time) error {
 		return err
 	}
 	q.RetiredAt = now.UTC()
-	return writeJSON(questionPath(repo, id), q)
+	return writeQuestion(repo, q)
 }
 
 // closeAt is Close at the given time, which the question keeps.
@@ -790,7 +803,7 @@ func closeAt(repo, id, because string, p Provider, d DestinationConfig, at time.
 	if q.Answer != nil && q.Answer.Phase != "acted" {
 		q.Answer.Phase = "closed"
 	}
-	return writeJSON(questionPath(repo, id), q)
+	return writeQuestion(repo, q)
 }
 
 // AnswerSummary describes the reply and any act that still belongs to the person.

@@ -138,7 +138,7 @@ func churnMessage(trunk TrunkSignal, _ TrunkCommit, limit int, crossing churnCro
 
 // watch keeps the works a churn finding named until they have read clear
 // for clearTicks cycles, so their episodes can clear once main is quiet.
-func (s *trunkState) watch(observations []Observation, clearTicks int) {
+func (s *trunkState) watch(observations []Observation, clearTicks int, requestDriven ...bool) {
 	if s.Watched == nil {
 		s.Watched = map[string]int{}
 	}
@@ -147,6 +147,9 @@ func (s *trunkState) watch(observations []Observation, clearTicks int) {
 		case Finding:
 			s.Watched[observation.Work] = 0
 		case Clear:
+			if len(requestDriven) > 0 && requestDriven[0] {
+				continue
+			}
 			if count, watched := s.Watched[observation.Work]; watched {
 				if count+1 >= clearTicks {
 					delete(s.Watched, observation.Work)

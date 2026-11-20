@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,7 +16,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 )
 
 type State string
@@ -224,6 +225,11 @@ func (s Store) Update(id string, change func(*Record) error) (Record, error) {
 			return err
 		}
 		result = record
+		if !before.Terminal() && record.State.Terminal() && record.Kind == "seat" {
+			if root := readString(record.AdapterData, "fenceRoot"); root != "" {
+				_ = tickrequest.Write(root, "launch-ended:"+record.ID, time.Now())
+			}
+		}
 		return nil
 	})
 	return result, err

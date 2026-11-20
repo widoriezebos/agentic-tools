@@ -591,7 +591,7 @@ func flushNotices(ctx context.Context, c PollConfig, result *PollResult) error {
 		if id, _, ok := strings.Cut(strings.TrimPrefix(notice.Record, "answer:"), ":"); ok && strings.HasPrefix(notice.Record, "answer:") {
 			if q, err := ReadQuestion(c.RepoRoot, id); err == nil {
 				q.Notices = append(q.Notices, ref.ID)
-				_ = writeJSON(questionPath(c.RepoRoot, id), q)
+				_ = writeQuestion(c.RepoRoot, q)
 			}
 		}
 		ledger.Posted = append(ledger.Posted, notice.Record)
@@ -871,7 +871,7 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	if LaneStopCommand(*q) != "" || q.PersonAct != nil || q.Contract {
 		q.State = "open"
 	}
-	if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+	if err = writeQuestion(c.RepoRoot, *q); err != nil {
 		return err
 	}
 	if err = mark(); err != nil {

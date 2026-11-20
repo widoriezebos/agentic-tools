@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 	"golang.org/x/sys/unix"
 )
 
@@ -50,6 +51,8 @@ type RunHolder struct {
 }
 
 type UnitRunRecord struct {
+	// StewardRoot is the checkout that admitted this run, retained across callers.
+	StewardRoot       string     `json:"stewardRoot,omitempty"`
 	ReviewCloseReason string     `json:"reviewCloseReason,omitempty"`
 	Holder            *RunHolder `json:"holder,omitempty"`
 
@@ -1619,11 +1622,20 @@ func (runner *UnitRunner) root() string {
 }
 func (runner *UnitRunner) runDir(id string) string { return filepath.Join(runner.root(), id) }
 func (runner *UnitRunner) save(record UnitRunRecord) error {
+	previous, previousErr := runner.read(record.ID)
+	if previousErr == nil {
+		record.StewardRoot = previous.StewardRoot
+	} else if os.IsNotExist(previousErr) {
+		record.StewardRoot = runner.Installation
+	}
 	if err := runner.reserveTree(record); err != nil {
 		return err
 	}
 	if err := writeUnitJSON(filepath.Join(runner.runDir(record.ID), "run.json"), record, runner.root()); err != nil {
 		return err
+	}
+	if previousErr == nil && previous.State != record.State && (record.State == "awaiting-judgement" || record.State == "cancelled") && record.StewardRoot != "" {
+		_ = tickrequest.Write(record.StewardRoot, "unit-ended:"+record.ID, time.Now())
 	}
 	if runner.AfterWrite != nil {
 		return runner.AfterWrite(record)

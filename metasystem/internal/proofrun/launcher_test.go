@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -769,6 +770,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	})
 	if result != 0 || !hinted {
 		t.Fatalf("result=%d hinted=%t", result, hinted)
+	}
+	request, err := tickrequest.Read(controlRoot)
+	if err != nil || request.Reason != "proof-ended:"+attempt.AttemptID {
+		t.Fatalf("steward completion request=%+v err=%v", request, err)
 	}
 }
 

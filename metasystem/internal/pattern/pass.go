@@ -44,7 +44,8 @@ func (p Pass) withDefaults() Pass {
 // Run runs every enabled pattern once, in the steward of the checkout the
 // host's lane record names and nowhere else (D6). Without a lane on the host
 // no pattern runs.
-func (p Pass) Run(repoRoot string, now time.Time) error {
+func (p Pass) Run(repoRoot string, now time.Time, requestDriven ...bool) error {
+	requested := len(requestDriven) > 0 && requestDriven[0]
 	p = p.withDefaults()
 	home, err := p.Home()
 	if err != nil {
@@ -71,7 +72,7 @@ func (p Pass) Run(repoRoot string, now time.Time) error {
 		laneHashes[hash8(lineage)] = true
 	}
 	_, err = steward.UpdatePatterns(repoRoot, steward.PatternCycle{
-		Now: now, ClearTicks: clearTicks, Deliver: p.Deliver,
+		RequestDriven: requested, Now: now, ClearTicks: clearTicks, Deliver: p.Deliver,
 		Step: func(raw []byte) ([]byte, []steward.PatternRun, error) {
 			current, err := decodeState(raw)
 			if err != nil {
@@ -98,7 +99,7 @@ func (p Pass) Run(repoRoot string, now time.Time) error {
 				}
 				observations := pattern.Detect(cycleSignals, now, thresholds(conf, pattern))
 				if pattern.Name == Churn && current.Trunk != nil {
-					current.Trunk.watch(observations, clearTicks)
+					current.Trunk.watch(observations, clearTicks, requested)
 				}
 				runs = append(runs, steward.PatternRun{Pattern: pattern.Name, Observations: observations})
 			}

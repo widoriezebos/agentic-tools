@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 )
 
 type CreationClaim interface {
@@ -778,6 +779,7 @@ func LaunchSuite(options LaunchOptions) int {
 			}
 		}
 		hintTerminal(controlRoot, options.AttemptID, publicationID, beganBootID, beganBootElapsed.Nanoseconds())
+		_ = tickrequest.Write(controlRoot, "proof-ended:"+options.AttemptID, completion.CompletedAt)
 	}
 	if options.BeforeProcessDone != nil {
 		if err := options.BeforeProcessDone(completion); err != nil {

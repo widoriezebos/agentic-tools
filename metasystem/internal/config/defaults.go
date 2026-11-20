@@ -178,6 +178,8 @@ var coreSettings = []Setting{
 		Meaning: "the most open carry words one seat may own at once"},
 
 	// Steward, seat and context.
+	{Key: "steward.request-gap-sec", Default: "15", ProofInput: true, Meaning: "minimum seconds after a cycle before a completion can request another"},
+	{Key: "steward.request-cycle-max", Default: "8", ProofInput: true, Meaning: "maximum extra completion cycles per scheduled steward interval"},
 	{Key: LedgerAttentionStaleMinutesKey, Default: "30", ProofInput: true,
 		Meaning: "minutes after which the ledger's attention reads as stale"},
 	{Key: SeatPresenceStaleMinutesKey, Default: "30", ProofInput: true,

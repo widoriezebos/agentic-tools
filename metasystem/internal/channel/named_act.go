@@ -105,7 +105,7 @@ func CompleteNamedAct(root, authorityRoot string, act NamedAct, person, machine 
 					return err
 				}
 				q.Answer = &Answer{Machine: machine, Lineage: "question-act", Provider: source, Text: option, UserID: person, At: at.UTC(), Step: 1, ULID: id, Opid: goal.Opid(id, machine, "question-act"), Ref: MessageRef{ID: evidence.ID, ThreadID: q.ID}, Phase: "matched", Act: evidence}
-				if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+				if err := writeQuestion(root, q); err != nil {
 					return err
 				}
 			}

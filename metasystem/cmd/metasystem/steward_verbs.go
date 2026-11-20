@@ -701,7 +701,7 @@ func runStewardStatus(args []string, stdout, stderr io.Writer) int {
 	intents, intErr := steward.LiveIntents(*repo)
 	pending, pendErr := steward.PendingNotifications(*repo)
 	alerts, alertErr := steward.AlertEpisodes(*repo)
-	report := map[string]any{"evidence": evidence, "liveIntents": intents, "pendingNotifications": pending, "alertEpisodes": alerts}
+	report := map[string]any{"cycle": steward.RunnerCycleStatus(*repo, time.Now()), "evidence": evidence, "liveIntents": intents, "pendingNotifications": pending, "alertEpisodes": alerts}
 	if line := steward.RearmDeferredLine(*repo); line != "" {
 		report["engine"] = line
 	}

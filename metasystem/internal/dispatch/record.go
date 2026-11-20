@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/tickrequest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"golang.org/x/sys/unix"
 )
@@ -580,6 +581,8 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 	})
 	if wroteTransition {
 		notifyJobWaiters(root, job, publicationID, bootID, bootNanos)
+
+		_ = tickrequest.Write(root, "job-ended:"+job, time.Now())
 	}
 	return err
 }
@@ -684,6 +687,10 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 	})
 	if wroteTransition {
 		notifyJobWaiters(root, job, publicationID, bootID, bootNanos)
+
+		if TerminalStatus(target) {
+			_ = tickrequest.Write(root, "job-ended:"+job, time.Now())
+		}
 	}
 	return observed, err
 }

@@ -75,7 +75,7 @@ func RetryDelivery(ctx context.Context, repo, id string, p Provider, d Destinati
 			q.Thread = &ref
 			outcome = RetryDelivered
 		}
-		return writeJSON(questionPath(repo, q.ID), q)
+		return writeQuestion(repo, q)
 	})
 	return q, outcome, err
 }
@@ -104,7 +104,7 @@ func WithdrawFor(repo, id string, w Withdrawal, p Provider, d DestinationConfig,
 			return err
 		}
 		q.Withdrawal = &w
-		return writeJSON(questionPath(repo, id), q)
+		return writeQuestion(repo, q)
 	})
 	return q, err
 }
