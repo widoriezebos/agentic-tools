@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -352,7 +351,8 @@ func (inv *intentInvocation) runPolicySet(key, value string) int {
 	}
 	conf := intentConfPath(destination)
 	local := conf + ".local"
-	changed := false
+	var current config.PolicyValue
+	var same, durable bool
 	err = config.WithPolicyLock(checkout, func() error {
 		_, fresh, err := inv.policyDestination(key)
 		if err != nil {
@@ -361,45 +361,29 @@ func (inv *intentInvocation) runPolicySet(key, value string) int {
 		if fresh != checkout {
 			return fmt.Errorf("the policy owner changed from %s to %s; repeat the write", checkout, fresh)
 		}
-		before, err := os.ReadFile(local)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("%s cannot be preserved: %w", local, err)
-		}
-		if err == nil {
-			if existing, found, readErr := config.ConfLookup(local, key); readErr == nil && found && existing == value {
-				return nil
-			}
-		}
-		if os.IsNotExist(err) {
-			if err := os.WriteFile(local, nil, 0600); err != nil {
-				return err
-			}
-		}
-		if err := validate.SetConfKeys(local, []validate.ConfSetting{{Key: key, Value: value}}); err != nil {
-			return err
-		}
-		after, err := os.ReadFile(local)
-		if err != nil {
-			return err
-		}
-		changed = !bytes.Equal(before, after)
-		if !changed {
-			return nil
-		}
-		return config.RecordPolicy(checkout, conf, key, value, by, at)
+		current, same, durable, err = validate.SetAttributed(checkout, conf, validate.ConfSetting{Key: key, Value: value}, by, at, inv.owners.syncDir)
+		return err
 	})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the policy write at " + local + " is incomplete: " + err.Error(), next: inv.sameCommand(), nextReason: "retry after correcting the write failure; unmatched provenance is shown as unknown"})
 	}
 	outcome, summary := intentConfirmed, key+" is set to "+value+" at "+checkout
-	if !changed {
+	if same {
 		outcome, summary = intentUnchanged, key+" already holds "+value+" at "+checkout+"; nothing was changed"
+	}
+	if strings.Contains(current.SetBy, "reaffirmed by ") {
+		summary = key + " already holds " + value + " at " + checkout + "; " + current.SetBy
+	}
+	data := map[string]any{"key": key, "value": value, "checkout": checkout, "set-by": current.SetBy, "at": current.At, "file": local}
+	if !durable {
+		outcome, summary = intentPartial, key+" is set to "+value+"; survival after a crash is not confirmed; "+current.SetBy
+		data["durable"] = false
 	}
 	state := helm.Active(checkout)
 	if state.Active {
 		summary += "; it applies when the helm is returned"
 	}
-	return inv.render(intentResult{Outcome: outcome, Summary: summary, Data: map[string]any{"key": key, "value": value, "checkout": checkout, "set-by": by, "at": at, "file": local}, view: settingSetView(summary)})
+	return inv.render(intentResult{Outcome: outcome, published: !durable, Summary: summary, Data: data, view: settingSetView(summary)})
 }
 
 func settingsDeclarationRemedy(key string) string {

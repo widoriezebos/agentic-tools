@@ -162,6 +162,10 @@ func Decode(data []byte) (Record, string) {
 // Write stores the signature atomically (a temporary file renamed over the
 // path), mode 0600.
 func Write(root string, record Record) (Seat, error) {
+	return WriteWithSync(root, record, nil)
+}
+
+func WriteWithSync(root string, record Record, sync atomicfile.DirSync) (Seat, error) {
 	seat, err := Locate(root)
 	if err != nil {
 		return seat, err
@@ -174,7 +178,7 @@ func Write(root string, record Record) (Seat, error) {
 	if err := os.MkdirAll(seat.Dir, 0o700); err != nil {
 		return seat, err
 	}
-	if durable, err := atomicfile.WriteFile(seat.Signature, append(encoded, '\n'), 0o600, ""); err != nil {
+	if durable, err := sync.WriteFile(seat.Signature, append(encoded, '\n'), 0o600, seat.CommonDir); err != nil {
 		return seat, err
 	} else if !durable {
 		return seat, fmt.Errorf("the helm is held but its durability is unknown; repeat the take")

@@ -6,6 +6,9 @@ package launch
 // judgement.
 
 import (
+	"bytes"
+	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +42,7 @@ func TestCopyLocalConfKeepsEveryOtherLineAndBlanksTheEvidenceRoot(t *testing.T) 
 	source := filepath.Join(bed, "from", "metasystem.conf.local")
 	destination := filepath.Join(bed, "to", "metasystem.conf.local")
 	writeFixture(t, source, "fleet.channel.secret=s3\n"+config.EvidenceRootKey+"=/w/evidence/m1u\nrole.default.runtime=fake\n")
-	if err := (OSHost{}).CopyLocalConf(source, destination); err != nil {
+	if err := (OSHost{}).CopyLocalConf(source, destination, bed); err != nil {
 		t.Fatal(err)
 	}
 	copied, err := os.ReadFile(destination)
@@ -49,7 +52,7 @@ func TestCopyLocalConfKeepsEveryOtherLineAndBlanksTheEvidenceRoot(t *testing.T) 
 	text := string(copied)
 	if !strings.Contains(text, "fleet.channel.secret=s3\n") || !strings.Contains(text, "role.default.runtime=fake\n") ||
 		strings.Contains(text, "/w/evidence/m1u") || !strings.Contains(text, config.EvidenceRootKey+"=\n") {
-		t.Fatalf("copied conf =\n%s", text)
+		t.Fatal("copy changed unrelated settings or retained the source evidence root")
 	}
 }
 
@@ -134,5 +137,88 @@ func TestLaunchCreatesDefaultRootWithoutEvidenceParent(t *testing.T) {
 	_, err = s.evidenceRoot(&again)
 	if refusal, named := err.(*Refusal); !named || refusal.Code != CodeEvidenceRootUnsafe || !strings.Contains(refusal.Message, "already there and this launch did not create it") {
 		t.Fatalf("an occupied leaf: error = %v", err)
+	}
+}
+
+func TestSeatConfigurationCopyPublication(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		nth        int
+		failParent bool
+	}{
+		{"confirmed", 0, false}, {"staging doubt", 2, false}, {"chain", 0, true}, {"final doubt", 4, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := evidenceBed(t, t.TempDir(), "role.default.runtime=test\n"+config.EvidenceRootKey+"="+t.TempDir()+"\n", "x=1\n")
+			dest := s.install(s.Request.Destination)
+			if tc.failParent {
+				// The real copier must create the installation underneath the clone.
+				if err := os.Rename(dest, dest+"-aside"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s.Runner = newRunner()
+			h := s.Host.(OSHost)
+			n := 0
+			h.SyncDir = func(dir string) error {
+				if dir == dest {
+					n++
+					if n == tc.nth {
+						return os.ErrPermission
+					}
+				}
+				if tc.failParent && dir == s.Request.Destination {
+					return os.ErrPermission
+				}
+				return durable.SyncDir(dir)
+			}
+			s.Host = h
+			record := fresh()
+			record.Destination = s.Request.Destination
+			step, err := s.configuration(&record)
+			local := filepath.Join(dest, "metasystem.conf.local")
+			if tc.failParent {
+				if err == nil {
+					t.Fatal("final chain failure passed")
+				}
+				if _, err := os.Stat(local); !os.IsNotExist(err) {
+					t.Fatal("failed copy wrote destination")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, found, err := config.ConfLookup(local, config.EvidenceRootKey)
+			if err != nil || !found || v != "" || step.outcome != StepDone {
+				t.Fatal("final copy or its checks missing")
+			}
+			warn := strings.Contains(step.words, "survival") && strings.Contains(step.words, "copied")
+			if warn != (tc.name == "final doubt") {
+				t.Fatal("copy reported the wrong publication outcome")
+			}
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(data, []byte(`"durable":false`)) != warn {
+				t.Fatal("JSON missed the copy outcome")
+			}
+			if strings.Contains(step.words, "role.default.runtime") {
+				t.Fatal("launch printed local settings")
+			}
+			if warn {
+				writeFixture(t, local, "role.default.runtime=edited\n")
+				_, err := s.configuration(&record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				v, _, err := config.ConfLookup(local, "role.default.runtime")
+				if err != nil || v != "edited" {
+					t.Fatal("resume overwrote the operator's edit")
+				}
+			}
+		})
 	}
 }

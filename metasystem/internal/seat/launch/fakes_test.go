@@ -195,7 +195,7 @@ func (h *fakeHost) MakeDir(path string) (bool, error) {
 	return true, nil
 }
 
-func (h *fakeHost) CopyLocalConf(source, target string) error {
+func (h *fakeHost) CopyLocalConf(source, target, checkout string) error {
 	h.copied = append(h.copied, copiedConf{source: source, destRoot: target})
 	return nil
 }

@@ -22,6 +22,8 @@ import (
 )
 
 type ProcessAct struct {
+	Durable                                                          *bool  `json:"durable,omitempty"`
+	SettingAuthor                                                    string `json:"setting-author,omitempty"`
 	SelectedArgv, FullArgv                                           []string
 	InheritedDeclaration, BeforeDeclaration, AfterDeclaration        *Declaration
 	Unit, Operation, Predecessor                                     string
@@ -39,6 +41,7 @@ type ProcessAct struct {
 }
 
 type Setting struct {
+	SyncDir                     atomicfile.DirSync
 	Root, Act, Conf, PersonName string
 	ProcessAct
 	Person bool
@@ -82,6 +85,9 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 		}
 		if act.Undo == "" && s.Act == "" && before != nil && *before == act.After {
 			act.Status = "unchanged"
+			if s.Person {
+				return s.publish(&act)
+			}
 			return nil
 		}
 		act.Before, act.ProposedAt, act.Status = before, s.Now.UTC(), "proposed"
@@ -143,18 +149,11 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 			}
 			return save(roots.Installation(s.Root), path, act)
 		}
-		if (!act.Unset && !matches(&act.After)) || (act.Unset && before != nil) {
-			if _, err := os.Stat(s.Conf + ".local"); os.IsNotExist(err) {
-				if err := os.WriteFile(s.Conf+".local", nil, 0600); err != nil {
-					return err
-				}
-			}
-			if err := validate.SetConfKeys(s.Conf+".local", []validate.ConfSetting{{Key: act.Key, Value: act.After, Unset: act.Unset}}); err != nil {
-				return err
-			}
-			if err := config.RecordPolicy(act.Checkout, s.Conf, act.Key, act.After, s.PersonName, s.Now); err != nil {
-				return err
-			}
+		if err := s.publish(&act); err != nil {
+			return err
+		}
+		if !*act.Durable {
+			return save(roots.Installation(s.Root), path, act)
 		}
 		act.Status, act.AppliedProof = "applied", s.ProcessAct.Proof
 		if local, err := os.ReadFile(s.Conf + ".local"); err == nil {
@@ -169,6 +168,15 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 		return resolveUndo(s.Root, roots.Installation(filepath.Dir(s.Conf)), act)
 	})
 	return
+}
+
+func (s Setting) publish(act *ProcessAct) error {
+	attribution, _, durable, err := validate.SetAttributed(act.Checkout, s.Conf, validate.ConfSetting{Key: act.Key, Value: act.After, Unset: act.Unset}, s.PersonName, s.Now, s.SyncDir)
+	act.Durable, act.SettingAuthor = &durable, attribution.SetBy
+	if !durable && err == nil {
+		act.Status = "unconfirmed"
+	}
+	return err
 }
 
 func save(installation roots.Installation, path string, act ProcessAct) error {

@@ -1,8 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
 
-import "github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
+)
 
 func (inv *intentInvocation) runProcessSetting(key, value string) int {
 	destination, checkout, err := inv.policyDestination("process.change")
@@ -43,7 +46,7 @@ func (inv *intentInvocation) runProcessSetting(key, value string) int {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "automatic process changes are held; a person can apply this explicit setting", Details: []string{fmt.Sprint(problem, readErr, state.Unknown)}, Data: state, next: remedy, nextReason: "run this at your enrolled terminal after examining the drift"})
 		}
 	}
-	applied, err := processchange.ApplySetting(processchange.Setting{Root: root, Conf: params.ConfPath, Act: inv.input.text("act"), ProcessAct: act, PersonName: by, Person: person, Now: now,
+	applied, err := processchange.ApplySetting(processchange.Setting{SyncDir: inv.owners.syncDir, Root: root, Conf: params.ConfPath, Act: inv.input.text("act"), ProcessAct: act, PersonName: by, Person: person, Now: now,
 		Remedy: func(id string) string { return shellCommand(append(remedy, "--act", id)) }})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the process setting was not completed: " + err.Error(), Data: applied})
@@ -52,14 +55,27 @@ func (inv *intentInvocation) runProcessSetting(key, value string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the process act was superseded; the setting was preserved", Data: applied, next: remedy, nextReason: "run this at your enrolled terminal to replace the current value"})
 	}
 	if applied.Status == "unchanged" {
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: []intentTarget{{Kind: "setting", ID: key}}, Summary: key + " already holds that value in " + params.ConfPath + ".local; nothing was changed", Data: map[string]any{"key": key, "value": value, "file": params.ConfPath + ".local"}, view: settingSetView(key + " already holds " + value + " in " + inv.shownPath(params.ConfPath+".local") + "; nothing was changed")})
+		suffix := "; nothing was changed"
+		if strings.Contains(applied.SettingAuthor, "reaffirmed by ") {
+			suffix = "; " + applied.SettingAuthor
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: []intentTarget{{Kind: "setting", ID: key}}, Summary: key + " already holds that value in " + params.ConfPath + ".local" + suffix, Data: map[string]any{"key": key, "value": value, "file": params.ConfPath + ".local"}, view: settingSetView(key + " already holds " + value + " in " + inv.shownPath(params.ConfPath+".local") + suffix)})
 	}
-	if applied.Status != "applied" {
+	if applied.Status != "applied" && applied.Status != "unconfirmed" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the setting awaits a person's exact act; its value was preserved", Data: applied, next: append(remedy, "--act", applied.ID), nextReason: "run this at your enrolled terminal to apply this proposal"})
 	}
 	summary := key + " is set to " + value
 	if act.Unset {
 		summary = key + " inherits its value; the local override was removed"
+	}
+	if applied.SettingAuthor == "author unknown" || strings.Contains(applied.SettingAuthor, "reaffirmed by ") {
+		summary += "; " + applied.SettingAuthor
+	}
+	if applied.Status == "unconfirmed" {
+		if applied.ID != "" {
+			remedy = append(remedy, "--act", applied.ID)
+		}
+		return inv.render(intentResult{Outcome: intentPartial, published: true, Summary: summary + "; survival after a crash is not confirmed", Data: applied, next: remedy, nextReason: "repeat this setting at your enrolled terminal"})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, Data: applied})
 }

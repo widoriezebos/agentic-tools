@@ -126,6 +126,7 @@ type Next struct {
 // interface before it spawned the verb (Enrollment); ReviewBy is written only
 // by a launch given the temporary pair.
 type Record struct {
+	Durable       *bool   `json:"durable,omitempty"` // Publication of the copied local configuration.
 	SchemaVersion int     `json:"schemaVersion"`
 	Launch        string  `json:"launch"`
 	Machine       string  `json:"machine"`

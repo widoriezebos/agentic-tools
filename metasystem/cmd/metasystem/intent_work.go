@@ -3014,11 +3014,17 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 		}
 	}
-	if err := validate.SetConfKeys(local, []validate.ConfSetting{{Key: key, Value: value}}); err != nil {
+	durable, err := validate.SetConfKeys(local, []validate.ConfSetting{{Key: key, Value: value}}, inv.owners.syncDir)
+	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: local + " can't be written, so nothing was set",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	data := map[string]any{"key": key, "value": value, "file": local}
+	if !durable {
+		data["durable"] = false
+		summary := key + " is set to " + value + " in " + local + "; survival after a crash is not confirmed"
+		return inv.render(intentResult{Outcome: intentPartial, published: true, Targets: targets, Data: data, Summary: summary, view: settingSetView(summary)})
+	}
 	if after, err := os.ReadFile(local); existed && err == nil && bytes.Equal(before, after) {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data,
 			Summary: key + " already holds that value in " + local + "; nothing was changed",

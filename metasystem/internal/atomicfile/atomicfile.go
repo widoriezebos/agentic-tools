@@ -66,7 +66,7 @@ var syncDir = filesync.SyncDir
 //
 // See the package doc for the outcome model behind (durable, err).
 func WriteText(path, text, anchor string) (durable bool, err error) {
-	return publish(path, anchor, func(tmp *os.File) error {
+	return publish(path, anchor, nil, func(tmp *os.File) error {
 		_, err := tmp.WriteString(text)
 		return err
 	})
@@ -78,12 +78,33 @@ func WriteText(path, text, anchor string) (durable bool, err error) {
 // that replaced a hand-rolled os.WriteFile(tmp, data, mode)+Rename pass the
 // mode they used to hand os.WriteFile.
 func WriteFile(path string, data []byte, mode os.FileMode, anchor string) (durable bool, err error) {
-	return publish(path, anchor, func(tmp *os.File) error {
+	return DirSync(nil).WriteFile(path, data, mode, anchor)
+}
+
+// DirSync supplies the directory barrier for one writer. Nil uses the host barrier.
+type DirSync func(string) error
+
+func (sync DirSync) WriteFile(path string, data []byte, mode os.FileMode, anchor string) (bool, error) {
+	return publish(path, anchor, sync, func(tmp *os.File) error {
 		if err := tmp.Chmod(mode); err != nil {
 			return err
 		}
 		_, err := tmp.Write(data)
 		return err
+	})
+}
+
+// Republish makes a fresh durable copy while retaining the modification time of identical bytes.
+func (sync DirSync) Republish(path string, data []byte) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return publish(path, filepath.Dir(path), sync, func(tmp *os.File) error {
+		if _, err := tmp.Write(data); err != nil {
+			return err
+		}
+		return os.Chtimes(tmp.Name(), info.ModTime(), info.ModTime())
 	})
 }
 
@@ -105,7 +126,10 @@ func AnchorForArtifacts(path string) string {
 // directory, rename it into place, then sync the directory — with the
 // (false, nil) rule after the rename: PUBLISHED is committed, and only its
 // durability may be in doubt. Every durability hardening lands here once.
-func publish(path, anchor string, fill func(*os.File) error) (durable bool, err error) {
+func publish(path, anchor string, sync DirSync, fill func(*os.File) error) (durable bool, err error) {
+	if sync == nil {
+		sync = syncDir
+	}
 	target := filepath.Dir(path)
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return false, err
@@ -113,7 +137,7 @@ func publish(path, anchor string, fill func(*os.File) error) (durable bool, err 
 	// Pre-publication: make the directory chain durable. A failure here is
 	// a plain error — nothing has been published.
 	for _, dir := range chain(target, anchor) {
-		if err := syncDir(dir); err != nil {
+		if err := sync(dir); err != nil {
 			return false, fmt.Errorf("atomicfile: cannot make the directory chain durable at %s: %w", dir, err)
 		}
 	}
@@ -127,7 +151,7 @@ func publish(path, anchor string, fill func(*os.File) error) (durable bool, err 
 	}
 	// PUBLISHED. From here the transition is committed; only its durability
 	// is in question, and no error may be returned for it.
-	if err := syncDir(target); err != nil {
+	if err := sync(target); err != nil {
 		return false, nil
 	}
 	return true, nil
@@ -275,7 +299,7 @@ func CopyFile(sourcePath, targetPath, anchor string) (durable bool, err error) {
 		return false, err
 	}
 	defer source.Close()
-	return publish(targetPath, anchor, func(tmp *os.File) error {
+	return publish(targetPath, anchor, nil, func(tmp *os.File) error {
 		_, err := io.Copy(tmp, source)
 		return err
 	})

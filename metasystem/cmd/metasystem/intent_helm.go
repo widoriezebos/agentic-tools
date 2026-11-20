@@ -236,7 +236,7 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			}
 			record.Policies = inv.helmPolicySnapshot(seat.Checkout, record.By, now)
 		}
-		_, err = helm.Write(path, record)
+		_, err = helm.WriteWithSync(path, record, inv.owners.syncDir)
 		if err != nil {
 			return err
 		}

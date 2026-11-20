@@ -298,9 +298,9 @@ func (b *signedInLaunchBed) EvidenceRoot(installation string) (config.EvidenceRo
 func (b *signedInLaunchBed) StateRoot(installation string) (string, error) {
 	return filepath.Dir(installation), nil
 }
-func (b *signedInLaunchBed) CopyLocalConf(string, string) error { return nil }
-func (b *signedInLaunchBed) MakeManifest(string) error          { return nil }
-func (b *signedInLaunchBed) Stamp(string) (string, error)       { return signedInLaunchStamp, nil }
+func (b *signedInLaunchBed) CopyLocalConf(string, string, string) error { return nil }
+func (b *signedInLaunchBed) MakeManifest(string) error                  { return nil }
+func (b *signedInLaunchBed) Stamp(string) (string, error)               { return signedInLaunchStamp, nil }
 
 // Enrolled reads the clone's identity as it is on disk: absent before the
 // arm, the arm's own mint after it.

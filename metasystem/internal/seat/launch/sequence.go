@@ -76,7 +76,7 @@ type Host interface {
 	// CopyLocalConf copies one seat's metasystem.conf.local to another as
 	// bytes, blanking the evidence root through the engine's own conf
 	// writer, and publishes it atomically.
-	CopyLocalConf(source, destination string) error
+	CopyLocalConf(source, destination, checkout string) error
 	// MakeManifest writes the adapter-declared local configuration paths
 	// where `validate session-isolation` reads them.
 	MakeManifest(path string) error
@@ -518,9 +518,11 @@ func (s *Sequencer) configuration(record *Record) (stepRun, error) {
 	sourceInstall := s.install(s.Request.From)
 	copied := ""
 	if !present {
-		if err := s.Host.CopyLocalConf(filepath.Join(sourceInstall, "metasystem.conf.local"), local); err != nil {
+		err := s.Host.CopyLocalConf(filepath.Join(sourceInstall, "metasystem.conf.local"), local, record.Destination)
+		if err != nil && err != errCopyUnconfirmed {
 			return stepRun{}, err
 		}
+		record.Durable = new(err == nil)
 		copied = "the roster and the local configuration were copied from this seat; edit " + local + " if this machine should differ"
 	}
 	root, err := s.evidenceRoot(record)
@@ -552,6 +554,12 @@ func (s *Sequencer) configuration(record *Record) (stepRun, error) {
 			"--repo", record.Destination},
 	}); err != nil {
 		return stepRun{}, err
+	}
+	if record.Durable != nil && !*record.Durable {
+		if copied == "" {
+			return stepRun{outcome: StepSkipped, words: errCopyUnconfirmed.Error() + "; " + root.Line()}, nil
+		}
+		copied += "; " + errCopyUnconfirmed.Error()
 	}
 	if copied == "" {
 		return stepRun{outcome: StepSkipped, words: local + " was already written; its isolation and its configuration were checked again; " + root.Line()}, nil

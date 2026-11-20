@@ -141,10 +141,10 @@ func TestSetConfKeysReplacesAppendsAndDedupes(t *testing.T) {
 		"watch.interval-sec=60\n"+
 		"evidence.root=artifacts\n"+
 		"watch.interval-sec=120\n")
-	err := SetConfKeys(conf, []ConfSetting{
+	_, err := SetConfKeys(conf, []ConfSetting{
 		{Key: "watch.interval-sec", Value: "1"},
 		{Key: "census.log-max-bytes", Value: "350"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

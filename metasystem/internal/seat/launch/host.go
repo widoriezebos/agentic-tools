@@ -36,6 +36,7 @@ import (
 
 // OSHost answers the sequencer's questions from this host.
 type OSHost struct {
+	SyncDir atomicfile.DirSync
 	// Env is the environment an installation's evidence root resolves
 	// under. Nil answers only HOME from this process, which is the scrubbed
 	// view the machine's own steps run under (Scrubbed drops METASYSTEM_*).
@@ -102,6 +103,8 @@ func (OSHost) MakeDir(path string) (bool, error) {
 	return false, err
 }
 
+var errCopyUnconfirmed = fmt.Errorf("the local configuration was copied but its survival after a crash is not confirmed")
+
 // CopyLocalConf copies one seat's metasystem.conf.local to another as bytes
 // and blanks the one key this verb knows is wrong for a second machine, the
 // evidence root, so the clone resolves its own.
@@ -111,7 +114,7 @@ func (OSHost) MakeDir(path string) (bool, error) {
 // leak them. The rewrite goes through the engine's own conf-key writer on a
 // temporary copy, and the result is published with one rename, so no half
 // written configuration is ever visible at the destination.
-func (OSHost) CopyLocalConf(source, destination string) error {
+func (h OSHost) CopyLocalConf(source, destination, checkout string) error {
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return err
@@ -132,14 +135,17 @@ func (OSHost) CopyLocalConf(source, destination string) error {
 	if err := staged.Close(); err != nil {
 		return err
 	}
-	if err := validate.SetConfKeys(name, []validate.ConfSetting{{Key: config.EvidenceRootKey, Value: ""}}); err != nil {
+	if _, err := validate.SetConfKeys(name, []validate.ConfSetting{{Key: config.EvidenceRootKey, Value: ""}}, h.SyncDir); err != nil {
 		return err
 	}
 	rewritten, err := os.ReadFile(name)
 	if err != nil {
 		return err
 	}
-	_, err = atomicfile.WriteText(destination, string(rewritten), filepath.Dir(destination))
+	durable, err := h.SyncDir.WriteFile(destination, rewritten, 0600, checkout)
+	if err == nil && !durable {
+		return errCopyUnconfirmed
+	}
 	return err
 }
 

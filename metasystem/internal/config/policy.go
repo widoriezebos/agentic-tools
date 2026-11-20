@@ -160,13 +160,10 @@ func ResolvePolicy(p GetParams) (PolicyResolution, error) {
 			if err := policyValueProblem(p.Key, layer.Value); err != nil {
 				return layer, false, &PolicyReadError{Source: layer.Source, Checkout: checkout, Err: err}
 			}
-			path, pathErr := policyRecordPath(checkout, p.Key)
-			if pathErr == nil {
-				var record PolicyRecord
-				data, readErr := os.ReadFile(path)
-				if readErr == nil && json.Unmarshal(data, &record) == nil && record.Name == p.Key && record.Checkout == checkout && record.Value == layer.Value && record.Fingerprint == policyFingerprint(conf, p.Key, layer) && record.SetBy != "" && !record.At.IsZero() {
-					layer.SetBy, layer.At = record.SetBy, record.At
-				}
+			path, _ := policyRecordPath(checkout, p.Key)
+			data, _ := os.ReadFile(path)
+			if record, ok := matchingPolicy(data, p.Key, layer, policyFingerprint(conf, p.Key, layer)); ok {
+				layer.SetBy, layer.At = record.SetBy, record.At
 			}
 		}
 		return layer, found, nil
@@ -235,13 +232,16 @@ func ResolvePolicy(p GetParams) (PolicyResolution, error) {
 	return result, nil
 }
 
-func policyRecordPath(checkout, key string) (string, error) {
+func policyRecordPath(checkout, key string) (string, string) {
 	seat, err := helm.Locate(checkout)
 	if err != nil {
-		return "", err
+		return "", ""
 	}
-	return filepath.Join(seat.Dir, "policy", key+".json"), nil
+	return filepath.Join(seat.Dir, "policy", key+".json"), seat.CommonDir
 }
+
+// PolicyRevisionKey names the comment published alongside a changed setting.
+func PolicyRevisionKey(key string) string { return "# metasystem revision " + key }
 
 func policyFingerprint(conf, key string, value PolicyValue) string {
 	path := conf
@@ -255,10 +255,16 @@ func policyFingerprint(conf, key string, value PolicyValue) string {
 	if err != nil {
 		return ""
 	}
+	revision := ""
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.HasPrefix(line, PolicyRevisionKey(key)+"=") {
+			revision = "\x00" + line
+		}
+	}
 	for _, line := range strings.Split(string(data), "\n") {
-		name, _, ok := strings.Cut(line, "=")
-		if ok && strings.TrimSpace(name) == key {
-			return fmt.Sprintf("%x", sha256.Sum256([]byte(value.Source+"\x00"+line)))
+		name, v, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(name) == key && strings.TrimSpace(v) == value.Value {
+			return fmt.Sprintf("%x", sha256.Sum256([]byte(value.Source+"\x00"+line+revision)))
 		}
 	}
 	return ""
@@ -282,20 +288,35 @@ func WithPolicyLock(checkout string, write func() error) error {
 	return write()
 }
 
-func RecordPolicy(checkout, conf, key, value, by string, at time.Time) error {
-	path, err := policyRecordPath(checkout, key)
-	if err != nil {
-		return err
-	}
+func matchingPolicy(data []byte, key string, current PolicyValue, fingerprint string) (record PolicyRecord, ok bool) {
+	ok = json.Unmarshal(data, &record) == nil && fingerprint != "" && record.Fingerprint == fingerprint && record.Name == key && record.Checkout == current.Checkout && record.Value == current.Value && strings.TrimSpace(record.SetBy) != "" && !record.At.IsZero()
+	return
+}
+
+func RecordPolicy(checkout, conf, key, value, by string, at time.Time, same bool, sync atomicfile.DirSync) (PolicyValue, bool) {
+	path, anchor := policyRecordPath(checkout, key)
 	if strings.TrimSpace(by) == "" {
 		by = "author unknown"
 	}
+	if same {
+		by = "author of the earlier change unknown; reaffirmed by " + by
+	}
 	current := PolicyValue{Value: value, Source: "conf-local", Checkout: checkout, SetBy: by, At: at.UTC()}
 	record := PolicyRecord{Name: key, Checkout: checkout, Value: value, SetBy: by, At: at.UTC(), Previous: current, Fingerprint: policyFingerprint(conf, key, current)}
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return err
+	if same {
+		data, _ := os.ReadFile(path)
+		if original, ok := matchingPolicy(data, key, current, record.Fingerprint); ok {
+			current.SetBy, current.At = original.SetBy, original.At
+			durable, _ := sync.WriteFile(path, data, 0600, anchor)
+			return current, durable
+		}
 	}
-	_, err = atomicfile.WriteFile(path, append(data, '\n'), 0600, "")
-	return err
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err == nil && path != "" && record.Fingerprint != "" {
+		if durable, err := sync.WriteFile(path, append(data, '\n'), 0600, anchor); err == nil {
+			return current, durable
+		}
+	}
+	current.SetBy, current.At = "author unknown", time.Time{}
+	return current, false
 }

@@ -587,7 +587,7 @@ func TestPolicySettingsWriteFailuresAndOwnerRecheck(t *testing.T) {
 	if err := os.MkdirAll(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, raw := b.run(t, b.seat, "set", "landing.batch", "2"); code == 0 || !strings.Contains(raw, "incomplete") {
+	if code, _, raw := b.run(t, b.seat, "set", "landing.batch", "2"); code != 0 || !strings.Contains(raw, "author unknown") {
 		t.Fatalf("metadata I/O failure: %d %s", code, raw)
 	}
 	if p := b.show(t, "landing.batch"); p.Value != "2" || !strings.Contains(p.SetBy, "author unknown") {

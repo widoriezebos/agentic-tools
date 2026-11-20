@@ -555,6 +555,7 @@ func editDistance(left, right string) int {
 // intentOwners are the existing owners a public command calls. Production
 // uses the real ones; tests give each invocation its own fakes.
 type intentOwners struct {
+	syncDir   func(string) error
 	decisions decisionOwners
 	policies  config.PolicyReaders
 
@@ -852,6 +853,7 @@ type intentNext struct {
 // intentResult is the one JSON envelope every public command prints; text
 // output renders the same result.
 type intentResult struct {
+	published     bool           // The requested setting is visible even when durability is uncertain.
 	SchemaVersion int            `json:"schemaVersion"`
 	Verb          string         `json:"verb"`
 	Targets       []intentTarget `json:"targets"`
@@ -915,8 +917,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 		result.Next = &intentNext{Argv: result.next, Reason: result.nextReason}
 	}
 	code := result.code
-	proceeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged || result.Outcome == intentPartial || result.Outcome == intentInProgress
-	if code == 0 && result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
+	succeeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged || result.published
+	proceeded := succeeded || result.Outcome == intentPartial || result.Outcome == intentInProgress
+	if code == 0 && !succeeded {
 		code = 1
 	}
 	verbose := inv.input.switched("verbose")
@@ -946,7 +949,6 @@ func (inv *intentInvocation) render(result intentResult) int {
 			result.Next = &intentNext{Argv: strings.Fields(remedy), Reason: result.Next.Reason}
 		}
 	}
-	succeeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged
 	stream := inv.stdout
 	if !succeeded {
 		stream = inv.stderr
