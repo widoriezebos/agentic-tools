@@ -124,7 +124,8 @@ func (inv *intentInvocation) answerProgress(result intentResult) intentResult {
 			if err == nil {
 				for _, round := range record.Rounds {
 					for _, step := range round.Steps {
-						if step.LaunchID == decision.State && step.State != launch.StepRunning {
+						if step.LaunchID == decision.State && step.State != launch.StepRunning &&
+							(step.EndBooking == nil || step.EndBooking.CollectedAt != "") {
 							progress["state"] = "started"
 						}
 					}

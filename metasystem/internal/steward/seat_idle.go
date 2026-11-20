@@ -105,7 +105,7 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 			}
 			continue
 		}
-		if !selected || run.State != "running" {
+		if !selected || run.State != "running" && run.State != launch.UnitStepEnded {
 			continue
 		}
 		if _, err := store.StateDir(entry.Name()); err != nil || run.ID != entry.Name() {
@@ -224,7 +224,7 @@ type UncollectedRun = goal.UncollectedRun
 
 func orphanStep(store launch.Store, run launch.UnitRunRecord, probe func(identity.Ref) identity.Liveness) (*launch.UnitStep, launch.Record, bool) {
 	step, _ := currentSeatRunStep(run)
-	if run.State != "running" || step == nil || step.State == launch.StepStarting {
+	if run.State != "running" && run.State != launch.UnitStepEnded || step == nil || step.State == launch.StepStarting {
 		return step, launch.Record{}, false
 	}
 	record, err := store.Read(step.LaunchID)
@@ -278,7 +278,9 @@ func currentSeatRunStep(run launch.UnitRunRecord) (*launch.UnitStep, time.Time) 
 			if !at.IsZero() && (first.IsZero() || at.Before(first)) {
 				first = at
 			}
-			if step.State == launch.StepRunning || step.State == launch.StepStarting {
+			// Booking ends execution, but collection still belongs to a session.
+			if step.State == launch.StepRunning || step.State == launch.StepStarting ||
+				step.EndBooking != nil && step.EndBooking.CollectedAt == "" {
 				copy := step
 				current = &copy
 			}

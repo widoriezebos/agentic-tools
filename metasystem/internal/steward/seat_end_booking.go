@@ -63,24 +63,8 @@ func BookEndedWork(root string, tick time.Duration, runner *launch.UnitRunner) (
 		}
 		reservations[id] = job
 	}
-	stamped := func(execution launch.Record, run string) (owned, present bool) {
-		var installation, unit string
-		_, hasInstallation := execution.AdapterData["unitInstallation"]
-		_, hasRun := execution.AdapterData["unitRun"]
-		present = hasInstallation || hasRun
-		_ = json.Unmarshal(execution.AdapterData["unitInstallation"], &installation)
-		_ = json.Unmarshal(execution.AdapterData["unitRun"], &unit)
-		return filepath.IsAbs(installation) && realpath.Resolve(installation) == realpath.Resolve(root) && unit == run, present
-	}
 	owns := func(run launch.UnitRunRecord, execution launch.Record) bool {
-		if execution.Goal != "" && execution.Goal != run.Goal {
-			return false
-		}
-		if owned, present := stamped(execution, run.ID); present {
-			return owned
-		}
-		job := reservations[execution.ID]
-		return job != nil && job["unitRun"] == run.ID && job["goalId"] == run.Goal
+		return seatOwnsLaunch(root, run, execution, reservations[execution.ID])
 	}
 	entries, err := os.ReadDir(runner.Root)
 	if err != nil && !os.IsNotExist(err) {
@@ -147,7 +131,7 @@ func BookEndedWork(root string, tick time.Duration, runner *launch.UnitRunner) (
 		if execution.State == launch.Starting || execution.State == launch.Running {
 			continue
 		}
-		owned, present := stamped(execution, run)
+		owned, present := seatLaunchStamp(root, execution, run)
 		if !owned && (present || !localSteps[id]) {
 			log("end booking left reservation " + id + ": no matching installation stamp")
 			continue
@@ -170,4 +154,49 @@ func BookEndedWork(root string, tick time.Duration, runner *launch.UnitRunner) (
 		}
 	}
 	return skipped
+}
+
+func seatLaunchStamp(root string, execution launch.Record, run string) (owned, present bool) {
+	var installation, unit string
+	_, hasInstallation := execution.AdapterData["unitInstallation"]
+	_, hasRun := execution.AdapterData["unitRun"]
+	present = hasInstallation || hasRun
+	_ = json.Unmarshal(execution.AdapterData["unitInstallation"], &installation)
+	_ = json.Unmarshal(execution.AdapterData["unitRun"], &unit)
+	return filepath.IsAbs(installation) && realpath.Resolve(installation) == realpath.Resolve(root) && unit == run, present
+}
+
+func seatOwnsLaunch(root string, run launch.UnitRunRecord, execution launch.Record, job map[string]any) bool {
+	if execution.Goal != "" && execution.Goal != run.Goal {
+		return false
+	}
+	if owned, present := seatLaunchStamp(root, execution, run.ID); present {
+		return owned
+	}
+	return job != nil && job["jobId"] == execution.ID && job["operationId"] == "unit-launch:"+execution.ID && job["unitRun"] == run.ID && job["goalId"] == run.Goal
+}
+
+// UncollectedCheckoutRuns observes the same checkout ownership as end booking,
+// including unnamed and paused work. It never books or continues a run.
+func UncollectedCheckoutRuns(root string, runner *launch.UnitRunner) ([]UncollectedRun, error) {
+	work, unknown, err := runner.GoalRuns("")
+	if err != nil {
+		return nil, err
+	}
+	if len(unknown) != 0 {
+		return nil, fmt.Errorf("uncollected work: %s", strings.Join(unknown, "; "))
+	}
+	var runs []UncollectedRun
+	for _, item := range work {
+		run := *item.Record
+		step, execution, orphan := orphanStep(runner.Manager.Store, run, func(ref identity.Ref) identity.Liveness { return identity.AliveRef(identity.KernelProber{}, ref) })
+		if !orphan {
+			continue
+		}
+		job, _ := dispatch.ReadRecordObject(filepath.Join(root, "artifacts", "agents", "jobs", execution.ID+".json"))
+		if seatOwnsLaunch(root, run, execution, job) {
+			runs = append(runs, UncollectedRun{Goal: run.Goal, Run: run.ID, LaunchID: step.LaunchID, Step: step.Name, EndedAt: execution.FinishedAt})
+		}
+	}
+	return runs, nil
 }

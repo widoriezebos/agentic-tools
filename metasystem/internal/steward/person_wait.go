@@ -136,7 +136,7 @@ func askUncollectedRounds(root, machine string, cfg TickConfig, work goal.Claima
 		if q.Machine == machine && q.Decision != nil && q.Decision.Kind == "uncollected-round" && q.RetiredAt.IsZero() && !slices.ContainsFunc(runs, func(run UncollectedRun) bool {
 			return run.LaunchID == q.Decision.State && run.Goal == q.Decision.Subject
 		}) {
-			if err := channel.Retire(root, q.ID, "collected", cfg.now()); err != nil {
+			if err := channel.Retire(root, q.ID, "the round no longer awaits collection", cfg.now()); err != nil {
 				return err
 			}
 		}

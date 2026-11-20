@@ -297,6 +297,7 @@ func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
 }
 
 func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
+	t.Run("booked round collected by the next session", witnessNextSessionsStopCollectsTheBookedRound)
 	root, files := sessionStopFileBed(t)
 	budget := goal.Budget{
 		ElapsedLimit: "4h", AttemptLimit: 4,

@@ -58,6 +58,117 @@ func TestUncollectedRunsReadOnlyTheGoalsAsked(t *testing.T) {
 	}
 }
 
+func TestBookedRoundRemainsUncollectedAcrossTheBookingTick(t *testing.T) {
+	t.Parallel()
+	for _, askBefore := range []bool{true, false} {
+		t.Run(map[bool]string{true: "existing question", false: "new question"}[askBefore], func(t *testing.T) {
+			t.Parallel()
+			b := newEndBookingBed(t)
+			b.run.Revisions = []launch.UnitRevision{{Attempt: 1, Person: "Wido"}}
+			b.save()
+			work := goal.ClaimableBudgetedWork{Claimed: []string{b.run.Goal}, InFlight: []string{"claim:" + b.run.Goal}}
+			want := UncollectedRun{Goal: b.run.Goal, Run: b.run.ID, LaunchID: b.execution.ID, Step: "build", EndedAt: b.execution.FinishedAt}
+			cfg := TickConfig{Now: b.now, WorkStateRoot: b.home, Prober: seatBusyDeadProber{}}
+			ask := func(orphans map[UncollectedRun]string) {
+				t.Helper()
+				if err := askUncollectedRounds(b.root, "ui", cfg, work, nil, orphans); err != nil {
+					t.Fatal(err)
+				}
+			}
+			questionID := ""
+			if askBefore {
+				ask(map[UncollectedRun]string{want: "Wido"})
+				qs, _ := channel.WalkQuestions(b.root)
+				if len(qs) != 1 {
+					t.Fatalf("before booking: %+v", qs)
+				}
+				questionID = qs[0].ID
+			}
+			for tick := 0; tick < 2; tick++ {
+				orphans := map[UncollectedRun]string{}
+				busy, reason, skipped := seatBusyOrphanReader(b.home, 5*time.Minute, seatBusyDeadProber{}, func(run UncollectedRun, person string) { orphans[run] = person }, b.runner)(b.root, work, b.now)
+				if busy || skipped != 0 || len(orphans) != 1 || orphans[want] != "Wido" {
+					t.Fatalf("booked round disappeared or blocks a replacement seat: busy=%t reason=%s skipped=%d orphans=%+v", busy, reason, skipped, orphans)
+				}
+				runs, err := uncollectedRunsAt(b.home, work.Claimed, func(identity.Ref) identity.Liveness { return identity.Dead })
+				if err != nil || !slices.Equal(runs, []UncollectedRun{want}) {
+					t.Fatalf("booked round disappeared from stop reader: %+v %v", runs, err)
+				}
+				ask(orphans)
+				qs, bad := channel.WalkQuestions(b.root)
+				if len(bad) != 0 || len(qs) != 1 || qs[0].State != "open" || !qs[0].RetiredAt.IsZero() || qs[0].Decision.State != want.LaunchID || questionID != "" && qs[0].ID != questionID {
+					t.Fatalf("booking retired or replaced the collection question: %+v %v", qs, bad)
+				}
+				questionID = qs[0].ID
+			}
+			// A session's collection acknowledges the booked step before continuing.
+			run, err := b.runner.Status(b.run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run.State = "awaiting-judgement"
+			run.Rounds[0].Steps[0].EndBooking.CollectedAt = b.now.Format(time.RFC3339)
+			if !askBefore {
+				run.State = "cancelled"
+				run.Rounds[0].Steps[0].EndBooking.CollectedAt = ""
+			}
+			writeBookingJSON(t, b.runPath, run)
+			ask(nil)
+			q, err := channel.ReadQuestion(b.root, questionID)
+			if err != nil || q.RetiredAt.IsZero() || !askBefore && q.ClosedBecause == "collected" {
+				t.Fatalf("collection or stop did not correctly retire the question: %+v %v", q, err)
+			}
+		})
+	}
+}
+
+func TestBookedRoundIsFirstInTheReplacementSeatsBrief(t *testing.T) {
+	t.Parallel()
+	b, _, _, _ := seatBusyFixture(t)
+	booking := newEndBookingBed(t)
+	booking.tick()
+	d := *b.seatDependencies()
+	d.WorkStateRoot = booking.home
+	d.Prober = seatBusyDeadProber{}
+	d.Units = func(string, string) ([]UnitStage, error) { return []UnitStage{{Unit: "U", Run: booking.run.ID}}, nil }
+	if _, err := startSeatWithDependencies(b.root, SeatSelection{Goal: "held", Held: true}, d); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := os.ReadFile(b.launcher.starts[0].Brief)
+	if err != nil || !strings.Contains(string(brief), "Collect first:\nmetasystem work wait run:"+booking.run.ID+" --timeout 30m") {
+		t.Fatalf("replacement seat lost the booked round: %s %v", brief, err)
+	}
+}
+
+func TestUncollectedCheckoutRunsIncludeUnnamedWorkAndRespectOwnership(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"stamped", "legacy reservation", "foreign stamp", "stopped"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newEndBookingBed(t)
+			b.run.Unit = ""
+			switch name {
+			case "legacy reservation":
+				b.execution.AdapterData = nil
+			case "foreign stamp":
+				b.execution.AdapterData["unitInstallation"], _ = json.Marshal(t.TempDir())
+			case "stopped":
+				b.run.State = "cancelled"
+			}
+			b.save()
+			b.tick()
+			runs, err := UncollectedCheckoutRuns(b.root, b.runner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := name == "stamped" || name == "legacy reservation"
+			if want && (len(runs) != 1 || runs[0].Run != b.run.ID || runs[0].LaunchID != b.execution.ID) || !want && len(runs) != 0 {
+				t.Fatalf("checkout uncollected work: %+v", runs)
+			}
+		})
+	}
+}
+
 func TestADeadSeatsBriefCarriesTheCollection(t *testing.T) {
 	t.Parallel()
 	b, units, work, _ := seatBusyFixture(t)

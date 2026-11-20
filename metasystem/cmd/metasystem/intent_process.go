@@ -1244,6 +1244,7 @@ func runIntentCheckoutStatus(inv *intentInvocation) int {
 		return inv.render(inv.withHelm(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "this checkout's status could not be read",
 			retry: "try again", Details: []string{"status: " + err.Error()}}, scope.Checkout))
 	}
+	report.Lines = append(report.Lines, inv.uncollectedWorkStatus()...)
 	result := processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report)
 	reading := inv.readStatusBoard()
 	result.Data.(map[string]any)["board"] = reading.view

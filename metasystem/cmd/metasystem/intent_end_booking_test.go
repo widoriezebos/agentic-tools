@@ -2,16 +2,112 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
+
+func TestAnswerDoesNotMistakeBookingForCollection(t *testing.T) {
+	t.Parallel()
+	b, runner, run, launchID := endedIntentBuild(t, launch.Completed, "RESULT: DONE\n")
+	if skipped := steward.BookEndedWork(b.root(), 5*time.Minute, runner); skipped != 0 {
+		t.Fatal(skipped)
+	}
+	enrol(t, b, "Wido")
+	channelFor(t, b.root())
+	owners := collectionOwners(t, b)
+	collectionOwnership(t, b, b.goalFile(b.id).Claimed.Lineage, false)
+	q, err := channel.Ask(channel.AskRequest{RepoRoot: b.root(), About: "machine", Kind: "other", Machine: "mac-cli", Contract: true, Now: b.manager.Now(), Facts: []string{"finished round"},
+		Decision: &channel.Decision{Kind: "uncollected-round", Subject: b.id, State: launchID}, Recommendation: "Collect it",
+		Plain: &channel.Plain{Decision: "The round finished and waits.", IfNothing: "it waits."}, Options: []channel.Option{
+			{Label: "Collect it", Act: []string{"metasystem", "work", "wait", "run:" + run, "--timeout", "1m"}, Consequence: "I collect the round. Undo: metasystem work stop on the goal."},
+			{Label: "Leave it", Consequence: "it waits."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q = recordChoice(t, b.root(), q, func(q *channel.Question) { q.Answer.Text, q.Answer.Lineage = "collect it", "steward" })
+	record, err := runner.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record.Plan, []byte("unreadable plan"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, result := collectWithOwners(t, b, run, owners, "--answer", q.ID)
+	state, _ := answerState(t, result)
+	if code == 0 || state != "refused" {
+		t.Fatalf("booking was reported as collection after a refused wait: %d %s", code, result.Summary)
+	}
+	record, err = runner.Status(run)
+	if err != nil || record.State != launch.UnitStepEnded || record.Rounds[0].Steps[0].EndBooking.CollectedAt != "" {
+		t.Fatalf("refused wait changed the booked step: state=%s error=%v", record.State, err)
+	}
+}
+
+func witnessNextSessionsStopCollectsTheBookedRound(t *testing.T) {
+	b, runner, run, launchID := endedIntentBuild(t, launch.Completed, "RESULT: DONE\n")
+	// The build command returned before its launch ended. No collector remains.
+	if skipped := steward.BookEndedWork(b.root(), 5*time.Minute, runner); skipped != 0 {
+		t.Fatal(skipped)
+	}
+	endpoint, err := b.dependencies().endpoint(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := goal.Actor{Machine: "mac-cli", Lineage: b.goalFile(b.id).Claimed.Lineage}
+	collectionOwnership(t, b, actor.Lineage, true)
+	holder, err := lease.CurrentHolder(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("stop hook", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", home)
+		if err := os.Symlink(filepath.Dir(b.unitRoot), filepath.Join(home, ".metasystem")); err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr bytes.Buffer
+		code := runReportTurnVerdictWithInputs([]string{"--root", b.root(), "--session", "replacement-session", "--main-id", holder.MainId},
+			func(string) (goal.Endpoint, error) { return endpoint, nil }, func(string) (string, error) { return actor.Machine, nil }, &stdout, &stderr)
+		var verdict goal.Verdict
+		err = json.Unmarshal(stdout.Bytes(), &verdict)
+		if code != 0 {
+			t.Fatalf("stop hook command: %d %s", code, stderr.String())
+		}
+		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" || !strings.Contains(verdict.Display, "metasystem work wait run:"+run+" --timeout 30m") {
+			t.Fatalf("next session was not told to collect: %+v %v", verdict, err)
+		}
+	})
+	code, result, _ := b.work("work", "wait", "run:"+run)
+	if code != 0 || resultData(t, result)["state"] != "awaiting-judgement" || resultData(t, result)["outcome"] != "green" {
+		t.Fatalf("replacement collection: %d %s", code, result.Summary)
+	}
+	record, err := runner.Status(run)
+	if err != nil || record.Rounds[0].Steps[0].LaunchID != launchID || record.Rounds[0].Steps[0].EndBooking.CollectedAt == "" {
+		t.Fatalf("collection lost the original launch: state=%s error=%v", record.State, err)
+	}
+	t.Run("collected", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", home)
+		if err := os.Symlink(filepath.Dir(b.unitRoot), filepath.Join(home, ".metasystem")); err != nil {
+			t.Fatal(err)
+		}
+		runs, err := steward.UncollectedRuns(b.root(), []string{b.id})
+		if err != nil || len(runs) != 0 {
+			t.Fatalf("collected round still offered: %+v %v", runs, err)
+		}
+	})
+}
 
 func endedIntentBuild(t *testing.T, state launch.State, message string) (*workBed, *launch.UnitRunner, string, string) {
 	t.Helper()
@@ -225,5 +321,29 @@ func TestLiveWorkWaitJoinsStewardBooking(t *testing.T) {
 	code, result, _ = b.work("work", "wait", b.id, "--work", "booked")
 	if code != 0 || resultData(t, result)["outcome"] != "green" {
 		t.Fatalf("next wait did not collect: %d %+v", code, result)
+	}
+}
+
+func TestSystemStatusShowsBookedWorkUntilCollection(t *testing.T) {
+	t.Parallel()
+	b, runner, run, _ := endedIntentBuild(t, launch.Completed, "RESULT: DONE\n")
+	if skipped := steward.BookEndedWork(b.root(), 5*time.Minute, runner); skipped != 0 {
+		t.Fatal(skipped)
+	}
+	p := &processBed{intentBed: b.intentBed, class: lease.ClassHuman, launchDir: b.manager.Store.Root, home: t.TempDir()}
+	owners := b.workOwners()
+	owners.processes = p.owners().processes
+	code, status := b.runJSON(owners, "system", "status")
+	data, _ := json.Marshal(status.Data)
+	if code != 0 || !bytes.Contains(data, []byte("ended; awaiting collection")) || !bytes.Contains(data, []byte("work wait run:"+run)) {
+		t.Fatalf("system status lost uncollected work: %d %+v %s", code, status, data)
+	}
+	if code, result, _ := b.work("work", "wait", "run:"+run); code != 0 {
+		t.Fatalf("collect: %d %s", code, result.Summary)
+	}
+	code, status = b.runJSON(owners, "system", "status")
+	data, _ = json.Marshal(status.Data)
+	if code != 0 || bytes.Contains(data, []byte("work wait run:"+run)) {
+		t.Fatalf("system status still offers collected work: %d %s", code, data)
 	}
 }

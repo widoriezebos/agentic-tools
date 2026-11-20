@@ -10,10 +10,24 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
+
+// Ended steps still need a collector after their processes leave the inventory.
+func (inv *intentInvocation) uncollectedWorkStatus() []string {
+	runs, err := steward.UncollectedCheckoutRuns(inv.layout.InstallationRoot.Path(), inv.unitRunner())
+	if err != nil {
+		return []string{"uncollected work unavailable: " + err.Error()}
+	}
+	var lines []string
+	for _, run := range runs {
+		lines = append(lines, "goal "+run.Goal+", step "+run.Step+": ended; awaiting collection: "+shellCommand(inv.publicArgv("work", "wait", "run:"+run.Run)))
+	}
+	return lines
+}
 
 // statusBoard is what status reads besides the checkout's processes: the
 // host board, the landing lane and the peer message counts, read once; the
