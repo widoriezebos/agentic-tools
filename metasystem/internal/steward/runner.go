@@ -409,13 +409,20 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			// Light owners read fresh records without advancing the scheduled
 			// directory cache's audit and read counters.
 			runnerReads.Delete(top)
+			lightCfg := cfg
+			if !lightCfg.Now.IsZero() {
+				lightCfg.Now = deps.Now()
+			}
 			light := deps.Light
 			if light == nil {
 				light = runLightDecisions
 			}
-			result, err = light(top, cfg, census)
+			result, err = light(top, lightCfg, census)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "light cycle failed: %v\n", err)
+			}
+			if result.Decision.Action == ActHold {
+				fmt.Fprintf(logFile, "light cycle held: %s\n", result.Decision.Reason)
 			}
 			if drain.Requested() {
 				return nil
@@ -430,7 +437,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 					if startSeat == nil {
 						startSeat = startLightSeat
 					}
-					if _, startErr := startSeat(top, cfg, census, *result.Seat); startErr != nil {
+					if _, startErr := startSeat(top, lightCfg, census, *result.Seat); startErr != nil {
 						fmt.Fprintf(os.Stderr, "seat start failed: %v\n", startErr)
 						if qErr := QueueNotification(top, PendingNotification{Nonce: "seat-start-failure", Message: "steward: seat start failed — " + startErr.Error()}); qErr != nil {
 							fmt.Fprintf(os.Stderr, "seat-start-failure incident could not queue: %v\n", qErr)
@@ -452,7 +459,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		reads.Lock()
 		reads.tick++
 		reads.Unlock()
+		cfg.scheduledProgress = &scheduledProgress{}
 		result, err = deps.Tick(top, cfg, timed)
+		cfg.scheduledProgress.reason = result.Decision.Reason
+		if err != nil {
+			cfg.scheduledProgress.seat = false
+			cfg.scheduledProgress.reason = err.Error()
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}

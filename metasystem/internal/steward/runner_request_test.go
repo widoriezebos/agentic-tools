@@ -564,6 +564,7 @@ func TestQuestionWithdrawalWakesTheRunnerAndReleasesItsGoal(t *testing.T) {
 		if err != nil {
 			return TickResult{}, err
 		}
+		cfg.scheduledProgress.collection = true
 		result, err := decideTickWithDependencies(root, cfg, census, previous, Marks{HeadOid: "h", OpidDigest: "d"}, work)
 		if err == nil {
 			err = SaveEvidence(root, EvidencePath(root), result.Evidence)
@@ -626,7 +627,7 @@ func TestRequestedAndScheduledCyclesUseTheSameSeatDecision(t *testing.T) {
 			previous := Evidence{Marks: Marks{HeadOid: "h", OpidDigest: "d"}}
 			var ordinary TickResult
 			for _, requested := range []bool{false, true} {
-				cfg := TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root)}
+				cfg := TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root), scheduledProgress: &scheduledProgress{collection: true, seat: true}}
 				var result TickResult
 				var err error
 				if requested {
@@ -655,6 +656,8 @@ func TestRequestedAndScheduledCyclesUseTheSameSeatDecision(t *testing.T) {
 func TestSeatLaunchCompletionWakesItsSuccessorDecision(t *testing.T) {
 	t.Parallel()
 	bed := newSeatBed(t, seatClaimedGoal("held", SeatLineage))
+	bed.goals["held"].Claimed.At = bed.now.Add(-time.Minute).Format(time.RFC3339)
+	bed.goals["held"].History[len(bed.goals["held"].History)-1].At = bed.goals["held"].Claimed.At
 	store := launch.Store{Root: t.TempDir()}
 	alias := filepath.Join(t.TempDir(), "checkout")
 	if err := os.Symlink(bed.root, alias); err != nil {
@@ -687,6 +690,7 @@ func TestSeatLaunchCompletionWakesItsSuccessorDecision(t *testing.T) {
 		if err != nil {
 			return TickResult{}, err
 		}
+		cfg.scheduledProgress.collection = true
 		result, err := decideTickWithDependencies(root, cfg, census, previous, Marks{HeadOid: "h", OpidDigest: "d"}, bed.dependencies())
 		if err == nil {
 			err = SaveEvidence(root, EvidencePath(root), result.Evidence)

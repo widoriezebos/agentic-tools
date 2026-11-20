@@ -36,8 +36,14 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
-	Prober identity.Prober
-	Signal identity.SignalFunc
+	// scheduledProgress belongs to this runner only. Light cycles may use
+	// only the owners reached by its most recent scheduled tick.
+	scheduledProgress *scheduledProgress
+	// workReads supplies per-instance repository reads. Decision and start
+	// policy still run through their ordinary owners.
+	workReads *openWorkDependencies
+	Prober    identity.Prober
+	Signal    identity.SignalFunc
 	// GoalProjection supplies the accepted ledger read; nil uses the production repository.
 	GoalProjection   func(string, time.Time) (goal.Projection, error)
 	RecoveryRegistry string
@@ -525,7 +531,7 @@ type tickContinuationDependencies struct {
 
 func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDependencies {
 	cfg = cfg.withDefaults()
-	return tickContinuationDependencies{
+	dependencies := tickContinuationDependencies{
 		ledgerRepository: defaultLedgerAttentionRepository(),
 		ledgerWriter:     atomicfile.WriteText,
 		readMarks:        readMarksGit,
@@ -546,9 +552,16 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 			ledgerStops: seatDependenciesForConfig(cfg).Project,
 		},
 	}
+	if cfg.workReads != nil {
+		dependencies.openWork = *cfg.workReads
+	}
+	return dependencies
 }
 
 func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus, generation int, process identity.Ref, tickAttemptSeq int64, goalStops []BreachStopReport, dependencies tickContinuationDependencies) (TickResult, bool, error) {
+	if cfg.scheduledProgress != nil {
+		cfg.scheduledProgress.collection = true
+	}
 	if cfg.GoalProjection != nil {
 		dependencies.openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
 	}
@@ -1027,6 +1040,9 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	}
 
 	if dependencies.Seat != nil && seat != nil && shared != nil {
+		if cfg.scheduledProgress != nil {
+			cfg.scheduledProgress.seat = true
+		}
 		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerCheck, *dependencies.Seat, *seat); ok {
 			return d, selection, workReason, nil
 		}

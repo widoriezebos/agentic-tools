@@ -610,6 +610,9 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 
 func seatDependenciesForConfig(cfg TickConfig) seatDependencies {
 	dependencies := defaultSeatDependencies(cfg.Seat)
+	if cfg.workReads != nil && cfg.workReads.Seat != nil {
+		dependencies = *cfg.workReads.Seat
+	}
 	dependencies.Now, dependencies.ProviderHome = cfg.now, cfg.ProviderHome
 	dependencies.WorkStateRoot, dependencies.Prober = cfg.WorkStateRoot, cfg.Prober
 	if cfg.GoalProjection != nil {

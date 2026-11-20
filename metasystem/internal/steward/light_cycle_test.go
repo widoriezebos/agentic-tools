@@ -33,7 +33,11 @@ func TestLightCycleRunsOnlyAllowedOwners(t *testing.T) {
 	record := func(step string) { trace = append(trace, step) }
 	deps := idleRunnerDependencies(&now)
 	deps.ProviderHome = testprovider.Home(bed.root)
-	deps.Tick = func(string, TickConfig, WorkerCensus) (TickResult, error) { record("tick"); return TickResult{}, nil }
+	deps.Tick = func(_ string, cfg TickConfig, _ WorkerCensus) (TickResult, error) {
+		record("tick")
+		*cfg.scheduledProgress = scheduledProgress{collection: true, seat: true}
+		return TickResult{}, nil
+	}
 	deps.SweepDisk = func(string, time.Time, bool) error { record("disk"); return nil }
 	deps.Bridge = func(string) bridgeStepper { return lightTraceBridge{record} }
 	deps.SettleReplies = func(context.Context, string) (int, error) { record("replies"); return 0, nil }
@@ -155,6 +159,7 @@ func TestLightCyclesPreserveScheduledState(t *testing.T) {
 		evidence := Evidence{TicksSinceAdvance: 4, Degraded: 1, DryRevivals: 3}
 		deps.Tick = func(root string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
 			scheduled++
+			*cfg.scheduledProgress = scheduledProgress{collection: true, seat: true}
 			evidence = Observe(evidence, evidence.Marks)
 			if err := SaveEvidence(root, EvidencePath(root), evidence); err != nil {
 				t.Fatal(err)
@@ -230,6 +235,7 @@ func TestLightSeatKeepsProviderAndCollectionHolds(t *testing.T) {
 		t.Run(fmt.Sprint(age), func(t *testing.T) {
 			bed, cfg, work := seatBusyReadBed(t, launch.StepStarting, age)
 			cfg.Now = bed.now
+			cfg.scheduledProgress = &scheduledProgress{collection: true, seat: true}
 			cfg.ProviderHome = testprovider.Home(bed.root)
 			result, err := runLightDecisionsWith(bed.root, cfg, deadCensus(), work, ReapContinuations)
 			if err != nil || (result.Seat == nil) != (age < 5*time.Minute) {
@@ -241,7 +247,7 @@ func TestLightSeatKeepsProviderAndCollectionHolds(t *testing.T) {
 	if _, err := outage.Observe(testprovider.Home(bed.root), "claude", "fixture-model", outage.ProviderLimit, "limited", "light", bed.now); err != nil {
 		t.Fatal(err)
 	}
-	result, err := runLightDecisionsWith(bed.root, TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root)}, deadCensus(), bed.dependencies(), ReapContinuations)
+	result, err := runLightDecisionsWith(bed.root, TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root), scheduledProgress: &scheduledProgress{collection: true, seat: true}}, deadCensus(), bed.dependencies(), ReapContinuations)
 	if err != nil || result.Seat != nil || result.Decision.Action == ActRevive {
 		t.Fatalf("provider hold lifted: %+v %v", result, err)
 	}
