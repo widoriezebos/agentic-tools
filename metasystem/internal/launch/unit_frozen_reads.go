@@ -255,7 +255,14 @@ func relocateReadPath(path, root, target string) string {
 	return filepath.Join(target, rel)
 }
 
-func (runner *UnitRunner) prepareRoundReadBrief(record *UnitRunRecord, round *UnitRound, plan UnitPlan, sequence *readSequence) error {
+func (runner *UnitRunner) prepareRoundRead(record *UnitRunRecord, round *UnitRound, plan UnitPlan, sequence *readSequence, legacyRead bool) error {
+	if !legacyRead {
+		dir, err := runner.frozenReadCheckout(record, round, plan)
+		if err != nil {
+			return err
+		}
+		sequence.spec.WorkingDirectory = dir
+	}
 	packet, err := runner.warmRead(*record, *round)
 	if err != nil {
 		return err

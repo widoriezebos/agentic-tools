@@ -26,7 +26,7 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 				build += "," + value
 			}
 		case strings.HasPrefix(step.Name, "read"):
-			if readStepHasCountingRerun(round.Steps, index) {
+			if step.Unattached || readStepHasCountingRerun(round.Steps, index) {
 				continue
 			}
 			reads = append(reads, step.LaunchID+":"+chooseUnitValue(step.Verdict, "none"))
@@ -42,6 +42,7 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 	}
 	if len(reads) == 0 {
 		reads = []string{"-:none"}
+		counts = false
 	}
 	redValue := "none"
 	if len(red) > 0 {
@@ -61,7 +62,7 @@ func readStepHasCountingRerun(steps []launch.UnitStep, index int) bool {
 		return false
 	}
 	for _, candidate := range steps[index+1:] {
-		if candidate.Rerun && candidate.VerdictCounts != nil && *candidate.VerdictCounts && (step.Package == "" || candidate.Package == step.Package) {
+		if candidate.Rerun && !candidate.Unattached && candidate.VerdictCounts != nil && *candidate.VerdictCounts && (step.Package == "" || candidate.Package == step.Package) {
 			return true
 		}
 	}

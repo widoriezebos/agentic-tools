@@ -178,6 +178,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			step.LaunchIDs = append(step.LaunchIDs, step.LaunchID)
 		}
 		step.Unadmitted = ""
+		step.Unattached = false
 	}
 	step.ExecutionStartedAt = launchRecord.StartedAt
 	if launchRecord.State.Terminal() {

@@ -25,6 +25,10 @@ func TestJudgementLineNamesBuildReadAndProof(t *testing.T) {
 			t.Fatalf("line=%q missing=%q", line, want)
 		}
 	}
+	record.Rounds[0].Steps[1].Unattached = true
+	if line := unitJudgementLine(record, manager); !strings.Contains(line, "read=-:none verdict-counts=false") {
+		t.Fatalf("detached verdict in judgement: %s", line)
+	}
 }
 
 func TestJudgementLineSkipsReadSupersededByCountingRerun(t *testing.T) {

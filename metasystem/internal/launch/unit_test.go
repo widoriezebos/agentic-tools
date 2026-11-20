@@ -1287,6 +1287,18 @@ func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 	}
 	follow := filepath.Join(t.TempDir(), "follow.md")
 	os.WriteFile(follow, []byte("Declared size: 1 changed lines\n"), 0o600)
+	fixture.starter.onStart = func(r Record) error {
+		if r.Kind == "proof" {
+			current, err := fixture.runner.Status(first.Record.ID)
+			if err != nil {
+				return err
+			}
+			if round := current.Rounds[1]; round.ReadStore != "" || round.ReadCheckout != "" {
+				t.Fatal("correction provisioned a reader checkout before its check passed")
+			}
+		}
+		return nil
+	}
 	second, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID, FollowUp: follow})
 	if err != nil {
 		t.Fatal(err)

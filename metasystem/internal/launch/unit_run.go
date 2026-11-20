@@ -740,6 +740,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	readStart := len(round.Steps)
 	var sequence readSequence
+	var legacyRead bool
 	hasRead := plan.HasRead() && !runner.resolving
 	coldRead := round.InputsChanged == "" && hasRead && !slices.ContainsFunc(record.Rounds[:len(record.Rounds)-1], func(prior UnitRound) bool { return len(prior.Reads) > 0 })
 	if hasRead {
@@ -753,20 +754,13 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 		// A retained reader from an earlier engine finishes in its original checkout.
-		if round.ReadCheckout != "" || !slices.ContainsFunc(round.Steps[readStart:], func(s UnitStep) bool { return s.LaunchID != "" && s.Retained != nil }) {
-			dir, err := runner.frozenReadCheckout(record, round, plan)
-			if IsCode(err, "UNIT_TREE_CHANGED") {
-				return runner.treeMoved(record, round, "the frozen build tree")
-			}
-			if err != nil {
-				return UnitResult{}, err
-			}
-			sequence.spec.WorkingDirectory = dir
-		} else {
-			coldRead = false
-		}
+		legacyRead = round.ReadCheckout == "" && slices.ContainsFunc(round.Steps[readStart:], func(s UnitStep) bool { return s.LaunchID != "" && s.Retained != nil })
+		coldRead = coldRead && !legacyRead
 		if coldRead {
-			if err := runner.prepareRoundReadBrief(record, round, plan, &sequence); err != nil {
+			if err := runner.prepareRoundRead(record, round, plan, &sequence, legacyRead); err != nil {
+				if IsCode(err, "UNIT_TREE_CHANGED") {
+					return runner.treeMoved(record, round, "the frozen build tree")
+				}
 				return UnitResult{}, err
 			}
 		}
@@ -850,7 +844,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		return runner.finish(record, round, "proof-red")
 	}
 	if hasRead && !coldRead {
-		if err := runner.prepareRoundReadBrief(record, round, plan, &sequence); err != nil {
+		if err := runner.prepareRoundRead(record, round, plan, &sequence, legacyRead); err != nil {
+			if IsCode(err, "UNIT_TREE_CHANGED") {
+				return runner.treeMoved(record, round, "the frozen build tree")
+			}
 			return UnitResult{}, err
 		}
 	}
@@ -1698,8 +1695,8 @@ func readOutputs(manager *Manager, round UnitRound) []string {
 		}
 	}
 	for _, step := range round.Steps {
-		if strings.HasPrefix(step.Name, "read") && step.State == StepPassed && !step.Unattached && step.Verdict != "" && step.LaunchID != "" {
-			if record, err := manager.Store.Read(step.LaunchID); err == nil && record.State == Completed && record.VerdictIsCounting() {
+		if strings.HasPrefix(step.Name, "read") && step.State != StepSkipped && !step.Unattached && step.LaunchID != "" {
+			if record, err := manager.Store.Read(step.LaunchID); err == nil && record.State != Cancelled {
 				for _, output := range record.Outputs {
 					if _, err := os.Stat(output.Path); !os.IsNotExist(err) {
 						paths = append(paths, output.Path)

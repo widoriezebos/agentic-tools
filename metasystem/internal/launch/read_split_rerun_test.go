@@ -76,9 +76,19 @@ func TestCompactedWholeReadRerunsPackages(t *testing.T) {
 
 func TestCompactedPackageRerunEndsReadCompacted(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, sampleDiff())
+	fixture := newUnitFixture(t, sampleDiff(), "branch", "round", "branch", "round")
 	fixture.manager.Settings.ReadSplitLines = 100
 	fixture.starter.readCounts = []bool{false, false, true}
+	outputDir := t.TempDir()
+	var reports []string
+	fixture.starter.onStart = func(r Record) error {
+		if r.Round == 1 && r.Kind == "read" {
+			fixture.starter.readOutput = filepath.Join(outputDir, r.ID+".md")
+			writeFile(t, fixture.starter.readOutput, r.ID)
+			reports = append(reports, r.ID)
+		}
+		return nil
+	}
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +105,33 @@ func TestCompactedPackageRerunEndsReadCompacted(t *testing.T) {
 	}
 	if !compacted {
 		t.Fatalf("steps=%+v", round.Steps)
+	}
+	corrected, err := fixture.runner.Revise(UnitRevisionRequest{Run: result.Record.ID, After: 1, Brief: correctionBrief(result.Record, "Declared size: 2 changed lines\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 3 {
+		t.Fatalf("first-pass and rerun reports: %v", reports)
+	}
+	for _, name := range []string{"build", "read"} {
+		step := stepNamed(t, corrected.Record.Rounds[1], name)
+		launched, err := fixture.manager.Store.Read(step.LaunchID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var inputs []string
+		for _, input := range launched.Inputs {
+			data, err := os.ReadFile(input.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inputs = append(inputs, string(data))
+		}
+		for _, report := range reports {
+			if !slices.Contains(inputs, report) {
+				t.Errorf("correction %s missing report from %s", name, report)
+			}
+		}
 	}
 }
 

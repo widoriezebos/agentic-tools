@@ -239,3 +239,88 @@ func TestProofCannotChangeTheReadersDeclaredSubjectInputs(t *testing.T) {
 		t.Fatal("the changed subject retained the early findings")
 	}
 }
+
+func TestPersonRetryIncludesEveryDetachedPackageRead(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"proof-red", "proof-wrote"} {
+		t.Run(failure, func(t *testing.T) {
+			f, repo := newGitUnitFixture(t)
+			f.manager.Settings.ReadSplitLines = 1
+			f.starter.onBuild = func(Record) error {
+				for _, pkg := range []string{"a", "b", "c"} {
+					if err := os.Mkdir(filepath.Join(repo, pkg), 0700); err != nil {
+						return err
+					}
+					writeFile(t, filepath.Join(repo, pkg, "src"), "change\n")
+				}
+				return nil
+			}
+			f.starter.holdKind = "proof"
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "read" {
+					f.starter.readVerdict = "land"
+					if r.ReadPackage == "a" {
+						f.starter.readVerdict = "do not land (1 material finding)"
+					}
+				}
+				return nil
+			}
+			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("open check: %v", err)
+			}
+			run := first.Record.ID
+			check := stepNamed(t, first.Record.Rounds[0], "proof:check")
+			f.starter.holdKind = ""
+			if failure == "proof-red" {
+				endFrozenTestLaunch(t, f, check.LaunchID, Failed, 0)
+				if _, err := f.manager.Store.Update(check.LaunchID, func(r *Record) error {
+					r.Cause = "deadline"
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				endFrozenTestLaunch(t, f, check.LaunchID, Completed, 0)
+				// B changes its checkout after A's final snapshot.
+				f.runner.AfterWrite = func(r UnitRunRecord) error {
+					round := r.Rounds[0]
+					a, b := stepNamed(t, round, "read:a"), stepNamed(t, round, "read:b")
+					if a.State == StepPassed && a.Before == nil && b.Before != nil {
+						return os.WriteFile(filepath.Join(round.ReadCheckout, "from-b"), []byte("changed"), 0600)
+					}
+					if b.State == StepFailed && b.Before == nil && len(b.Moved) > 0 {
+						// C sees the restored tree and returns LAND.
+						path := filepath.Join(round.ReadCheckout, "from-b")
+						if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+							return err
+						}
+					}
+					return nil
+				}
+			}
+			held, err := f.runner.Advance(UnitRequest{Resume: run})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.runner.AfterWrite = nil
+			round := held.Record.Rounds[0]
+			old := stepNamed(t, round, "read:a")
+			if round.Outcome != failure || !old.Unattached || old.State != StepPassed || !strings.HasPrefix(old.Verdict, "do not land") {
+				t.Fatalf("hold: outcome=%s state=%s detached=%t verdict=%s", round.Outcome, old.State, old.Unattached, old.Verdict)
+			}
+			if _, err := f.runner.RetryFailedStep(run, "person", "retry after the hold", func() error { return nil }); err != nil {
+				t.Fatal(err)
+			}
+			done, err := f.runner.Advance(UnitRequest{Resume: run})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round = done.Record.Rounds[0]
+			a := stepNamed(t, round, "read:a")
+			if round.Outcome != "green" || round.Material != 1 || round.Stop == nil || round.Stop.Decision != "continue" || len(round.Reads) != 3 || round.Reads[0].ID != a.LaunchID || a.LaunchID == old.LaunchID || a.ExaminedTree != round.Result.Tree {
+				t.Fatalf("retried judgement: outcome=%s findings=%d reads=%d", round.Outcome, round.Material, len(round.Reads))
+			}
+		})
+	}
+}

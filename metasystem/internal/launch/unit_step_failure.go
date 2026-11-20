@@ -292,12 +292,21 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 			round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
 			round.ProductionLines, round.DeclaredProduction = nil, nil
 		}
-		for later := index + 1; later < len(round.Steps); later++ {
-			if round.Steps[later].State == StepSkipped || round.Steps[later].Unattached {
-				round.Steps[later].Unattached = false
-				round.Steps[later].Before = nil
-				round.Steps[later].State, round.Steps[later].Reason = StepPending, ""
+		for i := range round.Steps {
+			sibling := &round.Steps[i]
+			if sibling.Unattached {
+				// Every discarded read needs a new examination, even one
+				// that finished before the failed step. Keep its launch
+				// history detached until a new execution is admitted.
+				sibling.Moved, sibling.Deadline = nil, false
+				sibling.Verdict, sibling.VerdictCounts = "", nil
+				sibling.ExaminedTree, sibling.ExaminedBase = "", ""
+				sibling.Cause, sibling.FinishedAt, sibling.ExecutionEndedAt = "", "", ""
+			} else if i <= index || sibling.State != StepSkipped {
+				continue
 			}
+			sibling.Before = nil
+			sibling.State, sibling.Reason = StepPending, ""
 		}
 		round.Stop, round.Outcome, round.Cause, record.State = nil, "", "", "running"
 		err := runner.save(record)
