@@ -58,14 +58,23 @@ func TestSupersededReadProductionRoutesGitAdapter(t *testing.T) {
 				content = ""
 			}
 			second := commit("Ua2", content)
-			if code, result := c.runJSON(owners, review...); code == 0 && name != "no-overlap" {
-				t.Fatalf("unread repair closed original: %+v", result)
+			code, original := c.runJSON(owners, review...)
+			if code == 0 && name != "no-overlap" {
+				t.Fatalf("unread repair closed original: %+v", original)
 			}
 			later := []string{"work", "review", "--commit", second, "--goal", c.id}
 			if coverage {
 				later = append(later, "--units", "Ua,Ua2")
 			}
-			c.runJSON(owners, later...)
+			if name == "full-range-covers" {
+				if original.Next == nil {
+					t.Fatal("unread work has no review command")
+				}
+				later = original.Next.Argv[1:]
+			}
+			if _, result := c.runJSON(owners, later...); result.Outcome != intentInProgress {
+				t.Fatalf("start repair read: %+v", result)
+			}
 			c.writeCritic(c.worktree, "crit2", second, "completed", true)
 			if name == "unpublished" {
 				c.failPushes = 1
@@ -114,6 +123,12 @@ func TestSupersededReadProductionRoutesGitAdapter(t *testing.T) {
 					c.writeJSON(path, record)
 				}
 				coverage = false
+				connectionGit(t, c.worktree, "config", "goal.human.Wido", "Wido <wido@example.invalid>")
+				_, err = branch.PrepareLanding(branch.LandRequest{Repo: c.worktree, Remote: "origin", EndpointTip: c.endpointTip(), BranchTip: connectionGit(t, c.worktree, "rev-parse", "HEAD"),
+					GoalID: c.id, Last: true, LandingReady: true, CandidateOnly: true, ApprovedBy: "human:Wido", Seat: "seat", CheckClaim: func() error { return nil }})
+				if err == nil || !strings.Contains(err.Error(), "no reviewed build ready to land") {
+					t.Fatalf("landing did not hold the unread unit: %v", err)
+				}
 			}
 			if name == "no-overlap" {
 				read, err := branch.InspectBranchRead(c.worktree, c.id, first)

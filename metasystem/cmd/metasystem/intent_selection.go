@@ -109,7 +109,7 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 			if read, err := inspect(work.Record.Worktree, work.Record.Goal, subject.Commit); err == nil && read.State == "review refused" {
 				return "review refused: " + read.DispatchRefusal
 			} else if err == nil && read.State == "superseded" && read.Published {
-				return "superseded by " + read.SupersededBy + ", read under " + read.AttestationCommit
+				return "superseded by " + read.SupersededBy + ", read under " + shortSHA(read.AttestationCommit)
 			} else if err == nil && read.State == "collected" && read.Published {
 				return "reviewed; its read is collected and published (attestation " + shortSHA(read.AttestationCommit) + ")"
 			} else if err == nil && read.State == "collected" {
@@ -360,7 +360,7 @@ func (item manualWorkItem) stage(readers ...func(string, string, string) (branch
 	read, err := inspect(item.Worktree, item.Goal, item.Commit)
 	switch {
 	case err == nil && read.State == "superseded" && read.Published:
-		return "superseded by " + read.SupersededBy + ", read under " + read.AttestationCommit
+		return "superseded by " + read.SupersededBy + ", read under " + shortSHA(read.AttestationCommit)
 	case err == nil && read.State == "review refused":
 		return "review refused: " + read.DispatchRefusal
 	case err == nil && read.State == "collected" && read.Published:
@@ -839,7 +839,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 	}
 	if subject := currentSubject(*selected); subject != nil && subject.Commit != "" {
 		install := inv.goalWorktreeInstallation(selected.Record.Worktree)
-		if read, err := inv.work().inspectRead(install, id, subject.Commit); err == nil && read.SupersededBy != "" {
+		if read, err := inv.work().inspectRead(install, id, subject.Commit); err == nil && read.CoveredCommit != "" {
 			return inv.render(inv.commitReviewChecked(workTargets(id, *selected), install, id, subject.Commit, nil, nil, nil))
 		}
 	}

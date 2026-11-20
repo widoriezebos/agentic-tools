@@ -14,7 +14,7 @@ import (
 // CoveredUnits alone is a claim, not evidence of the examined base. Missing
 // local frozen evidence leaves coverage unknown, including after a rebase.
 func readRangeCovers(repo string, att Attestation, unit UnitStatus) bool {
-	if att.Source.Kind != "critic-root" || !att.CoversUnit(unit) || att.Subject.Commit == unit.Commit {
+	if att.Source.Kind != "critic-root" || !att.namesUnit(unit) || att.Subject.Commit == unit.Commit {
 		return false
 	}
 	_, path, _, err := branchReadPathsWithRepository(defaultBranchReadRepository{}, repo, att.Goal, att.Subject.Commit)
@@ -38,7 +38,13 @@ func readRangeCovers(repo string, att Attestation, unit UnitStatus) bool {
 	if !found || !hex40(base) || !strings.HasPrefix(tail, att.Subject.Commit+" --\n```\n") {
 		return false
 	}
-	before, err := ancestor(repo, base, unit.Commit+"^")
+	// The brief uses a three-dot diff. Its lower bound is the common
+	// ancestor, even when main advanced independently of the goal.
+	diffBase, err := gitOutput(repo, "merge-base", base, att.Subject.Commit)
+	if err != nil {
+		return false
+	}
+	before, err := ancestor(repo, strings.TrimSpace(string(diffBase)), unit.Commit+"^")
 	if err != nil || !before {
 		return false
 	}
@@ -46,9 +52,9 @@ func readRangeCovers(repo string, att Attestation, unit UnitStatus) bool {
 	return err == nil && inside
 }
 
-// supersedingRead derives completion from retained evidence; it never changes
+// coveringRead derives completion from retained evidence; it never changes
 // the earlier critic, its accepted risks, or its retired publication journal.
-func supersedingRead(repo, goalID, unitCommit string) (BranchReadResult, error) {
+func coveringRead(repo, goalID, unitCommit string) (BranchReadResult, error) {
 	tip, present, err := localBranchTip(repo, goalBranchRef(goalID))
 	if err != nil || !present {
 		return BranchReadResult{}, err
@@ -87,20 +93,19 @@ func supersedingRead(repo, goalID, unitCommit string) (BranchReadResult, error) 
 		if e != nil {
 			return BranchReadResult{}, e
 		}
-		overlap := false
-		for _, p := range strings.Split(string(paths), "\x00") {
-			if p != "" && slices.Contains(strings.Split(string(changes), "\x00"), p) {
-				overlap = true
-			}
-		}
-		if !overlap {
-			continue
-		}
 		published, e := attestationPublished(repo, goalID, c.ID)
 		if e != nil {
 			return BranchReadResult{}, e
 		}
-		return BranchReadResult{State: "superseded", SupersededBy: c.Unit, CoveredCommit: att.Subject.Commit, AttestationCommit: c.ID, Published: published, RootJob: att.Source.RootJob, GateRunID: att.Gate.RunID}, nil
+		result := BranchReadResult{State: "collected", CoveredCommit: att.Subject.Commit, AttestationCommit: c.ID, Published: published, RootJob: att.Source.RootJob, GateRunID: att.Gate.RunID}
+		changed := strings.Split(string(changes), "\x00")
+		for _, path := range strings.Split(string(paths), "\x00") {
+			if path != "" && slices.Contains(changed, path) {
+				result.State, result.SupersededBy = "superseded", c.Unit
+				break
+			}
+		}
+		return result, nil
 	}
 	return BranchReadResult{}, nil
 }

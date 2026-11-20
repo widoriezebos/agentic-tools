@@ -246,13 +246,29 @@ func TestCommitReadPublicationRetirementGitAdapter(t *testing.T) {
 	if result.Outcome != intentInProgress || len(c.delegates) != 2 || c.delegates[1] != tip {
 		t.Fatalf("new-version remedy did not start its own read: exit=%d %+v", code, result)
 	}
+	collectRepair := func() []string {
+		t.Helper()
+		_, result := c.runJSON(owners, review...)
+		if result.Next == nil || !strings.Contains(strings.Join(result.Details, " "), "crit2") {
+			t.Fatalf("repair read or command missing: %+v", result)
+		}
+		return result.Next.Argv[1:]
+	}
+	_, waiting := c.runJSON(owners, collectRepair()...)
+	if waiting.Outcome != intentInProgress || len(c.delegates) != 2 {
+		t.Fatalf("printed command did not rejoin the running repair: %+v", waiting)
+	}
 	c.writeCritic(c.worktree, "crit2", tip, "completed", true)
-	code, result = c.runJSON(owners, next[1:]...)
-	if code != 0 || result.Outcome != intentConfirmed || c.commitReads != 1 || c.publications != 1 {
+	c.failPushes = 1
+	if code, _ := c.runJSON(owners, collectRepair()...); code == 0 || c.commitReads != 1 {
+		t.Fatal("expected a collected repair awaiting publication")
+	}
+	code, result = c.runJSON(owners, collectRepair()...)
+	if code != 0 || result.Outcome != intentConfirmed || c.commitReads != 1 || c.publications != 2 {
 		t.Fatalf("new read did not publish: exit=%d %+v", code, result)
 	}
 	code, result = c.runJSON(owners, review...)
-	if code == 0 || c.commitReads != 1 || c.publications != 1 || result.Next == nil ||
+	if code == 0 || c.commitReads != 1 || c.publications != 2 || result.Next == nil ||
 		!strings.Contains(strings.Join(result.Next.Argv, " "), "--units hand,hand2") {
 		t.Fatalf("new read revived the retired read or lost its full-range remedy: exit=%d %+v", code, result)
 	}

@@ -462,19 +462,7 @@ func intentBranchStateWithDeadline(root, goalID string, deadline func(time.Durat
 			state.Sources = append(state.Sources, "transferred")
 			continue
 		}
-		attestation, err := branch.ValidateAttestationAt(root, branchTip, endpointTip, goalID, unit.Unit, unit.Commit)
-		if err != nil {
-			for _, read := range status.CleanReads {
-				if read.CoversUnit(unit) {
-					attestation, err = read, nil
-					break
-				}
-			}
-		}
-		if err != nil {
-			return intentBranchState{}, fmt.Errorf("unit %s has no valid attestation: %w", unit.Unit, err)
-		}
-		state.Sources = append(state.Sources, attestation.Source.Kind)
+		state.Sources = append(state.Sources, unit.ReadSource)
 	}
 	return state, nil
 }

@@ -270,11 +270,11 @@ func TestUnitReviewCoverageNeedsEveryCompositeName(t *testing.T) {
 	t.Parallel()
 	read := Attestation{CoveredUnits: []string{"U1"}}
 	for _, unit := range []UnitStatus{{Unit: "U1+U5"}, {Unit: "U1+U5", Units: []string{"U1", "U5"}}} {
-		if read.CoversUnit(unit) {
+		if read.namesUnit(unit) {
 			t.Fatal("partial coverage admitted a composite build")
 		}
 		read.CoveredUnits = []string{"U1", "U5"}
-		if !read.CoversUnit(unit) {
+		if !read.namesUnit(unit) {
 			t.Fatal("complete coverage rejected a composite build")
 		}
 		read.CoveredUnits = []string{"U1"}

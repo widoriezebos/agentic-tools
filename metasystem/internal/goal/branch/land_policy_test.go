@@ -378,7 +378,7 @@ func (f *landingFacts) requireRepo(repo, goal string) {
 }
 
 func (f *landingFacts) repository() landingRepository {
-	return landingRepository{reads: f,
+	return landingRepository{reads: f, coversRange: func(string, Attestation, UnitStatus) bool { return false },
 		human: func(repo, name string) ([]byte, error) {
 			f.requireRepo(repo, "goal-a")
 			f.call("human")

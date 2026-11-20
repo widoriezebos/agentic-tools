@@ -1190,7 +1190,7 @@ func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error
 		result.State, result.DispatchRefusal = "review refused", record.DispatchRefusal
 	}
 	if !result.Published {
-		if covered, coverErr := supersedingRead(repo, goalID, unitCommit); coverErr == nil && covered.SupersededBy != "" {
+		if covered, coverErr := coveringRead(repo, goalID, unitCommit); coverErr == nil && covered.CoveredCommit != "" {
 			return covered, nil
 		}
 	}

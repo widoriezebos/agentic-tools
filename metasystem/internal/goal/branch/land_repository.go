@@ -23,6 +23,7 @@ const (
 )
 
 type landingRepository struct {
+	coversRange func(string, Attestation, UnitStatus) bool
 	reads       attestationReads
 	human       func(repo, name string) ([]byte, error)
 	open        func(repo, base string) (dir string, close func(), err error)
@@ -47,7 +48,7 @@ type landingRepository struct {
 }
 
 func (r landingRepository) complete() bool {
-	return r.reads != nil && r.human != nil && r.open != nil && r.reset != nil &&
+	return r.coversRange != nil && r.reads != nil && r.human != nil && r.open != nil && r.reset != nil &&
 		r.head != nil && r.index != nil && r.entry != nil && r.patch != nil &&
 		r.apply != nil && r.transition != nil && r.message != nil && r.stage != nil &&
 		r.commit != nil && r.tree != nil && r.exists != nil && r.filterExact != nil &&
@@ -57,7 +58,8 @@ func (r landingRepository) complete() bool {
 
 func gitLandingRepository() landingRepository {
 	return landingRepository{
-		reads: gitAttestationReads{},
+		reads:       gitAttestationReads{},
+		coversRange: readRangeCovers,
 		human: func(repo, name string) ([]byte, error) {
 			return gitOutput(repo, "config", "--get", "goal.human."+name)
 		},
@@ -165,6 +167,7 @@ func gitLandingRepository() landingRepository {
 
 func (r landingRepository) status(repo, endpoint, tip, goal, goalPage string) (Status, error) {
 	status, err := inspectStatus(repo, endpoint, tip, goal, statusDependencies{
+		coversRange:    r.coversRange,
 		validatedRange: r.reads.Range,
 		drops:          func(string, string, string) ([]goalfile.UnitDrop, error) { return dropsFromPage([]byte(goalPage)) },
 		dropTree: func(repo, commit string) (string, error) {

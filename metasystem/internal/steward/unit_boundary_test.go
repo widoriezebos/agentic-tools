@@ -66,6 +66,7 @@ func TestRetiredUnitBoundaryStages(t *testing.T) {
 		{"committed and under independent examination", false},
 		{"committed, ready for review", false},
 		{"running", false}, {"starting", false},
+		{"step ended; awaiting collection by a session", false},
 	} {
 		t.Run(tc.stage, func(t *testing.T) {
 			bed, units, work, _ := seatBusyFixture(t)

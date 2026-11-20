@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (att Attestation) CoversUnit(unit UnitStatus) bool {
+func (att Attestation) namesUnit(unit UnitStatus) bool {
 	names := unit.Units
 	if len(names) == 0 {
 		names = strings.Split(unit.Unit, "+")

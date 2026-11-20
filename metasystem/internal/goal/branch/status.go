@@ -14,6 +14,7 @@ type UnitStatus struct {
 	Whole                           bool
 	Unit, Commit, Digest, ReadState string
 	Units                           []string
+	ReadSource                      string `json:"-"`
 	PriorReadState, ScopeOperation  string
 }
 
@@ -135,8 +136,8 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 					result.CleanReads = append(result.CleanReads, att)
 					for i := range result.Units {
 						unit := &result.Units[i]
-						if commitIndex[unit.Commit] <= subjectIndex && att.CoversUnit(*unit) && deps.coversRange != nil && deps.coversRange(repo, att, *unit) {
-							unit.ReadState = "read clean"
+						if commitIndex[unit.Commit] <= subjectIndex && deps.coversRange(repo, att, *unit) {
+							unit.ReadState, unit.ReadSource = "read clean", att.Source.Kind
 						}
 					}
 				}
@@ -144,9 +145,9 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 			if !exists || result.Units[index].Unit != commit.Unit {
 				continue
 			}
-			result.Units[index].ReadState = "needs read"
+			result.Units[index].ReadState, result.Units[index].ReadSource = "needs read", ""
 			if readErr == nil {
-				result.Units[index].ReadState = "read clean"
+				result.Units[index].ReadState, result.Units[index].ReadSource = "read clean", att.Source.Kind
 			}
 		}
 	}
