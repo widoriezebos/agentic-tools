@@ -914,7 +914,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 // hand-written committed item both await review. Bare review G starts no
 // examination and names both exact commands; --work selects each through
 // its own producer; once the hand-written item's read is published, bare
-// review G goes to the built item.
+// review G still names a cancelled build whose unread commit survives.
 func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	j := newJourneyBed(t)
 	c, do, root := j.c, j.do, j.c.root()
@@ -977,8 +977,11 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	if code, built := do("work", "build", c.id, "remaining-unit", "--brief", brief, "--lines", "5"); code != 0 || built.Outcome != intentConfirmed {
 		t.Fatalf("remaining build: %d %+v", code, built)
 	}
-	if _, inferred := manualDo(t, j, root, "work", "review", c.id); inferred.Outcome == intentRefused || !slices.Contains(works(inferred), "remaining-unit") {
-		t.Fatalf("bare review once the manual item is published: %+v", inferred)
+	if code, inferred := manualDo(t, j, root, "work", "review", c.id); code != 2 || inferred.Outcome != intentRefused || fmt.Sprint(resultData(t, inferred)["candidates"]) != "[remaining-unit built-unit]" {
+		t.Fatalf("cancelled unread commit disappeared from review selection: code=%d %+v", code, inferred)
+	}
+	if _, selected := manualDo(t, j, root, "work", "review", c.id, "--work", "remaining-unit"); selected.Outcome == intentRefused || !slices.Contains(works(selected), "remaining-unit") {
+		t.Fatalf("explicit remaining work selection: %+v", selected)
 	}
 }
 
