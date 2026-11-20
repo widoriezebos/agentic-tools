@@ -256,3 +256,16 @@ func TestQ1RelayedAndUnprovenActsDoNotAnswer(t *testing.T) {
 		t.Fatalf("unproved answer %+v", got)
 	}
 }
+
+func TestQ2NamedActRefusesWantedAuthority(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	_, err := Ask(AskRequest{RepoRoot: root, Goal: "g", Kind: "other", Facts: []string{"Accept?"}, Wants: "approval token", Options: []Option{{Label: "Accept", Consequence: "keep the risk", NamedAct: &NamedAct{Verb: "goal accept-risk", Goal: "g", Target: "review", Finding: "F"}}}})
+	if err == nil || !strings.Contains(err.Error(), "--wants") {
+		t.Fatalf("mixed authority: %v", err)
+	}
+	questions, bad := WalkQuestions(root)
+	if len(questions) != 0 || len(bad) != 0 {
+		t.Fatalf("refusal wrote questions: %d unreadable: %d", len(questions), len(bad))
+	}
+}

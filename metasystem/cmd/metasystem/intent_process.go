@@ -353,7 +353,8 @@ func processIntentCommands() []intentCommand {
 				"metasystem question ask --about lane|machine --question TEXT --option TEXT..."},
 			details: []string{
 				"The person answers in the channel thread, or completes the command declared by --option-act at the enrolled terminal.",
-				"A declared command answers questions on this machine only. If interrupted before closing, repeat the command or withdraw the question.",
+				"A declared command answers questions in this checkout only. If interrupted before closing, repeat the command or withdraw the question.",
+				"Agents must declare an option's goal accept-risk or work stop run: command with --option-act. It cannot accompany --wants.",
 				"--about lane or --about machine asks about the landing lane or this machine when no goal is involved; such a question is an ordinary question and carries no authority kind.",
 				"--kind selects an authority question (stop, budget-above-norm, carry); stop and budget-above-norm take --budget BOX.",
 				"question show Q shows its state and how it is answered; question wait Q waits for its answer.",

@@ -100,6 +100,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestQ2DeclaredActWakesWaitingStewardGitAdapter","reason":"The real channel wait uses the announced process identity and configured fake runtime of eventWaitRoot; that fixture sets process-wide lineage and clock with t.Setenv."},
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
       "test": "TestARegistrySweepLeavesNoLockAForkDuplicated",

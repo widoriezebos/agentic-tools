@@ -157,6 +157,9 @@ func validateNamedActs(r AskRequest) error {
 		if o.NamedAct == nil {
 			continue
 		}
+		if r.Wants != "" {
+			return fmt.Errorf("--wants cannot accompany --option-act; the completed command answers only its option")
+		}
 		a := *o.NamedAct
 		if !a.valid() || a.Goal != r.Goal || r.Goal == "" || r.Kind != "other" {
 			return fmt.Errorf("an option's command must name this goal and its exact finding or run")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
@@ -16,6 +17,11 @@ func (inv *intentInvocation) declareQuestionActs(in *channelAskInput) *intentRes
 	in.NamedActs = map[string]channel.NamedAct{}
 	refuse := func(why string) *intentResult {
 		return &intentResult{Outcome: intentRefused, code: 2, Summary: "the option's command is incomplete; nothing was asked", Details: []string{why}, next: inv.retryWith([]string{"option-act"}), nextReason: "ask without that command, or name its exact finding or run"}
+	}
+	if inv.input.has("option-act") && inv.input.has("wants") {
+		return &intentResult{Outcome: intentRefused, code: 2,
+			Summary: "--wants cannot accompany --option-act; nothing was asked",
+			next:    inv.retryWith([]string{"wants"}), nextReason: "the completed command answers only its option"}
 	}
 	for _, raw := range inv.input.values["option-act"] {
 		label, command, ok := strings.Cut(raw, ":")
@@ -107,6 +113,37 @@ func (inv *intentInvocation) declareQuestionActs(in *channelAskInput) *intentRes
 		in.NamedActs[label] = act
 	}
 
+	return inv.requireQuestionActDeclarations(in)
+}
+
+// Only command prefixes in option consequences are recognized. Other prose
+// and commands outside the completed-act allowlist remain ordinary choices.
+var questionActCommand = regexp.MustCompile(`(?:^|[^[:alnum:]_-])metasystem[[:space:]]+(goal[[:space:]]+accept-risk(?:[[:space:]]|$)|work[[:space:]]+stop[[:space:]]+run:)`)
+
+func (inv *intentInvocation) requireQuestionActDeclarations(in *channelAskInput) *intentResult {
+	for _, raw := range in.Options {
+		label, consequence, ok := strings.Cut(raw, ":")
+		label = strings.TrimSpace(label)
+		match := questionActCommand.FindStringSubmatch(consequence)
+		if !ok || match == nil {
+			continue
+		}
+		if _, declared := in.NamedActs[label]; declared {
+			continue
+		}
+		namedSession := inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
+		if !namedSession && !inv.agentSessionCaller() {
+			return nil
+		}
+		command := "metasystem goal accept-risk " + in.Goal + " --review REVIEW --finding FINDING"
+		if strings.HasPrefix(match[1], "work") {
+			command = "metasystem work stop run:RUN"
+		}
+		return &intentResult{Outcome: intentRefused, code: 2,
+			Summary:    "the agent's option names a person's command without declaring it; nothing was asked",
+			next:       inv.retryWith(nil, "--option-act", label+": "+command),
+			nextReason: "declare this option's exact command on its goal so the person's act answers the question"}
+	}
 	return nil
 }
 
