@@ -1705,7 +1705,6 @@ func runIntentDecide(inv *intentInvocation) int {
 	} else if result.Data == nil {
 		result.Data = map[string]any{"chain": chain}
 	}
-	result = inv.completeQuestionAct(result, questionRoot, channel.NamedAct{Verb: "goal accept-risk", Goal: id, Target: chain, Finding: inv.input.text("finding")}, namedProof, unitStopActor(actor))
 	if result.Outcome == intentPartial {
 		result.Summary = "the goal records the accepted risk, but a later record did not land: " + result.Summary
 	}
@@ -1715,6 +1714,7 @@ func runIntentDecide(inv *intentInvocation) int {
 			result.Details = append(result.Details, err.Error())
 		}
 	}
+	result = inv.completeQuestionAct(result, questionRoot, channel.NamedAct{Verb: "goal accept-risk", Goal: id, Target: chain, Finding: inv.input.text("finding")}, namedProof, unitStopActor(actor))
 	return inv.render(result)
 }
 

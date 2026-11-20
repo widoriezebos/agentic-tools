@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -107,13 +106,7 @@ func (inv *intentInvocation) declareQuestionActs(in *channelAskInput) *intentRes
 		}
 		in.NamedActs[label] = act
 	}
-	if len(in.NamedActs) > 0 {
-		before, err := channel.NamedActIDs(inv.layout.InstallationRoot.Path(), inv.owners.dependencies.endpoint)
-		if err != nil {
-			return refuse(err.Error())
-		}
-		in.ActsBefore = before
-	}
+
 	return nil
 }
 
@@ -124,39 +117,23 @@ func (inv *intentInvocation) completeQuestionAct(result intentResult, root strin
 	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) && !proof.ChannelWordFor(inv.stateRoot) {
 		return result
 	}
-	var completed channel.ActEvidence
-	authorityRoot := checkoutAuthorityRoot(inv.layout)
-	actRoot := inv.layout.InstallationRoot.Path()
-	ep, err := inv.owners.dependencies.endpoint(actRoot)
-	if err == nil {
-		machine, e := inv.owners.dependencies.machine(inv.stateRoot)
-		err = e
-		if err == nil {
-			completed, err = channel.RecordNamedAct(authorityRoot, ep, act, person, machine, inv.unitStopNow(), *proof)
-		}
-	}
-	if err == nil {
-		err = channel.ReconcileNamedActs(root, inv.owners.dependencies.endpoint)
-		if errors.Is(err, channel.ErrChannelBusy) {
-			return result
-		}
-	}
+	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
 	if err != nil {
-		result.Outcome, result.code = intentPartial, 1
-		result.Details = append(result.Details, "the act completed, but its question could not be answered: "+err.Error())
-		return result
+		machine = ""
 	}
-	questions, _ := channel.WalkQuestions(root)
-	for _, q := range questions {
-		if q.Answer != nil && q.Answer.Act != nil && q.Answer.Act.Act == act && q.Answer.Act.ID == completed.ID {
-			line := fmt.Sprintf("Question %s answered: %s.", q.ID, q.Answer.Text)
-			result.Details = append(result.Details, line)
-			if result.view == nil {
-				result.text = append(result.text, line)
-			} else {
-				prior := result.view
-				result.view = func(page *textui.Page) { prior(page); page.Section("", "").Text(line) }
-			}
+	// The question's installation and the caller's authority root can differ
+	// in an adopted layout; proof is always checked where the person stands.
+	for _, closed := range channel.CompleteNamedAct(root, inv.stateRoot, act, person, machine, inv.unitStopNow(), *proof, inv.owners.dependencies.endpoint) {
+		line := fmt.Sprintf("Question %s answered: %s.", closed.Question, closed.Option)
+		if closed.Err != nil {
+			line = fmt.Sprintf("Question %s stays open; repeat the act or withdraw the question.", closed.Question)
+		}
+		result.Details = append(result.Details, line)
+		if result.view == nil {
+			result.text = append(result.text, line)
+		} else {
+			prior := result.view
+			result.view = func(page *textui.Page) { prior(page); page.Section("", "").Text(line) }
 		}
 	}
 	return result

@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -89,9 +90,7 @@ func TestQ1UnchangedActWaitAndSteward(t *testing.T) {
 		t.Fatalf("first act %d %s %s", code, out, errout)
 	}
 	q := q1Ask(t, b, owners, "Accept", "Accept again?")
-	if err := channel.ReconcileNamedActs(b.root(), owners.dependencies.endpoint); err != nil {
-		t.Fatal(err)
-	}
+	channel.WalkOpenQuestions(b.root())
 	current, _ := channel.ReadQuestion(b.root(), q.ID)
 	if current.Answer != nil {
 		t.Fatal("old act answered a newer question")
@@ -212,78 +211,128 @@ func TestQ1AgentAndFailedActsLeaveQuestionOpen(t *testing.T) {
 
 func TestQ1RunStopAnswersItsExactQuestion(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
-	interrupted := new(int)
-	var run string
-	b.workOwnersHook = func(owners *intentWorkOwners) {
-		units := owners.units
-		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
-			r := units(layout)
-			r.AfterWrite = func(record launch.UnitRunRecord) error {
-				if len(record.Rounds) > 0 && record.Rounds[0].Steps[0].State == launch.StepStarting {
-					run = record.ID
-					panic(interrupted)
+	for _, trigger := range []string{"damaged question", "busy channel", "publication failure"} {
+		t.Run(trigger, func(t *testing.T) {
+			b := newWorkBed(t)
+			interrupted := new(int)
+			var run string
+			b.workOwnersHook = func(owners *intentWorkOwners) {
+				units := owners.units
+				owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
+					r := units(layout)
+					r.AfterWrite = func(record launch.UnitRunRecord) error {
+						if len(record.Rounds) > 0 && record.Rounds[0].Steps[0].State == launch.StepStarting {
+							run = record.ID
+							panic(interrupted)
+						}
+						return nil
+					}
+					return r
 				}
-				return nil
 			}
-			return r
-		}
-	}
-	func() {
-		defer func() {
-			if p := recover(); p != interrupted {
-				t.Fatalf("interruption %v", p)
+			func() {
+				defer func() {
+					if p := recover(); p != interrupted {
+						t.Fatalf("interruption %v", p)
+					}
+				}()
+				treeBuild(t, b, "q1", false)
+			}()
+			b.workOwnersHook = nil
+			owners := b.workOwners()
+			owners.processes = defaultProcessIntentOwners()
+			owners.processes.process.repositoryTop = fakeTop(b.root())
+			now, _ := b.commandNow(b.root())
+			owners.prove = enrolledPersonProver(t, b.root(), now)
+			q, err := channel.Ask(channel.AskRequest{RepoRoot: b.root(), Goal: b.id, Kind: "other", Machine: "asking", Now: now, Facts: []string{"Cancel?"}, Options: []channel.Option{{Label: "Cancel", Consequence: "stop this run", NamedAct: &channel.NamedAct{Verb: "work stop", Goal: b.id, Target: run}}}})
+			if err != nil {
+				t.Fatal(err)
 			}
-		}()
-		treeBuild(t, b, "q1", false)
-	}()
-	b.workOwnersHook = nil
-	owners := b.workOwners()
-	owners.processes = defaultProcessIntentOwners()
-	owners.processes.process.repositoryTop = fakeTop(b.root())
-	now, _ := b.commandNow(b.root())
-	owners.prove = enrolledPersonProver(t, b.root(), now)
-	q, err := channel.Ask(channel.AskRequest{RepoRoot: b.root(), Goal: b.id, Kind: "other", Machine: "asking", Now: now, Facts: []string{"Cancel?"}, Options: []channel.Option{{Label: "Cancel", Consequence: "stop this run", NamedAct: &channel.NamedAct{Verb: "work stop", Goal: b.id, Target: run}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	code, result := b.runJSON(owners, "work", "stop", "run:"+run)
-	if code != 0 {
-		t.Fatalf("stop %d %+v", code, result)
-	}
-	got, err := channel.ReadQuestion(b.root(), q.ID)
-	if err != nil || got.Answer == nil || got.Answer.Text != "Cancel" {
-		t.Fatalf("answer %+v %v", got, err)
-	}
-	// The terminal result is immediately visible to the waiting public command.
-	code, result = b.runJSON(owners, "question", "wait", "channel:"+q.ID)
-	if code != 0 || !strings.Contains(result.Summary, "Cancel") {
-		t.Fatalf("wait %d %+v", code, result)
+			// An unrelated damaged question must not turn this successful stop partial.
+			damaged := filepath.Join(b.root(), "artifacts", "agents", "channel", "questions", "damaged.json")
+			if err := os.WriteFile(damaged, []byte("{"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			release := func() {}
+			endpoint := owners.dependencies.endpoint
+			if trigger == "busy channel" {
+				held, err := lock.File(filepath.Join(b.root(), "artifacts", "agents", "channel", "lock"), 0644, lock.TryExclusive)
+				if err != nil {
+					t.Fatal(err)
+				}
+				release = func() { held.Release() }
+				defer release()
+			}
+			if trigger == "publication failure" {
+				owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+					ep, err := endpoint(root)
+					ep.Repository = questionAnswerCaptureFailure{ep.Repository}
+					return ep, err
+				}
+			}
+			code, result := b.runJSON(owners, "work", "stop", "run:"+run)
+			if code != 0 {
+				t.Fatalf("stop %d %+v", code, result)
+			}
+			if result.Outcome != intentConfirmed {
+				t.Fatalf("stop outcome changed: %+v", result)
+			}
+			if trigger != "damaged question" {
+				if !strings.Contains(strings.Join(result.Details, " "), "Question "+q.ID+" stays open") {
+					t.Fatalf("missing failed-close notice: %+v", result)
+				}
+				got, err := channel.ReadQuestion(b.root(), q.ID)
+				if err != nil || got.State != "open" {
+					t.Fatal("failed close ended question")
+				}
+				release()
+				owners.dependencies.endpoint = endpoint
+				code, result = b.runJSON(owners, "work", "stop", "run:"+run)
+				if code != 0 || result.Outcome != intentConfirmed {
+					t.Fatalf("repeat %d %+v", code, result)
+				}
+			}
+			got, err := channel.ReadQuestion(b.root(), q.ID)
+			if err != nil || got.Answer == nil || got.Answer.Text != "Cancel" {
+				t.Fatalf("answer %+v %v", got, err)
+			}
+			if err := os.Remove(damaged); err != nil {
+				t.Fatal(err)
+			}
+			// The terminal result is immediately visible to the waiting public command.
+			code, result = b.runJSON(owners, "question", "wait", "channel:"+q.ID)
+			if code != 0 || !strings.Contains(result.Summary, "Cancel") {
+				t.Fatalf("wait %d %+v", code, result)
+			}
+		})
 	}
 }
 
-func TestQ1WaitRepairsARecordedActBeforePolling(t *testing.T) {
+func TestQ1QuestionReadsDoNotRepairAMissedClose(t *testing.T) {
 	t.Parallel()
 	b, owners := newQ1CommandBed(t)
 	q := q1Ask(t, b, owners, "Accept", "Choose after restart?")
-	ep, err := owners.dependencies.endpoint(b.root())
-	if err != nil {
-		t.Fatal(err)
+	// Act succeeds without the named close, as when the process exits in between.
+	actOwners := owners
+	actOwners.prove = fixedFixtureGoalAuthority
+	if code, out, errout := q1Accept(b, actOwners); code != 0 {
+		t.Fatalf("act %d %s %s", code, out, errout)
 	}
-	now, _ := b.commandNow(b.root())
-	proof, err := owners.prove(b.root(), 0, nil, "", "", now)
-	if err != nil {
-		t.Fatal(err)
+	for range 2 {
+		channel.WalkOpenQuestions(b.root())
+		if code, out, errout := b.run(owners, "question", "show", q.ID); code != 0 {
+			t.Fatalf("show %d %s %s", code, out, errout)
+		}
 	}
-	evidence, err := channel.RecordNamedAct(b.root(), ep, *q.Options[0].NamedAct, "Wido", "acting", now, proof)
-	if err != nil {
-		t.Fatal(err)
+	got, err := channel.ReadQuestion(b.root(), q.ID)
+	if err != nil || got.Answer != nil || got.State != "open" {
+		t.Fatalf("read repaired missed close %+v %v", got, err)
 	}
-	// Stop after the act's durable record, before any answer write. The first
-	// reader is the public wait; no provider or polling cycle can repair it.
+	if code, out, errout := q1Accept(b, owners); code != 0 {
+		t.Fatalf("repeat %d %s %s", code, out, errout)
+	}
 	code, result := b.runJSON(owners, "question", "wait", "channel:"+q.ID)
-	got, readErr := channel.ReadQuestion(b.root(), q.ID)
-	if code != 0 || readErr != nil || got.Answer == nil || got.Answer.Act.ID != evidence.ID || !strings.Contains(result.Summary, "Accept") {
-		t.Fatalf("wait %d %+v question=%+v error=%v", code, result, got, readErr)
+	if code != 0 || !strings.Contains(result.Summary, "Accept") {
+		t.Fatalf("wait %d %+v", code, result)
 	}
 }

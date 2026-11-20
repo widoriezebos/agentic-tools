@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,7 +48,7 @@ func TestQ1QuestionReadsKeepSettlingRepliesAfterMatchingFailure(t *testing.T) {
 			}
 			replies.AssertAnswer(t)
 			code, out, errout = b.run(owners, "question", "show", q.ID)
-			if code != 0 || !strings.Contains(out, "could not be checked now: shared") && !strings.Contains(out, "could not be checked now: the local goal ledger") {
+			if code != 0 || strings.Contains(out, "could not be checked") {
 				t.Fatalf("diagnostic: %d %s %s", code, out, errout)
 			}
 			got, err := channel.ReadQuestion(b.root(), q.ID)
@@ -99,8 +100,92 @@ func TestQ1MalformedActStillAllowsQuestionShowToSettleReplies(t *testing.T) {
 	owners.processes = defaultProcessIntentOwners()
 	owners.dependencies.endpoint = replies.Resolve
 	code, out, errout := b.run(owners, "question", "show", q.ID)
-	if code != 0 || !strings.Contains(out, "skipped incomplete or unsupported act record") {
+	if code != 0 || strings.Contains(out, "skipped incomplete") {
 		t.Fatalf("show: %d %s %s", code, out, errout)
 	}
 	replies.AssertAnswer(t)
+}
+
+// Fail only the ordinary answer publication, after acceptance has succeeded.
+type questionAnswerCaptureFailure struct{ goal.Repository }
+
+func (r questionAnswerCaptureFailure) Capture(opid string) (string, error) {
+	suffix := goal.Opid("", "", "question-act")
+	if strings.HasSuffix(opid, suffix[1:]) {
+		return "", errors.New("unavailable")
+	}
+	return r.Repository.Capture(opid)
+}
+
+func TestQ1QuestionCloseFailurePreservesActResult(t *testing.T) {
+	t.Parallel()
+	b, owners := newQ1CommandBed(t)
+	q := q1Ask(t, b, owners, "Accept", "Choose?")
+	endpoint := owners.dependencies.endpoint
+	owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		ep, err := endpoint(root)
+		ep.Repository = questionAnswerCaptureFailure{ep.Repository}
+		return ep, err
+	}
+	code, result := b.runJSON(owners, "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure")
+	if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(strings.Join(result.Details, " "), "Question "+q.ID+" stays open") {
+		t.Fatalf("close failure changed act: %d %+v", code, result)
+	}
+	got, err := channel.ReadQuestion(b.root(), q.ID)
+	if err != nil || got.State != "open" {
+		t.Fatalf("question %+v %v", got, err)
+	}
+	owners.dependencies.endpoint = endpoint
+	if code, _, _ := q1Accept(b, owners); code != 0 {
+		t.Fatal("repeat failed")
+	}
+	got, _ = channel.ReadQuestion(b.root(), q.ID)
+	if got.State != "closed" {
+		t.Fatal("repeat did not close")
+	}
+}
+
+func TestQ1QuestionCompletionPreservesExistingActFailure(t *testing.T) {
+	t.Parallel()
+	b, owners := newQ1CommandBed(t)
+	q := q1Ask(t, b, owners, "Accept", "Choose?")
+	q.Options[0].NamedAct.Finding = "another"
+	testchannel.Save(t, filepath.Join(b.root(), "artifacts", "agents", "channel", "questions", "bad.json"), []byte("{"))
+	// Keep an unrelated unanswered declaration beside the damaged file.
+	bed := testchannel.New(t, b.root())
+	bed.SaveQuestion(t, q)
+	code, result := b.runJSON(owners, "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure")
+	// The existing unit-stop recorder already reports damaged questions.
+	// Named completion must preserve that result and leave the question alone.
+	if code != 1 || result.Outcome != intentPartial || !strings.Contains(strings.Join(result.Details, " "), "risk was recorded, but its questions could not be read") {
+		t.Fatalf("existing result changed %d %+v", code, result)
+	}
+	got, err := channel.ReadQuestion(b.root(), q.ID)
+	if err != nil || got.Answer != nil {
+		t.Fatal("a partially completed act answered")
+	}
+}
+
+func TestQ1AcceptRiskIdempotencyAtEnrolledTerminal(t *testing.T) {
+	t.Parallel()
+	b, owners := newQ1CommandBed(t)
+	now, _ := b.commandNow(b.root())
+	proof, err := owners.prove(b.root(), 0, nil, "", "", now)
+	if err != nil || !proof.EnrolledTerminalFor(b.root()) {
+		t.Fatal("witness does not reach the enrolled-terminal path")
+	}
+	if code, out, errout := q1Accept(b, owners); code != 0 {
+		t.Fatalf("first %d %s %s", code, out, errout)
+	}
+	publications, files := b.publications(), goalLedgerBytes(b)
+	journal := strings.Join(goalJournalNames(t, b.root()), ",")
+	if code, result := b.runJSON(owners, "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure"); code != 0 || result.Outcome != intentUnchanged {
+		t.Fatalf("repeat %d %+v", code, result)
+	}
+	if b.publications() != publications || goalLedgerBytes(b) != files || strings.Join(goalJournalNames(t, b.root()), ",") != journal {
+		t.Fatal("repeat changed the ledger or journal")
+	}
+	if _, err := os.Stat(filepath.Join(b.root(), "artifacts", "agents", "channel", "named-acts")); !os.IsNotExist(err) {
+		t.Fatal("completion store created without a question")
+	}
 }

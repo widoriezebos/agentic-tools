@@ -85,7 +85,6 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 	if err := os.MkdirAll(channelRoot(c.RepoRoot), 0o755); err != nil {
 		return result, err
 	}
-	_ = ReconcileNamedActs(c.RepoRoot, resolveEndpoint)
 	held, err := lock.File(filepath.Join(channelRoot(c.RepoRoot), "lock"), 0o644, lock.TryExclusive)
 	if err != nil {
 		if lock.Busy(err) {

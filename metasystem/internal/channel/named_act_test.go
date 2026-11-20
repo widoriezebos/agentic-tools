@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -41,11 +39,7 @@ func newNamedActBed(t *testing.T) *namedActBed {
 func (b *namedActBed) resolve(string) (goal.Endpoint, error) { return b.ep, nil }
 func (b *namedActBed) ask(t *testing.T, facts string, amend func(*AskRequest)) Question {
 	t.Helper()
-	before, err := NamedActIDs(b.root, b.resolve)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := AskRequest{RepoRoot: b.root, Goal: "g", Kind: "other", Machine: "asking", Now: b.now, Facts: []string{facts}, ActsBefore: before, Options: []Option{{Label: "Accept", Consequence: "keep the risk", NamedAct: &b.act}, {Label: "Wait", Consequence: "wait"}}}
+	r := AskRequest{RepoRoot: b.root, Goal: "g", Kind: "other", Machine: "asking", Now: b.now, Facts: []string{facts}, Options: []Option{{Label: "Accept", Consequence: "keep the risk", NamedAct: &b.act}, {Label: "Wait", Consequence: "wait"}}}
 	if amend != nil {
 		amend(&r)
 	}
@@ -59,19 +53,15 @@ func (b *namedActBed) ask(t *testing.T, facts string, amend func(*AskRequest)) Q
 	}
 	return q
 }
-func (b *namedActBed) record(t *testing.T, act NamedAct, at time.Time) ActEvidence {
+func (b *namedActBed) complete(t *testing.T, act NamedAct, at time.Time) []NamedActResult {
 	t.Helper()
-	a, err := RecordNamedAct(b.root, b.ep, act, "Wido", "acting", at, b.proof)
-	if err != nil {
-		t.Fatal(err)
+	results := CompleteNamedAct(b.root, b.root, act, "Wido", "acting", at, b.proof, b.resolve)
+	for _, result := range results {
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
 	}
-	return a
-}
-func (b *namedActBed) settle(t *testing.T) {
-	t.Helper()
-	if err := ReconcileNamedActs(b.root, b.resolve); err != nil {
-		t.Fatal(err)
-	}
+	return results
 }
 func (b *namedActBed) read(t *testing.T, q Question) Question {
 	t.Helper()
@@ -82,25 +72,25 @@ func (b *namedActBed) read(t *testing.T, q Question) Question {
 	return q
 }
 
-func TestQ1RecordedActRepairsAnswersAndFleetRead(t *testing.T) {
+func TestQ1CompletedActAnswersLocalQuestions(t *testing.T) {
 	t.Parallel()
 	b := newNamedActBed(t)
 	q := b.ask(t, "Accept?", nil)
 	other := b.ask(t, "Another seat asks", nil)
-	a := b.record(t, b.act, b.now.Add(time.Second))
-	// The only remaining copy is the shared ledger, as on another machine.
-	if err := os.RemoveAll(filepath.Join(channelRoot(b.root), "named-acts")); err != nil {
-		t.Fatal(err)
-	}
-	b.settle(t)
+	b.complete(t, b.act, b.now.Add(time.Second))
+	a := b.read(t, q).Answer.Act
 	for _, q := range []Question{q, other} {
 		got := b.read(t, q)
 		if got.State != "closed" || got.Answer == nil || got.Answer.Text != "Accept" || got.Answer.Act.ID != a.ID || !got.Answer.At.Equal(a.At) {
 			t.Fatalf("answer %+v", got)
 		}
 	}
-	b.settle(t)
-	files, err := goal.ReadRecordFiles(b.ep, "plans/goals/")
+	b.complete(t, b.act, b.now.Add(2*time.Second))
+	tip, _, err := b.ep.Repository.Accepted()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := b.ep.Repository.Files(tip, "plans/goals/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +155,7 @@ func TestQ1ExactMatchAndOldQuestions(t *testing.T) {
 			act := b.act
 			at := b.now.Add(time.Second)
 			if name == "same clock before" {
-				b.record(t, act, b.now)
+				b.complete(t, act, b.now)
 			}
 			q := b.ask(t, "Choose", func(r *AskRequest) {
 				if name == "no declaration" {
@@ -208,9 +198,8 @@ func TestQ1ExactMatchAndOldQuestions(t *testing.T) {
 				}
 			}
 			if name != "same clock before" {
-				b.record(t, act, at)
+				b.complete(t, act, at)
 			}
-			b.settle(t)
 			got := b.read(t, q)
 			want := name == "exact" || name == "stop exact"
 			if (got.Answer != nil && got.Answer.Text == "Accept") != want {
@@ -220,40 +209,36 @@ func TestQ1ExactMatchAndOldQuestions(t *testing.T) {
 	}
 }
 
-func TestQ1InterruptedAnswerAndConcurrentReaders(t *testing.T) {
+func TestQ1InterruptedAnswerNeedsRepeatedAct(t *testing.T) {
 	t.Parallel()
 	b := newNamedActBed(t)
 	q := b.ask(t, "Choose", nil)
-	b.record(t, b.act, b.now.Add(time.Second))
-	// Publication is unavailable after the durable match is written.
 	failed := func(string) (goal.Endpoint, error) { return goal.Endpoint{}, errors.New("unavailable") }
-	// Keep the local run receipt so matching itself needs no shared read.
-	q.Options[0].NamedAct = &NamedAct{Verb: "work stop", Goal: "g", Target: "run-x"}
-	if err := writeJSON(questionPath(b.root, q.ID), q); err != nil {
-		t.Fatal(err)
-	}
-	b.record(t, *q.Options[0].NamedAct, b.now.Add(time.Second))
-	if err := ReconcileNamedActs(b.root, failed); err == nil {
+	results := CompleteNamedAct(b.root, b.root, b.act, "Wido", "acting", b.now.Add(time.Second), b.proof, failed)
+	if len(results) != 1 || results[0].Err == nil {
 		t.Fatal("publication failure hidden")
 	}
-	if got := b.read(t, q); got.Answer == nil || got.Answer.Phase != "matched" {
-		t.Fatalf("interruption lost match %+v", got)
+	before, err := os.ReadFile(questionPath(b.root, q.ID))
+	if err != nil {
+		t.Fatal(err)
 	}
-	var wg sync.WaitGroup
+	// Reads and ordinary reply settlement do not repair the missed close.
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			err := ReconcileNamedActs(b.root, b.resolve)
-			if err != nil && !errors.Is(err, ErrChannelBusy) {
-				t.Error(err)
-			}
-		}()
+		WalkOpenQuestions(b.root)
+		if _, err := SettleReplies(context.Background(), PollConfig{RepoRoot: b.root, Now: b.now}, b.resolve); err != nil {
+			t.Fatal(err)
+		}
 	}
-	wg.Wait()
-	b.settle(t)
-	if got := b.read(t, q); got.State != "closed" || got.Answer.Phase != "closed" {
-		t.Fatalf("repair %+v", got)
+	after, err := os.ReadFile(questionPath(b.root, q.ID))
+	if err != nil || string(before) != string(after) {
+		t.Fatal("a read repaired the act")
+	}
+	fresh := b.ask(t, "Choose again", nil)
+	b.complete(t, b.act, b.now.Add(2*time.Second))
+	for _, question := range []Question{q, fresh} {
+		if got := b.read(t, question); got.State != "closed" || got.Answer.Phase != "closed" {
+			t.Fatalf("repeat did not close %+v", got)
+		}
 	}
 }
 
@@ -262,12 +247,11 @@ func TestQ1RelayedAndUnprovenActsDoNotAnswer(t *testing.T) {
 	b := newNamedActBed(t)
 	q := b.ask(t, "Choose", nil)
 	for _, proof := range []humanauthority.Proof{{}, {Outcome: humanauthority.OutcomeProven}, {TemporaryHumanWord: "yes", Departure: "R-32-m1"}} {
-		a, err := RecordNamedAct(b.root, b.ep, b.act, "Wido", "acting", b.now, proof)
-		if err != nil || a.ID != "" {
-			t.Fatalf("unproved act recorded %v %v", a, err)
+		results := CompleteNamedAct(b.root, b.root, b.act, "Wido", "acting", b.now, proof, b.resolve)
+		if len(results) != 0 {
+			t.Fatal("unproved act answered")
 		}
 	}
-	b.settle(t)
 	if got := b.read(t, q); got.Answer != nil {
 		t.Fatalf("unproved answer %+v", got)
 	}

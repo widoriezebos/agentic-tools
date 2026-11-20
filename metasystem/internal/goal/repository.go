@@ -160,17 +160,3 @@ func NewWorldAtEndpoint(e Endpoint) bool {
 	_, exists := files[goalsPrefix+"backlog.md"]
 	return err == nil && exists
 }
-
-// ReadRecordFiles reads the locally accepted ledger. Synchronization owns
-// fetching remote changes; inspecting records never starts a network request.
-func ReadRecordFiles(e Endpoint, prefix string) (map[string][]byte, error) {
-	repository := e.repository()
-	tip, present, err := repository.Accepted()
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		return nil, fmt.Errorf("the goal ledger has no locally accepted state")
-	}
-	return repository.Files(tip, prefix)
-}

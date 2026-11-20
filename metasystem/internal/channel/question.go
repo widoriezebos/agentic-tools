@@ -82,10 +82,7 @@ type Withdrawal struct {
 }
 
 type Question struct {
-	ActCheck     string    `json:"actCheck,omitempty"`
-	ActsBefore   []string  `json:"actsBefore,omitempty"`
-	ActsOpenedAt time.Time `json:"actsOpenedAt,omitzero"`
-	ActPerson    string    `json:"actPerson,omitempty"`
+	ActPerson string `json:"actPerson,omitempty"`
 	// Text is the post, stored before its first attempt; every attempt posts it.
 	Text      string           `json:"text,omitempty"`
 	Plain     *Plain           `json:"plain,omitempty"`
@@ -138,7 +135,6 @@ type AskRequest struct {
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
 	Facts                                         []string
 	Options                                       []Option
-	ActsBefore                                    []string
 	Recommendation, Wants                         string
 	Budget                                        *goal.Budget
 	Provider                                      Provider
@@ -211,7 +207,6 @@ func listQuestions(repo string) ([]Question, error) {
 // and the turn-end scanner. One unreadable file never hides the other open
 // questions; its path is returned on the separate failure channel.
 func WalkOpenQuestions(repo string) ([]Question, []string) {
-	_ = ReconcileNamedActs(repo, nil)
 	all, unreadable := WalkQuestions(repo)
 	var questions []Question
 	for _, question := range all {
@@ -389,12 +384,11 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{ActsBefore: r.ActsBefore, Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, PersonAct: r.PersonAct, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
+	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, PersonAct: r.PersonAct, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
 	if hasNamedActs(q) {
-		q.ActsOpenedAt = time.Now().UTC()
 		if enrollment, err := humanauthority.ReadEnrollment(r.RepoRoot); err == nil {
 			q.ActPerson = enrollment.Human
 		}
