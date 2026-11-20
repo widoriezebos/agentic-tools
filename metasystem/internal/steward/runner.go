@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -323,6 +324,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		return scheduleErr
 	}
 	keeping := &laneKeeping{step: cfg.KeepLandingLane, root: top, now: deps.Now}
+	var stopObserver func()
+	defer func() {
+		if stopObserver != nil {
+			stopObserver()
+		}
+	}()
+	stopping := func() bool { _, err := os.Stat(runnerStopPath(top)); return err == nil || drain.Requested() }
 	var served tickrequest.Request
 	var requestWake, requestDriven, unreadableRequest bool
 	var requestDiagnostic string
@@ -388,6 +396,16 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	for {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return nil
+		}
+		if cfg.ObserveMovedMain != nil {
+			owns := cfg.OwnsLandingLane == nil || cfg.OwnsLandingLane()
+			if owns && stopObserver == nil {
+				stopObserver = keeping.watchMain(cfg.ObserveMovedMain, stopping, cfg.FollowWaitingForProof, cfg.RunnerClock, logFile)
+			}
+			if !owns && stopObserver != nil {
+				stopObserver()
+				stopObserver = nil
+			}
 		}
 		started, timed.elapsed, paged = deps.Now(), 0, 0
 		requestDriven = requestWake
@@ -610,6 +628,7 @@ const limitProbe = outage.ProbeInterval
 // agent, another hold or, idle, a hand-in. A lane not kept, paused or failed
 // does not wait; its keeper is stepped once per cycle.
 type laneKeeping struct {
+	mu       sync.Mutex
 	root     string
 	now      func() time.Time
 	outcome  lane.AgentOutcome
@@ -625,6 +644,8 @@ func (k *laneKeeping) run() {
 	if k == nil || k.step == nil {
 		return
 	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	run := k.step()
 	if k.observed && k.outcome != run.Outcome && (run.Outcome == lane.AgentPaused || run.Outcome == lane.AgentFailed || run.Outcome == lane.AgentNotKept) && k.root != "" {
 		_ = tickrequest.Write(k.root, "lane keeper changed: "+string(run.Outcome), k.now())

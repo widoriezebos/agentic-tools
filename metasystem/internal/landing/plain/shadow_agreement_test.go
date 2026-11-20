@@ -250,7 +250,7 @@ func TestShadowAgreementAgentWordsAndRecordedStop(t *testing.T) {
 			b.lines("stops.jsonl", Stop{Loop: "lane-proof", Subject: "A", Decision: "stop", Handoff: "ask lane", At: bedNow.Format(time.RFC3339Nano)})
 			assertShadowAgrees(t, b.home, seams)
 			r, _, err := state.Read(Dir(b.install))
-			if err != nil || r.Agent.Word != tc.word || r.Lane.Word != "stopped" {
+			if err != nil || r.Agent.Word != tc.word || r.Lane.Word != "running" {
 				t.Fatalf("words: agent=%s lane=%s error=%v", r.Agent.Word, r.Lane.Word, err)
 			}
 		})

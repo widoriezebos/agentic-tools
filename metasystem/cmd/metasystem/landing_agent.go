@@ -26,11 +26,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // landingLaneCheckout reads the host's registered lane for the launcher's
@@ -63,6 +63,8 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 // landingAgent starts, finds and reaps the landing agent through the launch
 // manager the work verbs use.
 type landingAgent struct {
+	residentObserver      bool
+	followWaitingForProof func() bool
 	// proofEffects are the lane Git and process boundaries; zero uses the host.
 	proofEffects plain.ProveSeams
 	mainEndpoint func(string) (goal.Endpoint, error)
@@ -220,38 +222,12 @@ func (a landingAgent) reapOutage(id string) error {
 // the person, and the next one reads the answer with question show. A lane
 // question from another computer holds nothing here.
 func (a landingAgent) questionHold(module string) (string, error) {
-	machineFn := a.machine
-	if machineFn == nil {
-		machineFn = goal.ResolveMachine
-	}
 	open, _ := channel.WalkQuestions(module)
-	var lane []channel.Question
-	for _, q := range open {
-		if len(q.Facts) > 1 && strings.HasPrefix(q.Facts[1], "lane steward: ") {
-			continue
-		}
-		if satisfied, err := plain.PolicyQuestionSatisfied(module, q); err != nil {
-			return "", err
-		} else if satisfied {
-			continue
-		}
-		if q.Goal == "" && q.About == "lane" && (q.State == "open" || q.State != "closed" && channel.LaneStopCommand(q) != "") {
-			lane = append(lane, q)
-		}
+	held, err := plain.HoldingLaneQuestions(module, open, a.machine)
+	if err != nil || len(held) == 0 {
+		return "", err
 	}
-	if len(lane) == 0 {
-		return "", nil
-	}
-	machine, err := machineFn(module)
-	if err != nil {
-		return "", fmt.Errorf("a question about the lane is open and this computer's name cannot be read: %w", err)
-	}
-	for _, q := range lane {
-		if q.Machine == machine {
-			return plain.LaneQuestionHeadline(q), nil
-		}
-	}
-	return "", nil
+	return plain.LaneQuestionHeadline(held[0]), nil
 }
 
 // newLandingAgentKeeper is the keeper's landing-agent step for the steward
@@ -291,7 +267,53 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 	}
 
 	var keeper lane.AgentKeeper
-	keeper = lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
+	mainProof := func(record lane.Record) plain.ProveSeams {
+		owners := laneVerbOwners{plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
+		proof := owners.proveSeams(record.Install)
+		proof.BatchMayContinue = func() bool {
+			state, err := lane.ReadAgentState(home)
+			if err != nil || state.Barren >= 2 {
+				return false
+			}
+			for _, hold := range append([]func(string) (string, error){keeper.ProviderHold}, keeper.Holds[1:]...) {
+				if reason, err := hold(record.Root); err != nil || reason != "" {
+					return false
+				}
+			}
+			return true
+		}
+		proof.CommandForCommit = func(commit string) (string, error) {
+			return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
+		}
+		proof.MainHold = func() string {
+			current, err := seams.Lane()
+			if err != nil || current != record {
+				return landingstate.Phrase("main-registration")
+			}
+			if pause, ok := lane.ReadPause(home); ok {
+				return fmt.Sprintf(landingstate.Phrase("main-pause"), pause.By, lane.LocalText(pause.At))
+			}
+			if h := helm.Active(self); h.Active {
+				return fmt.Sprintf(landingstate.Phrase("main-helm"), h.By, lane.LocalText(h.At))
+			}
+			return ""
+		}
+		return proof
+	}
+	keeper = lane.AgentKeeper{CheckMain: func(record lane.Record, stopping func() bool) error {
+		proof := mainProof(record)
+		hold := proof.MainHold
+		proof.MainHold = func() string {
+			if stopping() {
+				if agent.followWaitingForProof != nil && agent.followWaitingForProof() {
+					return landingstate.Phrase("main-update-next")
+				}
+				return landingstate.Phrase("main-handoff")
+			}
+			return hold()
+		}
+		return plain.ObserveMovedMain(record.Install, record.Root, proof)
+	}, Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
 		Refresh: func(now time.Time) {
 			readonly := seams
 			readonly.AgentProbe = agent.probe
@@ -340,26 +362,15 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			effects.Now = agent.now
 			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
 			owners := laneVerbOwners{plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
-			proof := owners.proveSeams(record.Install)
-			proof.BatchMayContinue = func() bool {
-				state, err := lane.ReadAgentState(home)
-				if err != nil || state.Barren >= 2 {
-					return false
-				}
-				for _, hold := range append([]func(string) (string, error){keeper.ProviderHold}, keeper.Holds[1:]...) {
-					if reason, err := hold(record.Root); err != nil || reason != "" {
-						return false
-					}
-				}
-				return true
+			proof := mainProof(record)
+			restartErr := plain.RestartDeployedProof(record.Install, record.Root, proof)
+			if restartErr != nil {
+				restartErr = fmt.Errorf(landingstate.Phrase("main-restart-failed"), restartErr)
 			}
-			proof.CommandForCommit = func(commit string) (string, error) {
-				return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
+			var recoveryErr error
+			if !agent.residentObserver {
+				recoveryErr = plain.RecoverMovedMain(record.Install, record.Root, proof)
 			}
-			if err := plain.RestartDeployedProof(record.Install, record.Root, proof); err != nil {
-				return err
-			}
-			recoveryErr := plain.RecoverMovedMain(record.Install, record.Root, proof)
 			var reconcileErr error
 			if agent.mainEndpoint != nil {
 				var greens []plain.Result
@@ -368,7 +379,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 					reconcileErr = errors.Join(reconcileErr, owners.clearLandingIncidents(record.Install, green))
 				}
 			}
-			drainErr = errors.Join(drainErr, recoveryErr, readErr, reconcileErr)
+			drainErr = errors.Join(drainErr, restartErr, recoveryErr, readErr, reconcileErr)
 			questionErr := plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)
 			if questionErr != nil {
 				questionErr = fmt.Errorf("synchronize the lane's stop question in %s: %w; repair that question source and observe the lane again", plain.Dir(record.Install), questionErr)
@@ -464,15 +475,33 @@ func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
 	return lane.OwnerProbe{}, nil
 }
 
-// landingAgentStep is the landing agent's keeper step for the steward of
-// repo: nil without a lane home.
-func landingAgentStep(repo string) func() lane.AgentRun {
-	home, err := batchowner.LandingLaneHome()
-	if err != nil {
-		return nil
-	}
-	agent := newLandingAgent()
+// configureLandingRunner gives the resident observer sole ownership of moved-main
+// recovery. Other callers of the keeper still recover main during their observation.
+func configureLandingRunner(repo, home string, agent landingAgent, cfg *steward.TickConfig) {
+	agent.residentObserver = true
+	agent.followWaitingForProof = cfg.FollowWaitingForProof
 	keeper := newLandingAgentKeeper(repo, home, agent)
+	cfg.OwnsLandingLane = func() bool {
+		current, present, err := lane.Read(home)
+		return err == nil && present && lane.OwnsLane(repo, current)
+	}
+	cfg.ObserveMovedMain = func(stopping func() bool) error {
+		current, present, err := lane.Read(home)
+		if err != nil || !present || !lane.OwnsLane(repo, current) {
+			return err
+		}
+		var problem error
+		var failure bytes.Buffer
+		code := guardLanding(current.Install, "observe main", nil, io.Discard, &failure, func(io.Writer, io.Writer) int {
+			problem = keeper.CheckMain(current, stopping)
+			return 0
+		}, func() (string, error) { return home, nil }, agent.proofEffects)
+		if code == 2 {
+			return errors.New(strings.TrimSpace(failure.String()))
+		}
+		return problem
+	}
+
 	seams := (laneVerbOwners{plainProve: agent.proofEffects}).proveSeams(repo)
 	seams.Machine = agent.machine
 	seams.Steward = landingAgentStewardEffects(home, agent, keeper)
@@ -494,7 +523,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 		}
 		return plain.StewardStep(home, agent.now(), proof)
 	})
-	return func() (run lane.AgentRun) {
+	cfg.KeepLandingLane = func() (run lane.AgentRun) {
 		var failure bytes.Buffer
 		code := guardLanding(repo, "run", nil, io.Discard, &failure, func(io.Writer, io.Writer) int { run = tick(); return 0 }, func() (string, error) { return home, nil }, seams)
 		if code == 2 {

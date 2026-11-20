@@ -66,6 +66,8 @@ func ReadAgentState(home string) (AgentState, error) {
 
 // AgentKeeper wakes the host lane's landing agent.
 type AgentKeeper struct {
+	// CheckMain runs only moved-main observation and proof admission.
+	CheckMain func(Record, func() bool) error
 	// Refresh observes the shadow before any host lock or early return.
 	Refresh func(time.Time)
 	Home    string

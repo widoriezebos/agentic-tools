@@ -35,19 +35,30 @@ func NewestStop(install string) (*Stop, error) {
 
 // OpenStops are every stop no later decision closed, newest first.
 func OpenStops(install string) ([]Stop, error) {
-	lines, err := readLines[Stop](stopsPath(install))
-	closed := stopSet{}
 	var open []Stop
+	err := visitOpenStops(install, func(s Stop, _ int) { open = append(open, s) })
+	return open, err
+}
+
+type HistoricalStop struct {
+	Stop
+	Row int `json:"row"`
+}
+
+func visitOpenStops(install string, visit func(Stop, int)) error {
+	lines, ordinals, _, err := countedLineOrdinals[Stop](stopsPath(install))
+	closed := stopSet{}
+
 	for i := len(lines) - 1; i >= 0; i-- {
 		s := lines[i]
 		if s.Decision == "close" {
 			closed.add(s)
 		}
 		if s.Decision == "stop" && !closed.contains(s) {
-			open = append(open, s)
+			visit(s, ordinals[i])
 		}
 	}
-	return open, err
+	return err
 }
 
 func closeGoneLoopStops(install string, status Status, now time.Time) error {

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -443,8 +445,33 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 		if dependencies.FollowStart != nil {
 			follow.Start = dependencies.FollowStart
 		}
+		var waitingForProof atomic.Bool
+		tickConfig.FollowWaitingForProof = waitingForProof.Load
+		probe := follow.LaneProofRunning
+		follow.LaneProofRunning = func() (bool, error) {
+			if tickConfig.OwnsLandingLane == nil || !tickConfig.OwnsLandingLane() {
+				return probe()
+			}
+			var alive bool
+			// Bind the pending follow to the live proof while admission has the same
+			// install flock. Another main cannot take the slot between read and handoff.
+			err := plain.WithLaneLock(*repo, func() error {
+				var err error
+				alive, err = probe()
+				if alive {
+					waitingForProof.Store(true)
+				}
+				return err
+			})
+			return alive, err
+		}
 		tickConfig.FollowDeployedEngine = func() (bool, bool, error) {
 			replaced, refusal, err := testrun.FollowDeployedEngineAtBoundary(*repo, follow)
+			// Keep the turn through successful replacement. A changed or failed
+			// deployment releases it when the follow no longer waits on the lane.
+			if !replaced && (refusal == nil || !refusal.LaneProof) {
+				waitingForProof.Store(false)
+			}
 			machine := "this machine"
 			if enrolled, resolveErr := goal.ResolveMachine(*repo); resolveErr == nil {
 				machine = enrolled
@@ -465,7 +492,9 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The lane checkout's own steward wakes its landing agent on demand;
 	// every other steward's step finds it is not the lane's.
-	tickConfig.KeepLandingLane = landingAgentStep(*repo)
+	if home, err := batchowner.LandingLaneHome(); err == nil {
+		configureLandingRunner(*repo, home, newLandingAgent(), &tickConfig)
+	}
 	// The lane's steward reports behaviour patterns; every other steward's
 	// pass finds it is not the lane's and does nothing (D6).
 	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run

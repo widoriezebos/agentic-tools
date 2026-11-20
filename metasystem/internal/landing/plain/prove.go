@@ -221,6 +221,10 @@ type ProveSeams struct {
 	Pause func() (lane.Pause, bool)
 	// TimerHeld suppresses periodic trunk checks while a fence stands.
 	TimerHeld func() bool
+	// MainHold names a current fence on automatic main proof admission.
+	MainHold         func() string
+	recoveryCommit   string
+	recoveryAdmitted func() error
 	// BatchMayContinue says the keeper can still run the batch's next step.
 	BatchMayContinue func() bool
 	// Policy resolves only the policy requested at its effect boundary.
@@ -566,7 +570,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if subjectErr != nil {
 			return subjectErr
 		}
-		if currentCommit != commit || currentTree != tree {
+		if currentCommit != commit || currentTree != tree || seams.recoveryCommit != "" && commit != seams.recoveryCommit {
 			return &Refusal{Code: "LANE_PROOF_SUBJECT", Reason: "the check target changed before admission", Next: proofCommand(seams.Gate, seams.Trunk)}
 		}
 
@@ -720,8 +724,21 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if repair != nil && repair.Tree != "" {
 			checkpointEffect = "checkpoint replaced"
 		}
+		if seams.recoveryAdmitted != nil {
+			if err := seams.recoveryAdmitted(); err != nil {
+				return err
+			}
+		}
 		if err := writeRunning(install, started, seams); err != nil {
 			return err
+		}
+		if seams.Recovery && seams.MainHold != nil {
+			if reason := seams.MainHold(); reason != "" {
+				if err := removeRunning(install); err != nil {
+					return err
+				}
+				return &mainAdmissionHold{reason}
+			}
 		}
 		pid, err := seams.Launch(argv, checkout, log)
 		launchEffect = "launch succeeded"

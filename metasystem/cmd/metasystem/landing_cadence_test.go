@@ -20,10 +20,12 @@ import (
 // no queued work. Detached launches remain alive throughout the tick sequence.
 type cadenceBed struct {
 	*selectionBed
+	agent      landingAgent
 	keeper     lane.AgentKeeper
 	argv       [][]string
 	started    []time.Time
 	recoveries int
+	alive      bool
 }
 
 func newCadenceBed(t *testing.T, interval string, fullAge time.Duration, debt, red, unproved bool) *cadenceBed {
@@ -96,8 +98,7 @@ func newCadenceBed(t *testing.T, interval string, fullAge time.Duration, debt, r
 			b.recoveries++
 		}
 	}
-	alive := false
-	seams.Alive = func(plain.Running) bool { return alive }
+	seams.Alive = func(plain.Running) bool { return b.alive }
 	seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
 		if red {
 			return []goal.TrunkRedEntry{{ID: "main-red", Identity: "red:fixture", Opened: fullAt, Sightings: []goal.TrunkRedSighting{{BaseCommit: "main"}}}}, nil
@@ -110,15 +111,16 @@ func newCadenceBed(t *testing.T, interval string, fullAge time.Duration, debt, r
 		}
 		b.argv = append(b.argv, slices.Clone(argv))
 		b.started = append(b.started, b.now)
-		alive = true
+		b.alive = true
 		return int64(os.Getpid()), nil
 	}
-	b.keeper = newLandingAgentKeeper(b.lane, b.home, newTestLandingAgent(func(agent *landingAgent) {
+	b.agent = newTestLandingAgent(func(agent *landingAgent) {
 		agent.proofEffects = seams
 		agent.now = func() time.Time { return b.now }
 		agent.machine = func(string) (string, error) { return "fixture", nil }
 		agent.settings = func(string) (launch.Settings, error) { return launch.DefaultSettings(), nil }
-	}))
+	})
+	b.keeper = newLandingAgentKeeper(b.lane, b.home, b.agent)
 	b.keeper.Running = func() (string, bool, error) { return "", false, nil }
 	b.keeper.Start = func(string, lane.Wake) (string, error) { t.Fatal("empty queue started an agent"); return "", nil }
 	return b

@@ -16,6 +16,7 @@ import (
 
 // RawFacts retains the records belonging to one status observation.
 type RawFacts struct {
+	resultsComplete         bool
 	Clock                   clockWake
 	EngineIncidents         []state.EngineIncident
 	Err                     error

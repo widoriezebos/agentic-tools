@@ -542,6 +542,15 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 		if data.Root == nil {
 			return
 		}
+		if data.MainObservation != "" {
+			page.Section("", "").Text(data.MainObservation)
+		}
+		if len(data.StopHistory) > 0 {
+			history := page.Section("History", "")
+			for _, stop := range data.StopHistory {
+				history.Text(fmt.Sprintf(landingstate.Phrase("main-stop-history"), stop.Row, stop.Subject, lane.LocalText(stop.At), stop.Class))
+			}
+		}
 		if reason := plain.ClockReason(install); page.Verbose() && reason != "" {
 			page.Section("", "").Text(reason)
 		}

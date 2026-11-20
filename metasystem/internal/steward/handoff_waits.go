@@ -17,6 +17,8 @@ import (
 type HandoffClock struct {
 	Now   func() time.Time
 	Sleep func(time.Duration)
+	// Ticker supplies independent periodic events for a resident runner.
+	Ticker func(time.Duration) (<-chan time.Time, func())
 }
 
 func handoffWaiterClass(name string) (run.WaiterStateClass, bool) {

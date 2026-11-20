@@ -2,6 +2,7 @@ package testrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,21 +11,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // DeployedFollow supplies the observations and mutations of one boundary pass.
 type DeployedFollow struct {
-	Now            func() time.Time
-	Deployed       func() (steward.DeployedEngine, error)
-	EnrolledDigest func() (string, error)
-	Landed         func(string) error
-	Ready          func() (bool, string)
-	Lock           func() (func(), error)
-	Forward        func(string) error
-	Install        func(steward.DeployedEngine) error
-	Start          func() error
+	Now              func() time.Time
+	Deployed         func() (steward.DeployedEngine, error)
+	EnrolledDigest   func() (string, error)
+	Landed           func(string) error
+	Ready            func() (bool, string)
+	LaneProofRunning func() (bool, error)
+	Lock             func() (func(), error)
+	Forward          func(string) error
+	Install          func(steward.DeployedEngine) error
+	Start            func() error
 }
 
 const followWaitingForBoundary = "the seat is not at its unit boundary"
@@ -32,9 +35,10 @@ const followWaitingForBoundary = "the seat is not at its unit boundary"
 func FollowDeployedEngineAtBoundary(projectRoot string, follow DeployedFollow) (replaced bool, refusal *steward.FollowRefusal, err error) {
 	engine, err := follow.Deployed()
 	waiting := false
+	laneProof := false
 	defer func() {
 		if err != nil {
-			refusal = &steward.FollowRefusal{Commit: engine.Commit, Reason: err.Error(), Waiting: waiting,
+			refusal = &steward.FollowRefusal{Commit: engine.Commit, Reason: err.Error(), Waiting: waiting, LaneProof: laneProof,
 				Command: fmt.Sprintf("cd %s && cp -p %s bin/.metasystem.hand && mv bin/.metasystem.hand bin/metasystem && bin/metasystem system restart", projectRoot, engine.Artifact)}
 			if engine.Commit == "" || engine.Artifact == "" {
 				refusal.Commit = steward.FollowDeploymentUnavailable
@@ -58,6 +62,16 @@ func FollowDeployedEngineAtBoundary(projectRoot string, follow DeployedFollow) (
 		if ok, reason := follow.Ready(); !ok {
 			waiting = reason == followWaitingForBoundary
 			return fmt.Errorf("%s", reason)
+		}
+		if follow.LaneProofRunning != nil {
+			alive, err := follow.LaneProofRunning()
+			if err != nil {
+				return fmt.Errorf(state.Phrase("main-follow-read-failed"), err)
+			}
+			if alive {
+				laneProof = true
+				return errors.New(state.Phrase("main-follow-wait"))
+			}
 		}
 		return nil
 	}
@@ -142,14 +156,10 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 					return false, "proof attempt " + attempt.AttemptID + " is still open"
 				}
 			}
-			if _, _, alive, err := plain.ReadRunning(root, lane); err != nil {
-				return false, "the lane proof's running file cannot be read: " + err.Error()
-			} else if alive {
-				return false, "the lane proof is running"
-			}
 			return true, ""
 		},
-		Lock: func() (func(), error) { return landedRearmMutationLock(root) },
+		LaneProofRunning: func() (bool, error) { _, _, alive, err := plain.ReadRunning(root, lane); return alive, err },
+		Lock:             func() (func(), error) { return landedRearmMutationLock(root) },
 		Forward: func(commit string) error {
 			prefix, err := read("rev-parse", "--show-prefix")
 			if err != nil {

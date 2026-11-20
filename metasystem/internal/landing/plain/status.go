@@ -58,8 +58,10 @@ type Status struct {
 	MergeReadFinding string   `json:"merge_read_finding,omitempty"`
 	LastGate         *Result  `json:"last_gate,omitempty"`
 	// LastPush is the newest push landing push made.
-	LastPush *Pushed `json:"last_push"`
-	Stop     *Stop   `json:"stop,omitempty"`
+	LastPush        *Pushed          `json:"last_push"`
+	Stop            *Stop            `json:"stop,omitempty"`
+	StopHistory     []HistoricalStop `json:"stop_history,omitempty"`
+	MainObservation string           `json:"-"`
 	// Problems are the lane's records this read could not read, one plain
 	// sentence each: a queue, proof or push that could not be read, or a
 	// line of one that does not decode, is said here rather than read as
@@ -357,6 +359,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		return incidents, incidentsErr
 	}
 	defer func() {
+		status.MainObservation = mainObserverStatus(install, string(layout.Checkout), raw, seams)
 		d := landingstate.Describe(ShadowOf(status, raw), RenderInputsOf(status, raw))
 		status.ProofHeadline = d.ProofHeadline
 		status.Summary = d.Summary
@@ -471,12 +474,23 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			status.Problems = append(status.Problems, fmt.Sprintf("%s %d %s that can't be read (%s)", what, skipped, lines, path))
 		}
 	}
-	status.Stop, err = NewestStop(install)
-	unread("the stop record", err)
-	openStops, readErr := OpenStops(install)
-	raw.Stops = openStops
-	unread("the pending red actions", readErr)
-	for _, stop := range openStops {
+	questions, questionProblems := channel.WalkQuestions(install)
+	raw.AllQuestions = questions
+	if len(questionProblems) > 0 {
+		said(fmt.Sprintf("lane questions: %v", questionProblems))
+	}
+	heldQuestions, holdErr := HoldingLaneQuestions(install, questions, seams.Machine)
+	unread("the lane's question hold", holdErr)
+	readErr := visitOpenStops(install, func(stop Stop, row int) {
+		raw.Stops = append(raw.Stops, stop)
+		if strings.HasPrefix(stop.Handoff, "ask ") && holdErr == nil && len(questionProblems) == 0 && !stopHasQuestion(stop, heldQuestions) {
+			status.StopHistory = append(status.StopHistory, HistoricalStop{Stop: stop, Row: row})
+		} else if status.Stop == nil {
+			status.Stop = &stop
+		}
+	})
+	unread("the stop record", readErr)
+	for _, stop := range raw.Stops {
 		if (stop.Loop != "lane-classify" && !(stop.Loop == "lane-return" && stop.Subject != "lane")) || status.Stop != nil && stopKey(stop) == stopKey(*status.Stop) {
 			continue
 		}
@@ -574,6 +588,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 	results, skipped, err := countedLines[Result](resultsPath(install))
 	unread("the proof results", err)
 	damaged("the proof results have", skipped, resultsPath(install))
+	raw.resultsComplete = err == nil && skipped == 0
 	if err == nil && len(results) > 0 {
 		raw.Results = results
 		results = retainedResults(results, seams.now())
@@ -690,11 +705,6 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		}
 	}
 
-	questions, questionProblems := channel.WalkQuestions(install)
-	raw.AllQuestions = questions
-	if len(questionProblems) > 0 {
-		said(fmt.Sprintf("lane questions: %v", questionProblems))
-	}
 	for _, q := range questions {
 		if q.Goal != "" || q.About != "lane" || q.State != "open" {
 			continue

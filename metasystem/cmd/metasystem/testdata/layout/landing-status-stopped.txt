@@ -2,6 +2,8 @@ paused by Wido
 
 to do: metasystem landing resume
 
+main main: nothing is watching main; start the lane checkout with metasystem system start
+
 Agent
   agent: idle since 10:28
 

@@ -2,11 +2,13 @@ package plain
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
@@ -89,4 +91,49 @@ func firstQuestionLine(q channel.Question) string {
 		return q.Facts[0]
 	}
 	return ""
+}
+
+// HoldingLaneQuestions selects the questions that hold this computer's keeper.
+func HoldingLaneQuestions(module string, open []channel.Question, machineFn func(string) (string, error)) ([]channel.Question, error) {
+
+	if machineFn == nil {
+		machineFn = goal.ResolveMachine
+	}
+
+	var lane []channel.Question
+	for _, q := range open {
+		if len(q.Facts) > 1 && strings.HasPrefix(q.Facts[1], "lane steward: ") {
+			continue
+		}
+		if satisfied, err := PolicyQuestionSatisfied(module, q); err != nil {
+			return nil, err
+		} else if satisfied {
+			continue
+		}
+		if q.Goal == "" && q.About == "lane" && (q.State == "open" || q.State != "closed" && channel.LaneStopCommand(q) != "") {
+			lane = append(lane, q)
+		}
+	}
+	if len(lane) == 0 {
+		return nil, nil
+	}
+	machine, err := machineFn(module)
+	if err != nil {
+		return nil, fmt.Errorf("a question about the lane is open and this computer's name cannot be read: %w", err)
+	}
+	return slices.DeleteFunc(lane, func(q channel.Question) bool { return q.Machine != machine }), nil
+}
+
+func stopHasQuestion(stop Stop, questions []channel.Question) bool {
+	for _, q := range questions {
+		if len(q.Facts) < 2 {
+			continue
+		}
+		data, ok := strings.CutPrefix(q.Facts[1], "lane stop: ")
+		var bound Stop
+		if ok && json.Unmarshal([]byte(data), &bound) == nil && stopKey(bound) == stopKey(stop) {
+			return true
+		}
+	}
+	return false
 }

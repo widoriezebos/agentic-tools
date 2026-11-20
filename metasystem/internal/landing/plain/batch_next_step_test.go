@@ -67,7 +67,7 @@ func TestBatchNextStepUsesTheCurrentSubjectAndMembership(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if next, err := batchNextStep(b.install, b.checkout, b.seams); err != nil || next != want {
+			if next, err := batchPendingStep(b.install, b.checkout, b.seams); err != nil || (next != "") != want {
 				t.Fatalf("next=%v want=%v err=%v", next, want, err)
 			}
 		})

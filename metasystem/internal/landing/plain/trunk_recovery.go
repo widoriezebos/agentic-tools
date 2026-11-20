@@ -165,33 +165,42 @@ func acceptableGate(gate Result) bool {
 }
 
 // batchNextStep observes unfinished work on the current batch subject.
-func batchNextStep(install, checkout string, seams ProveSeams) (bool, error) {
+func batchPendingStep(install, checkout string, seams ProveSeams) (string, error) {
 	batch, err := ReadBatch(install)
 	if err != nil || batch == nil || batch.State == BatchClosed || batch.Lane.Root != checkout {
-		return false, err
+		return "", err
 	}
 	commit, tree, err := head(seams.git, checkout)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	for _, member := range batch.Members {
 		merged, err := checkoutGit(checkout, seams).contains(commit, member.SHA)
 		if err != nil || !merged {
-			return !merged && err == nil, err
+			if err != nil {
+				return "", err
+			}
+			return batchStepLine(batch.ID, "merge"), nil
 		}
 	}
 	gate, candidate, err := batchProofProgress(install, batch, commit, tree)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if candidate.Result != "" {
 		if candidate.Result != Green {
-			return false, nil
+			return "", nil
 		}
 		push, ok, err := LastPush(install)
-		return !ok || push.Tree != candidate.Tree, err
+		if err == nil && (!ok || push.Tree != candidate.Tree) {
+			return batchStepLine(batch.ID, "push"), nil
+		}
+		return "", err
 	}
-	return acceptableGate(gate), nil
+	if acceptableGate(gate) {
+		return batchStepLine(batch.ID, "prove"), nil
+	}
+	return "", nil
 }
 
 // batchProofProgress binds gate and candidate results to the checkout and members.
@@ -216,49 +225,17 @@ func batchProofProgress(install string, batch *Batch, commit, tree string) (gate
 	return gate, candidate, err
 }
 
-// RecoverMovedMain uses the same detached trunk admission as landing prove.
-// It runs before question synchronization, so a stale exception cannot gate it.
-func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
-	if seams.BatchMayContinue != nil && seams.BatchMayContinue() {
-		next, err := batchNextStep(install, checkout, seams)
-		if err != nil || next {
-			return err
-		}
-	}
-	if err := seams.fetchMain(checkout); err != nil {
-		return err
-	}
-	seams.Trunk, seams.Gate, seams.Impact, seams.Recovery = true, false, false, true
-	main, tree, err := seams.subject(checkout)
-	if err != nil {
-		return err
-	}
-	if _, ok := applicableMainProof(install, checkout, main, tree, seams, true); ok {
-		return nil
-	}
-	if seams.TimerHeld != nil && seams.TimerHeld() {
-		return nil
-	}
-	running, already, err := Start(install, checkout, seams)
-	var examined *Examined
-	if errors.As(err, &examined) {
-		return nil
-	}
-	if seams.RecoveryStarted != nil {
-		seams.RecoveryStarted(running, already)
-	}
-	var busy *Busy
-	var repair *RepairPending
-	if errors.As(err, &busy) || errors.As(err, &repair) {
-		return nil
-	}
-	return err
-}
-
 // applicableMainProof uses only recorded execution facts; cadence detects environment changes.
 func applicableMainProof(install, checkout, commit, tree string, seams ProveSeams, red bool) (Result, bool) {
 	results, damaged, err := countedLines[Result](resultsPath(install))
-	if err != nil || damaged != 0 || commit == "" || tree == "" {
+	if err != nil || damaged != 0 {
+		return Result{}, false
+	}
+	return recordedMainProof(install, checkout, commit, tree, seams, red, results)
+}
+
+func recordedMainProof(install, checkout, commit, tree string, seams ProveSeams, red bool, results []Result) (Result, bool) {
+	if commit == "" || tree == "" {
 		return Result{}, false
 	}
 	environment := ""

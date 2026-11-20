@@ -11,6 +11,7 @@ import (
 type FollowRefusal struct {
 	Commit, Reason, Command string
 	Waiting                 bool
+	LaneProof               bool
 }
 
 const FollowDeploymentUnavailable = "deployment-unavailable"

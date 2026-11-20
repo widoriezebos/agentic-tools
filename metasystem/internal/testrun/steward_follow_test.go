@@ -236,7 +236,7 @@ func TestDeployedFollowReadyHoldsEveryLiveRecord(t *testing.T) {
 			f.Forward = func(string) error { return nil }
 			f.Start = func() error { starts++; return nil }
 			for range 10 {
-				if replaced, refusal, err := FollowDeployedEngineAtBoundary(root, f); replaced || err != nil || refusal == nil || refusal.Waiting != (row == "held-unit") || refusal.Commit != "deployed" {
+				if replaced, refusal, err := FollowDeployedEngineAtBoundary(root, f); replaced || err != nil || refusal == nil || refusal.Waiting != (row == "held-unit") || refusal.LaneProof != (row == "live-lane") || refusal.Commit != "deployed" {
 					t.Fatalf("busy follow=%v refusal=%+v err=%v", replaced, refusal, err)
 				}
 				clock.advance(time.Minute)
