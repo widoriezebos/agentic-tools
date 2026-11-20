@@ -54,8 +54,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		var err error
 		spec, err = driver.retainStep(index, spec)
 		if err != nil {
-			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
-			return Record{}, driver.save()
+			return Record{}, driver.failStart(step, "unclassified", err.Error())
 		}
 	}
 	if step.State == StepPending {
@@ -88,15 +87,13 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			if spec.Kind == "proof" || spec.Kind == "read" {
 				before, snapErr := driver.snapshot(spec.WorkingDirectory)
 				if snapErr != nil {
-					step.State, step.Cause, step.Reason = StepFailed, "unclassified", snapErr.Error()
-					return Record{}, driver.save()
+					return Record{}, driver.failStart(step, "unclassified", snapErr.Error())
 				}
 				if spec.Kind == "read" && driver.round.ReadCheckout != "" {
 					step.ExaminedTree, step.ExaminedBase = before.TreeID, driver.readBase
 					if driver.round.Result == nil || before.TreeID != driver.round.Result.Tree || strings.TrimSpace(before.Head) != driver.round.Result.Parent {
-						step.State, step.Cause, step.Reason = StepFailed, "environment", "the frozen read tree changed before the read"
 						step.Moved = []string{"the frozen read tree"}
-						return Record{}, driver.save()
+						return Record{}, driver.failStart(step, "environment", "the frozen read tree changed before the read")
 					}
 				}
 				step.Before = &before
@@ -167,9 +164,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			if len(step.LaunchIDs) > 0 {
 				step.LaunchID = step.LaunchIDs[len(step.LaunchIDs)-1]
 			}
-			step.State, step.Cause, step.Reason = StepFailed, "environment", err.Error()
-			step.FinishedAt = driver.manager.Now().UTC().Format(time.RFC3339Nano)
-			return Record{}, driver.save()
+			return Record{}, driver.failStart(step, "environment", err.Error())
 		}
 		return Record{}, err
 	}
@@ -187,6 +182,12 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	}
 	step.State = StepRunning
 	return launchRecord, driver.save()
+}
+
+func (driver stepDriver) failStart(step *UnitStep, cause, reason string) error {
+	step.State, step.Cause, step.Reason = StepFailed, cause, reason
+	step.FinishedAt = driver.manager.Now().UTC().Format(time.RFC3339Nano)
+	return driver.save()
 }
 
 func (driver stepDriver) waitStep(index int, deadline time.Time) (bool, error) {

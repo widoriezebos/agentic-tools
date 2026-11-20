@@ -149,7 +149,8 @@ func unitBoundaryCompletion(round launch.UnitRound) (time.Time, error) {
 	}
 	var latest time.Time
 	for _, step := range steps {
-		if step.State == launch.StepSkipped && step.FinishedAt == "" {
+		// Older rounds can lack a finish time when setup of a read failed.
+		if step.FinishedAt == "" {
 			continue
 		}
 		end, err := time.Parse(time.RFC3339Nano, step.FinishedAt)

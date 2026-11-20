@@ -116,6 +116,11 @@ func injectedHandoff(t *testing.T, root, goalID string, predecessor identity.Exa
 	}
 	injectedRunnerFile(t, filepath.Join(root, "bin", "metasystem"), []byte("fixture engine"))
 	injectedRunnerWrite(t, filepath.Join(root, "artifacts", "agents", "supervision", "state.json"), map[string]any{"generation": 1, "owner": map[string]any{"pid": 41, "pidStartedAt": 100, "instanceTag": "supervision"}, "components": map[string]any{"watcher": map[string]any{"pid": 42, "pidStartedAt": 100, "instanceTag": "supervision"}, "reaper": map[string]any{"pid": 43, "pidStartedAt": 100, "instanceTag": "supervision"}}})
+	return writeSessionHandoff(t, root, goalID, predecessor, now)
+}
+
+func writeSessionHandoff(t *testing.T, root, goalID string, predecessor identity.Exact, now time.Time) steward.Intent {
+	t.Helper()
 	const nonce, session, main = "1234567890abcdef", "injected-session", "main-1-100-abcdef"
 	state := steward.HandoffState{SchemaVersion: 1, WrittenAt: now,
 		Seat:     steward.HandoffSeat{Machine: "fixture", Runtime: "fake", Session: session, NormalizedSession: session, MainID: main, Identity: predecessor.Ref()},

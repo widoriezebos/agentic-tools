@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 type treeProber struct{ dead bool }
@@ -283,6 +284,93 @@ func boundaryBed(t *testing.T) (*workBed, *string) {
 		}
 	}
 	return b, tree
+}
+
+func TestReadSetupFailureAllowsUnitHandoff(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ failure, stage string }{
+		{"reader-brief", "reviewed; its read is collected and published"},
+		{"snapshot", "superseded by replacement, read under attestation"},
+	} {
+		t.Run(tc.failure, func(t *testing.T) {
+			b := newWorkBed(t)
+			index := filepath.Join(filepath.Dir(b.worktree), "index")
+			var runID string
+			injected := false
+			b.workOwnersHook = func(owners *intentWorkOwners) {
+				units := owners.units
+				owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
+					r := units(layout)
+					r.AfterWrite = func(run launch.UnitRunRecord) error {
+						runID = run.ID
+						round := run.Rounds[len(run.Rounds)-1]
+						if round.ReadCheckout == "" {
+							return nil
+						}
+						read := round.Steps[len(round.Steps)-1]
+						if tc.failure == "reader-brief" && round.Steps[1].State == launch.StepPassed && !injected {
+							injected = true
+							return os.Remove(filepath.Join(round.Directory, "read-brief.md"))
+						}
+						if tc.failure == "snapshot" && read.State == launch.StepStarting && !injected {
+							injected = true
+							return os.Remove(index)
+						}
+						if tc.failure == "snapshot" && read.State == launch.StepFailed && injected {
+							return os.WriteFile(index, []byte("index"), 0600)
+						}
+						return nil
+					}
+					return r
+				}
+			}
+			started := b.manager.Now()
+			_, built := treeBuild(t, b, "read-failure", true)
+			record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := record.Rounds[0]
+			read := &round.Steps[len(round.Steps)-1]
+			if !injected || record.State != "awaiting-judgement" || round.Outcome != "read-failed" || !round.CheckoutRemoved || read.Name != "read" || read.State != launch.StepFailed || read.Cause != "unclassified" || len(read.LaunchIDs) != 0 {
+				t.Fatalf("failed read setup: state=%s outcome=%s read=%s/%s reason=%s summary=%s", record.State, round.Outcome, read.Name, read.State, read.Reason, built.Summary)
+			}
+			if _, err := time.Parse(time.RFC3339Nano, read.FinishedAt); err != nil {
+				t.Errorf("failed read has no valid finish time: %v", err)
+			}
+			for _, format := range []string{"recorded", "legacy"} {
+				t.Run(format, func(t *testing.T) {
+					if format == "legacy" {
+						read.FinishedAt = ""
+						injectedRunnerWrite(t, filepath.Join(b.unitRoot, runID, "run.json"), record)
+					}
+					assertReadFailureHandoff(t, b, runID, tc.stage, started)
+				})
+			}
+		})
+	}
+}
+
+func assertReadFailureHandoff(t *testing.T, b *workBed, runID, stage string, started time.Time) {
+	t.Helper()
+	root := t.TempDir()
+	injectedRunnerFile(t, filepath.Join(root, "metasystem.conf"), []byte("seat.driver=auto\n"))
+	it := writeSessionHandoff(t, root, b.id, identity.Exact{Pid: 4242, StartedAt: started}, started)
+	injectedRunnerWrite(t, filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json"), map[string]any{"holderMainId": it.Handoff.MainId, "ownerLineage": steward.SeatLineage, "pid": 4242, "revision": 1, "claimEpoch": 1})
+	work := goal.ClaimableBudgetedWork{Claimed: []string{b.id}}
+	stages := func(string, string) ([]steward.UnitStage, error) {
+		return []steward.UnitStage{{Run: runID, Stage: stage}}, nil
+	}
+	if err := steward.ObserveUnitBoundary(root, filepath.Dir(b.unitRoot), it.Handoff.Session, started, work, stages, b.manager.Now(), workProber{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := steward.BindUnitHandoff(root, it.Handoff.Session); err != nil {
+		t.Fatal(err)
+	}
+	events, err := steward.ReadUnitBoundaries(root)
+	if err != nil || len(events) != 1 || events[0].Unit != runID+"/1" || events[0].Outcome != "read-failed" || events[0].Handoff != it.Nonce {
+		t.Fatalf("bound handoff: %+v, error %v", events, err)
+	}
 }
 
 func TestIntentTreeBoundaryIsFreshAfterYield(t *testing.T) {
