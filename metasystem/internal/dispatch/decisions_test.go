@@ -1145,3 +1145,71 @@ func mustReadFile(t *testing.T, path string) []byte {
 	}
 	return data
 }
+
+func TestCodexRoleRosterInJobRecords(t *testing.T) {
+	for _, tc := range []struct {
+		role, mode  string
+		hazard      HazardClass
+		floor, want string
+	}{
+		{"implementer", "implement", HazardMechanical, "medium", "high"},
+		{"implementer", "implement", HazardDestructiveReach, "xhigh", "xhigh"},
+		{"implementer", "design", HazardDesignBearing, "xhigh", "xhigh"},
+		{"implementer", "design", HazardMechanical, "medium", "medium"},
+		{"design-critic", "review", HazardMechanical, "medium", "xhigh"},
+		{"code-critic", "review", HazardMechanical, "medium", "medium"},
+		{"code-critic", "review", HazardDesignBearing, "xhigh", "xhigh"},
+	} {
+		t.Run(tc.role+"-"+tc.mode+"-"+string(tc.hazard), func(t *testing.T) {
+			root := t.TempDir()
+			conf := filepath.Join(root, "metasystem.conf")
+			if err := os.WriteFile(conf, []byte("metasystem.runtimes=codex\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			roster, err := ResolveRoster(RosterParams{Role: tc.role, Mode: tc.mode, ConfPath: conf, LookupEnv: func(string) (string, bool) { return "", false }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			capPath := filepath.Join(root, "cap.json")
+			if err := WriteCapResolution(capPath, 45, "built-in", "default"); err != nil {
+				t.Fatal(err)
+			}
+			permissions := writeJSONFile(t, root, "permissions.json", map[string]any{
+				"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+				"network": "deny", "approvals": "deny", "tools": "read-only",
+			})
+			p := BuildRecordParams{
+				Root: root, Workspace: root, Job: "job", Output: filepath.Join(root, "record.json"),
+				Role: tc.role, Mode: tc.mode, Runtime: roster.Runtime, Model: roster.Model,
+				DestructiveReach: tc.hazard, ReasoningEffort: tc.floor, CapResolution: capPath,
+				LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(root, "stream"),
+				Fallbacks: "[]", Permissions: permissions, LookupEnv: func(string) (string, bool) { return "", false },
+			}
+			if tc.role == "design-critic" {
+				p.Design = "metasystem/design.md"
+				p.DeclaredOutputs = filepath.Join(root, "outputs")
+				if err := os.WriteFile(p.DeclaredOutputs, []byte("metasystem/output.md\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := buildRecord(p, recordFacts(t, root, 1, p.Design)); err != nil {
+				t.Fatal(err)
+			}
+			follow := BuildFollowRecordParams{
+				Root: root, Output: filepath.Join(root, "follow.json"), Parent: p.Output,
+				Job: "job-r2", Round: 2, ParentJob: p.Job, Model: p.Model, CapResolution: capPath,
+				DestructiveReach: p.DestructiveReach, LaunchMode: p.LaunchMode, OutputStream: p.OutputStream,
+				Fallbacks: "[]", ResumeMode: "fresh-context",
+			}
+			if err := BuildFollowRecord(follow); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{p.Output, follow.Output} {
+				record := readJSONFile(t, path)
+				if record["requestedModel"] != "gpt-6.2-astra" || record["reasoningEffort"] != tc.want {
+					t.Errorf("%s model %v effort %v, want Astra 6.2 at %s", filepath.Base(path), record["requestedModel"], record["reasoningEffort"], tc.want)
+				}
+			}
+		})
+	}
+}

@@ -531,3 +531,26 @@ func TestIntentSettingsShowAndKeysAnswerCompiledDefaults(t *testing.T) {
 		t.Fatalf("settings keys disk.: code=%d %q", code, stdout.String())
 	}
 }
+
+func TestSettingsShowEffectiveLaneRoster(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	conf := "metasystem.runtimes=codex,claude\nlaunch.build.runtime=codex\nlaunch.design.runtime=claude\nlaunch.read.runtime=codex\nlaunch.critique.runtime=codex\nlaunch.seat.runtime=codex\n"
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+	owners := intentOwners{resolver: stateroot.NewResolver(fakeTop(root), noExecutable)}
+	var out, errs bytes.Buffer
+	code := runIntentIn(mustIntentCommand(t, "settings show"), nil, &out, &errs, root, owners)
+	if code != 0 {
+		t.Fatalf("settings show exited %d", code)
+	}
+	lines := strings.Split(out.String(), "\n")
+	for _, row := range []string{"build codex gpt-6.2-astra high", "critique codex gpt-6.2-astra xhigh", "design claude claude-opus-5-5 xhigh", "read codex gpt-6.2-astra xhigh", "seat codex gpt-6.2-astra xhigh", "landing claude claude-opus-5-5 xhigh"} {
+		if !slices.ContainsFunc(lines, func(line string) bool { return strings.Join(strings.Fields(line), " ") == row }) {
+			t.Errorf("missing lane %q", row)
+		}
+	}
+}

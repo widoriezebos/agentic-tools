@@ -48,7 +48,7 @@ func rosterIntentCommands() []intentCommand {
 			object: "roster", action: "set", audience: "human", summary: "set the agent, model and effort of one roster row on this computer",
 			usage:    []string{"metasystem roster set ROSTER ROW RUNTIME:MODEL:EFFORT"},
 			maxArgs:  3,
-			examples: []string{"metasystem roster set tier-1 build codex:gpt-6-sol:xhigh"},
+			examples: []string{"metasystem roster set tier-1 build codex:gpt-6.2-astra:high"},
 			run:      runIntentRosterSet,
 		},
 	}

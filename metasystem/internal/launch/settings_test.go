@@ -126,7 +126,7 @@ func TestLaneModelFollowsTheResolvedRuntime(t *testing.T) {
 		runtime, build, design, read, critic string
 	}{
 		{"devin alone", onPath("devin"), "devin", "claude-opus-5-5", "claude-opus-5-5", "gpt-6-astra", "gpt-6-astra"},
-		{"codex before devin", onPath("devin", "codex"), "codex", "gpt-6-sol", "gpt-6-astra", "gpt-6-astra", "gpt-6-sol"},
+		{"codex before devin", onPath("devin", "codex"), "codex", "gpt-6.2-astra", "gpt-6.2-astra", "gpt-6.2-astra", "gpt-6.2-astra"},
 		{"claude first", onPath("devin", "codex", "claude"), "claude", "claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5"},
 	} {
 		settings, err := ResolveSettings(conf, test.lookup)

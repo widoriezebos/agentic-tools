@@ -114,6 +114,36 @@ func MinimumHazardConfiguration(class HazardClass) (ConfigurationObligations, er
 	return expected, nil
 }
 
+// roleReasoningEffort selects the execution effort above a job's class
+// minimum. The independent critique and live proof duties still come from
+// the class and goal tier.
+func roleReasoningEffort(p BuildRecordParams, minimum ConfigurationObligations) (string, error) {
+	floor := minimum.BuilderReasoningEffort
+	if p.Runtime != "codex" || floor == "xhigh" {
+		return floor, nil
+	}
+	switch p.Role {
+	case "design-critic":
+		return "xhigh", nil
+	case "implementer":
+		if p.Mode != "design" {
+			effort, err := config.CodexBuildEffort(dispatchSettingsPath(p.Root, p.SettingsFile), p.LookupEnv)
+			if err != nil {
+				return "", err
+			}
+			switch effort {
+			case "none", "minimal", "low":
+				return floor, nil
+			case "medium", "high", "xhigh":
+				return effort, nil
+			default:
+				return "", fmt.Errorf("Codex implementer effort must identify a reasoning level")
+			}
+		}
+	}
+	return floor, nil
+}
+
 // ValidateRuntimeHazardConfiguration refuses a class when the selected
 // adapter has no executable channel for the class's minimum effort. Recording
 // a duty that the launcher cannot enforce would not satisfy admission.

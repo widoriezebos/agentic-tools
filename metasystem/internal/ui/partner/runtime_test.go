@@ -48,7 +48,7 @@ func TestClaudeIsStartedReadOnly(t *testing.T) {
 // says which sandbox and which approval policy.
 func TestCodexIsStartedReadOnly(t *testing.T) {
 	t.Parallel()
-	admitted, err := Admit(RuntimeCodex, nil, "gpt-6-sol", "/work")
+	admitted, err := Admit(RuntimeCodex, nil, "", "/work")
 	if runtime.GOOS != "darwin" {
 		testutil.Require(t, "unconfined platforms refuse codex", err != nil, true)
 		return
@@ -61,7 +61,7 @@ func TestCodexIsStartedReadOnly(t *testing.T) {
 	testutil.Expect(t, "no MCP", config["mcp_servers"], map[string]any{})
 	testutil.Expect(t, "no web search", config["tools"], map[string]any{"web_search": false})
 	testutil.Expect(t, "the initial mode", valueOf(admitted.Env, "INITIAL_AGENT_MODE"), "read-only")
-	testutil.Expect(t, "the model", config["model"], "gpt-6-sol")
+	testutil.Expect(t, "the model", config["model"], "gpt-6.2-astra")
 }
 
 // Devin's lever is its permission mode, and the seat sets it whether or not

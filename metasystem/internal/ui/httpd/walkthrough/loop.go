@@ -130,7 +130,7 @@ func (f *loopFixture) loop(design string, reading bool) (httpd.DesignLoop, error
 			f.reading = false
 		}
 	}
-	loop.Chain, loop.Goal, loop.Round, loop.Critic = loopChain, loopGoal, f.round, "gpt-6-astra"
+	loop.Chain, loop.Goal, loop.Round, loop.Critic = loopChain, loopGoal, f.round, "gpt-6.2-astra"
 	for round := int64(1); round <= f.round; round++ {
 		if round == f.round && f.reading {
 			break

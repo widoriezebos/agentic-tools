@@ -6,6 +6,37 @@ import (
 	"strings"
 )
 
+const (
+	DefaultCodexModel   = "gpt-6.2-astra"
+	CodexBuildEffortKey = "launch.build.effort.codex"
+	BuildEffortKey      = "launch.build.effort"
+)
+
+// CodexBuildEffort resolves the runtime pin first, then an existing shared
+// installation pin, then the Codex default. An explicit shared xhigh is a pin.
+func CodexBuildEffort(conf string, lookup func(string) (string, bool)) (string, error) {
+	p := GetParams{ConfPath: conf, LookupEnv: lookup, Key: CodexBuildEffortKey}
+	source, err := KeyOrigin(p)
+	if err != nil {
+		return "", err
+	}
+	if source == "default" {
+		p.Key = BuildEffortKey
+		source, err = KeyOrigin(p)
+		if err != nil {
+			return "", err
+		}
+		if source == "default" {
+			p.Key = CodexBuildEffortKey
+		}
+	}
+	value, _, err := Get(p)
+	if err == nil && strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("%s is empty", p.Key)
+	}
+	return value, err
+}
+
 var nonModelChar = regexp.MustCompile(`[^a-z0-9]+`)
 
 // CanonicalModel is the shared model-key encoding used by adapters and cap

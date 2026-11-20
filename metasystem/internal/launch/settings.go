@@ -19,7 +19,7 @@ const (
 	DesignWindowKey             = "launch.design.window.tokens"
 	ReadWindowKey               = "launch.read.window.tokens"
 	BuildModelKey               = "launch.build.model"
-	BuildEffortKey              = "launch.build.effort"
+	BuildEffortKey              = config.BuildEffortKey
 	DesignModelKey              = "launch.design.model"
 	ReadModelKey                = "launch.read.model"
 	CritiqueModelKey            = "launch.critique.model"
@@ -75,7 +75,7 @@ type Settings struct {
 	LocalSHA256                                       string
 	SeatWindow, BuildWindow, DesignWindow, ReadWindow int64
 	BuildModel, BuildEffort, DesignModel, ReadModel   string
-	CritiqueModel                                     string
+	CritiqueModel, sharedEffort                       string
 	BuildRuntime, CritiqueRuntime, DesignRuntime      string
 	ReadRuntime                                       string
 	WaitCapSeconds, BriefCap, BuildLinesCap           int64
@@ -279,6 +279,13 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 		}
 	}
 	result.BuildModel, result.BuildEffort = result.Values[4].Value, result.Values[5].Value
+	result.sharedEffort = result.BuildEffort
+	if resolved[BuildRuntimeKey].Value == "codex" {
+		result.BuildEffort, err = config.CodexBuildEffort(confPath, lookupEnv)
+		if err != nil {
+			return Settings{}, invalidSetting(config.CodexBuildEffortKey, err)
+		}
+	}
 	result.DesignModel, result.ReadModel = result.Values[6].Value, result.Values[7].Value
 	for index, setting := range result.Values {
 		switch setting.Key {
@@ -365,11 +372,11 @@ func (s Settings) launchValues(kind string) (string, string, int64) {
 	case "build":
 		return s.BuildModel, s.BuildEffort, s.BuildWindow
 	case "critique":
-		return s.CritiqueModel, s.BuildEffort, s.BuildWindow
+		return s.CritiqueModel, s.sharedEffort, s.BuildWindow
 	case "design":
-		return s.DesignModel, s.BuildEffort, s.DesignWindow
+		return s.DesignModel, s.sharedEffort, s.DesignWindow
 	case "read":
-		return s.ReadModel, s.BuildEffort, s.ReadWindow
+		return s.ReadModel, s.sharedEffort, s.ReadWindow
 	case "seat":
 		return s.SeatModel, s.SeatEffort, s.SeatWindow
 	case "landing":
@@ -385,4 +392,29 @@ func (s Settings) launchValues(kind string) (string, string, int64) {
 // key and why, with the command that shows the settings.
 func invalidSetting(key string, cause error) error {
 	return coded("LAUNCH_SETTING_INVALID", "key="+key, fmt.Errorf("the setting %s cannot be used: %w; see metasystem settings show", key, cause))
+}
+
+// LaneBinding describes the runtime, model and effort selected before launch overrides.
+type LaneBinding struct {
+	Lane    string `json:"lane"`
+	Runtime string `json:"runtime"`
+	Model   string `json:"model"`
+	Effort  string `json:"effort"`
+}
+
+func (s Settings) LaneBindings() []LaneBinding {
+	var bindings []LaneBinding
+	for _, key := range laneModelOrder {
+		kind := strings.TrimSuffix(strings.TrimPrefix(key, "launch."), ".runtime")
+		model, effort, _ := s.launchValues(kind)
+		runtime := s.launchRuntime(kind)
+		if runtime == SeatRuntimeOff {
+			effort = ""
+			model = ""
+		} else if kind == "landing" && model == LandingModelUnbound {
+			effort = ""
+		}
+		bindings = append(bindings, LaneBinding{kind, runtime, model, effort})
+	}
+	return bindings
 }

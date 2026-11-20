@@ -203,7 +203,7 @@ func TestCompiledModeRoleDefaultsAreTheDesignAuthor(t *testing.T) {
 		}
 	}
 	want := []string{"mode.design.role.implementer.runtime=auto", "mode.design.role.implementer.model.claude=claude-opus-5-5",
-		"mode.design.role.implementer.model.codex=gpt-6-astra", "mode.design.role.implementer.model.devin=claude-opus-5-5-xhigh"}
+		"mode.design.role.implementer.model.codex=gpt-6.2-astra", "mode.design.role.implementer.model.devin=claude-opus-5-5-xhigh"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("compiled mode role defaults %q, want %q", got, want)
 	}
@@ -364,5 +364,20 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 	}
 	if problems := validateRepo(t, validConf); len(problems) != 0 {
 		t.Fatalf("the compiled max wait alone is no max wait without a root: %v", problems)
+	}
+}
+
+func TestCodexRosterModelsAcrossDefaults(t *testing.T) {
+	seen := 0
+	for _, def := range CompiledSettings() {
+		if strings.HasSuffix(def.Key, ".model.codex") {
+			seen++
+			if def.Default != "gpt-6.2-astra" {
+				t.Errorf("%s = %q, want gpt-6.2-astra", def.Key, def.Default)
+			}
+		}
+	}
+	if seen < 9 {
+		t.Fatalf("only %d Codex bindings", seen)
 	}
 }

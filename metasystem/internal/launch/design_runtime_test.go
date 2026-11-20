@@ -298,3 +298,54 @@ func TestCodexDesignMeasureCopiesThePage(t *testing.T) {
 		t.Fatalf("output=%+v content=%q err=%v", outputs[0], dataOut, readErr)
 	}
 }
+
+func TestRosterLaunchCommand(t *testing.T) {
+	for _, tc := range []struct{ kind, runtime, pins, model, effort string }{
+		{"build", "codex", "", "gpt-6.2-astra", "high"},
+		{"critique", "codex", "", "gpt-6.2-astra", "xhigh"},
+		{"read", "codex", "", "gpt-6.2-astra", "xhigh"},
+		{"design", "codex", "", "gpt-6.2-astra", "xhigh"},
+		{"build", "claude", "", "claude-opus-5-5", "xhigh"},
+		{"build", "codex", "launch.build.model.codex=gpt-6-sol\nlaunch.build.effort=xhigh\n", "gpt-6-sol", "xhigh"},
+		{"build", "codex", "launch.build.effort.codex=medium\n", "gpt-6.2-astra", "medium"},
+		{"read", "codex", "launch.build.effort=medium\n", "gpt-6.2-astra", "medium"},
+	} {
+		t.Run(tc.kind+"-"+tc.runtime, func(t *testing.T) {
+			conf := writeLaunchFile(t, "metasystem.conf", "metasystem.runtimes="+tc.runtime+"\n"+tc.pins)
+			m, _, _, _ := manager(t)
+			var err error
+			m.Settings, err = ResolveSettings(conf, func(string) (string, bool) { return "", false })
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Supervisor = childStarter(m)
+			m.Adapters["codex-exec"] = CodexExec{Binary: "codex"}
+			m.Adapters["claude-headless"] = ClaudeHeadless{Binary: "claude"}
+			spec := StartSpec{Kind: tc.kind, Tag: "test", Brief: brief(t), WorkingDirectory: t.TempDir()}
+			if tc.kind == "critique" {
+				if err := os.Mkdir(filepath.Join(spec.WorkingDirectory, "metasystem"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				spec.Inputs = []string{brief(t), brief(t)}
+			}
+			if tc.kind == "read" {
+				spec.DiffFile = writeLaunchFile(t, "change.diff", "")
+			}
+			record, err := m.Start(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			command, err := m.Adapters[record.Adapter].Command(record, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"exec", "-m", tc.model, "-c", "model_reasoning_effort=" + tc.effort}
+			if tc.runtime == "claude" {
+				want = []string{"-p", "--model", tc.model, "--effort", tc.effort}
+			}
+			if command.Program != tc.runtime || len(command.Args) < len(want) || !reflect.DeepEqual(command.Args[:len(want)], want) {
+				t.Errorf("launch %s: %v, want %v", command.Program, command.Args, want)
+			}
+		})
+	}
+}

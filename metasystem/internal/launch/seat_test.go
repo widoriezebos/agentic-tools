@@ -205,7 +205,7 @@ func TestSeatLaunchSettingsResolveLikeALane(t *testing.T) {
 		lookup               func(string) (string, bool)
 	}{
 		{"claude first", "claude", "claude-opus-5-5", onPath("devin", "codex", "claude")},
-		{"codex before devin", "codex", "gpt-6-sol", onPath("devin", "codex")},
+		{"codex before devin", "codex", "gpt-6.2-astra", onPath("devin", "codex")},
 	} {
 		settings, err := ResolveSettings(conf, test.lookup)
 		if err != nil {

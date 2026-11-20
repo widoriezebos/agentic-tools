@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
@@ -165,7 +166,7 @@ const modelConfigID = "model"
 // none. They are the design's, per runtime.
 var DefaultModels = map[string]string{
 	RuntimeClaude: "claude-opus-5-5",
-	RuntimeCodex:  "gpt-6-sol",
+	RuntimeCodex:  config.DefaultCodexModel,
 	RuntimeDevin:  "",
 }
 

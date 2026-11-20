@@ -221,6 +221,7 @@ type BuildRecordParams struct {
 	MachineID         string
 	MainID            string
 	ClaimEpoch        string
+	Mode              string
 	ReasoningEffort   string
 	LaunchMode        LaunchMode
 	ProductRoots      []string
@@ -488,6 +489,10 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	if p.ReasoningEffort != configuration.BuilderReasoningEffort {
 		return fmt.Errorf("destructiveReach %s requires builder reasoning effort %s", p.DestructiveReach, configuration.BuilderReasoningEffort)
 	}
+	effort, err := roleReasoningEffort(p, configuration)
+	if err != nil {
+		return err
+	}
 	capMinutes, ok := numInt(authority.capMin)
 	if !ok || capMinutes < 1 {
 		return fmt.Errorf("cap resolution has no positive capMin")
@@ -558,7 +563,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),
 		"destructiveReach":         p.DestructiveReach,
 		"configurationObligations": configuration,
-		"reasoningEffort":          p.ReasoningEffort,
+		"reasoningEffort":          effort,
 		"status":                   "pending",
 		"phase":                    "handshake",
 		"error":                    nil,
@@ -865,6 +870,14 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			return err
 		}
 	}
+	// A follow-up inherits the role, runtime and hazard class. Keep the
+	// execution effort chosen for that session, including installation pins.
+	effort := configuration.BuilderReasoningEffort
+	if runtimeName == "codex" && (role == "implementer" || role == "design-critic") {
+		if prior := asString(parent["reasoningEffort"]); prior != "" {
+			effort = prior
+		}
+	}
 	var session any
 	if p.ResumeMode == "resumed" {
 		var present bool
@@ -894,7 +907,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),
 		"destructiveReach":         p.DestructiveReach,
 		"configurationObligations": configuration,
-		"reasoningEffort":          configuration.BuilderReasoningEffort,
+		"reasoningEffort":          effort,
 		"workspaceRoot":            parent["workspaceRoot"],
 		"baseSha":                  parent["baseSha"],
 		"branch":                   parent["branch"],

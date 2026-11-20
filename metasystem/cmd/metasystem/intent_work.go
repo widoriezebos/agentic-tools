@@ -2547,7 +2547,13 @@ func runIntentSettings(inv *intentInvocation) int {
 		text = append(text, fmt.Sprintf("%s=%s (%s)", value.Key, value.Value, value.Source))
 	}
 	data := map[string]any{"conf": confPath, "settings": values}
+	var lanes []launch.LaneBinding
 	if len(inv.input.args) == 0 {
+		lanes = settings.LaneBindings()
+		data["lanes"] = lanes
+		for _, lane := range lanes {
+			text = append(text, strings.TrimSpace(strings.Join([]string{lane.Lane, lane.Runtime, lane.Model, lane.Effort}, "  ")))
+		}
 		// Every external adapter and override, and every refused one
 		// (design verbs-object-action 3.5).
 		adapters, _ := adapterReport(inv.layout.InstallationRoot.Path())
@@ -2556,7 +2562,7 @@ func runIntentSettings(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Data: data, text: text,
 		Summary: fmt.Sprintf("%d setting(s) of %s", len(values), inv.layout.InstallationRoot),
-		view:    settingsView(inv.statusSeatName(inv.layout.GitRoot), len(inv.input.args) == 1, values, data["adapters"])})
+		view:    settingsView(inv.statusSeatName(inv.layout.GitRoot), len(inv.input.args) == 1, values, lanes, data["adapters"])})
 }
 
 func showLandingFixMeaning(page *textui.Page, values []launch.Setting) {
@@ -2577,7 +2583,7 @@ func showLandingFixMeaning(page *textui.Page, values []launch.Setting) {
 // shown as stored, since it is pasted back into settings set. One named
 // setting is one line: its value and its source. --verbose adds each
 // source's whole account.
-func settingsView(seat string, one bool, values []launch.Setting, adapters any) func(*textui.Page) {
+func settingsView(seat string, one bool, values []launch.Setting, lanes []launch.LaneBinding, adapters any) func(*textui.Page) {
 	sorted := slices.Clone(values)
 	slices.SortFunc(sorted, func(a, b launch.Setting) int { return strings.Compare(a.Key, b.Key) })
 	return func(page *textui.Page) {
@@ -2604,6 +2610,12 @@ func settingsView(seat string, one bool, values []launch.Setting, adapters any) 
 			return
 		}
 		page.Headline(textui.Count(len(sorted), "setting", "settings")+" of "+seat, facts...)
+		if len(lanes) > 0 {
+			table := page.Section("Launch lanes", "").Table(textui.Column{Title: "Lane"}, textui.Column{Title: "Runtime"}, textui.Column{Title: "Model"}, textui.Column{Title: "Effort"})
+			for _, lane := range lanes {
+				table.Row(textui.Plain(lane.Lane), textui.Plain(lane.Runtime), textui.Plain(lane.Model), textui.Plain(lane.Effort))
+			}
+		}
 		table := page.Section("", "").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true})
 		for _, value := range sorted {
 			source := textui.Dim(settingSource(value.Source))
