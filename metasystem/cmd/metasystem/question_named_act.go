@@ -15,117 +15,171 @@ import (
 
 func (inv *intentInvocation) declareQuestionActs(in *channelAskInput) *intentResult {
 	in.NamedActs = map[string]channel.NamedAct{}
-	refuse := func(why string) *intentResult {
-		return &intentResult{Outcome: intentRefused, code: 2, Summary: "the option's command is incomplete; nothing was asked", Details: []string{why}, next: inv.retryWith([]string{"option-act"}), nextReason: "ask without that command, or name its exact finding or run"}
-	}
-	if inv.input.has("option-act") && inv.input.has("wants") {
-		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--wants cannot accompany --option-act; nothing was asked",
-			next:    inv.retryWith([]string{"wants"}), nextReason: "the completed command answers only its option"}
-	}
 	for _, raw := range inv.input.values["option-act"] {
 		label, command, ok := strings.Cut(raw, ":")
 		label = strings.TrimSpace(label)
-		foundLabel := false
-		for _, opt := range in.Options {
-			l, _, _ := strings.Cut(opt, ":")
-			if strings.TrimSpace(l) == label {
-				foundLabel = true
-			}
-		}
-		if !ok || !foundLabel || in.Goal == "" {
-			return refuse("name an option of a question on a goal")
+		if !ok {
+			return inv.refuseQuestionAct("name an option of a question on a goal")
 		}
 		if _, exists := in.NamedActs[label]; exists {
-			return refuse("declare an option's command once")
+			return inv.refuseQuestionAct("declare an option's command once")
 		}
-		quoted := byte(0)
-		for i := 0; i < len(command); i++ {
-			if command[i] == '\'' || command[i] == '"' {
-				if quoted == command[i] {
-					quoted = 0
-				} else if quoted == 0 {
-					quoted = command[i]
-				}
-			}
-		}
-		if quoted != 0 {
-			return refuse("close the command quotation")
-		}
-		words := shellWords(command)
-		if len(words) < 4 || words[0] != "metasystem" {
-			return refuse("use a complete metasystem command")
-		}
-		verb, ok := findIntentAction(words[1], words[2])
-		if !ok {
-			return refuse("that command is not available")
-		}
-		args, problem := parseIntentArgs(verb, words[3:])
-		if problem != nil || len(args.args) != 1 {
-			return refuse("name exactly one target")
-		}
-		for key := range args.values {
-			if key != "review" && key != "finding" && key != "reason" && key != "json" && key != "verbose" {
-				return refuse("the declaration may name its subject and reason only")
-			}
-		}
-		act := channel.NamedAct{Verb: verb.name, Goal: in.Goal}
-		switch verb.name {
-		case "goal accept-risk":
-			if strings.TrimPrefix(args.args[0], "goal:") != in.Goal || args.text("finding") == "" {
-				return refuse("the finding must belong to this goal")
-			}
-			review := args.text("review")
-			if review == "" {
-				var p *intentResult
-				review, p = inv.uniqueExamination(in.Goal, "accept-risk")
-				if p != nil {
-					return p
-				}
-			}
-			chain, p := inv.reviewRoot(in.Goal, review)
-			if p != nil {
-				return p
-			}
-			if chain != goal.HumanCarriedChain {
-				if _, err := dispatchcore.CritiqueRegisterDecisionFinding(branch.CriticStore(inv.layout.InstallationRoot.Path(), chain), chain, args.text("finding"), in.Goal); err != nil {
-					return refuse(err.Error())
-				}
-			}
-			act.Target, act.Finding = chain, args.text("finding")
-		case "work stop":
-			if !strings.HasPrefix(args.args[0], "run:") {
-				return refuse("name a single run to stop")
-			}
-			record, err := inv.unitRunner().Status(strings.TrimPrefix(args.args[0], "run:"))
-			if err != nil || record.Goal != in.Goal {
-				return refuse("the run must belong to this goal")
-			}
-			act.Target = record.ID
-		default:
-			return refuse("declare accepting a risk or stopping a run")
-		}
-		for _, prior := range in.NamedActs {
-			if prior == act {
-				return refuse("two options cannot name the same command")
-			}
+		act, problem := inv.declarableQuestionAct(in, label, command)
+		if problem != nil {
+			return problem
 		}
 		in.NamedActs[label] = act
 	}
-
 	return inv.requireQuestionActDeclarations(in)
+}
+
+func (inv *intentInvocation) refuseQuestionAct(why string) *intentResult {
+	return &intentResult{Outcome: intentRefused, code: 2, Summary: "the option's command is incomplete; nothing was asked", Details: []string{why}, next: inv.retryWith([]string{"option-act"}), nextReason: "ask without that command, or name its exact finding or run"}
+}
+
+// Both explicit declarations and the agent's missing-declaration check use
+// this decision. An option cannot require a declaration the question cannot carry.
+func (inv *intentInvocation) declarableQuestionAct(in *channelAskInput, label, command string) (channel.NamedAct, *intentResult) {
+	refuse := func(why string) (channel.NamedAct, *intentResult) {
+		return channel.NamedAct{}, inv.refuseQuestionAct(why)
+	}
+	if in.Wants != "" || inv.input.has("wants") {
+		return channel.NamedAct{}, &intentResult{Outcome: intentRefused, code: 2,
+			Summary: "--wants cannot accompany --option-act; nothing was asked",
+			next:    inv.retryWith([]string{"wants"}), nextReason: "the completed command answers only its option"}
+	}
+	if in.Goal == "" || in.Kind != "other" {
+		return refuse("name an option of an ordinary question on a goal")
+	}
+	found := false
+	for _, raw := range in.Options {
+		l, _, _ := strings.Cut(raw, ":")
+		if strings.TrimSpace(l) == label {
+			found = true
+		}
+	}
+	if !found {
+		return refuse("name an option of this question")
+	}
+	act, problem := inv.resolveQuestionAct(in.Goal, command)
+	if problem != nil {
+		return channel.NamedAct{}, problem
+	}
+	for other, prior := range in.NamedActs {
+		if other != label && prior == act {
+			return refuse("two options cannot name the same command")
+		}
+	}
+	for _, raw := range in.Options {
+		other, consequence, _ := strings.Cut(raw, ":")
+		if strings.TrimSpace(other) == label {
+			continue
+		}
+		if command := optionActCommand(consequence); command != "" {
+			prior, problem := inv.resolveQuestionAct(in.Goal, command)
+			if problem == nil && prior == act {
+				return refuse("two options cannot name the same command")
+			}
+		}
+	}
+	return act, nil
+}
+
+func (inv *intentInvocation) resolveQuestionAct(goalID, command string) (channel.NamedAct, *intentResult) {
+	refuse := inv.refuseQuestionAct
+	quoted := byte(0)
+	commandBytes := []byte(command)
+	for i := 0; i < len(command); i++ {
+		if quoted == 0 && strings.ContainsRune("\t\r\n\v\f", rune(command[i])) {
+			commandBytes[i] = ' '
+		}
+		if command[i] == '\'' || command[i] == '"' {
+			if quoted == command[i] {
+				quoted = 0
+			} else if quoted == 0 {
+				quoted = command[i]
+			}
+		}
+	}
+	if quoted != 0 {
+		return channel.NamedAct{}, refuse("close the command quotation")
+	}
+	words := shellWords(string(commandBytes))
+	if len(words) < 4 || words[0] != "metasystem" {
+		return channel.NamedAct{}, refuse("use a complete metasystem command")
+	}
+	verb, ok := findIntentAction(words[1], words[2])
+	if !ok {
+		return channel.NamedAct{}, refuse("that command is not available")
+	}
+	args, problem := parseIntentArgs(verb, words[3:])
+	if problem != nil || len(args.args) != 1 {
+		return channel.NamedAct{}, refuse("name exactly one target")
+	}
+	for key := range args.values {
+		if key != "review" && key != "finding" && key != "reason" && key != "json" && key != "verbose" {
+			return channel.NamedAct{}, refuse("the declaration may name its subject and reason only")
+		}
+	}
+	act := channel.NamedAct{Verb: verb.name, Goal: goalID}
+	switch verb.name {
+	case "goal accept-risk":
+		if strings.TrimPrefix(args.args[0], "goal:") != goalID || args.text("finding") == "" {
+			return channel.NamedAct{}, refuse("the finding must belong to this goal")
+		}
+		review := args.text("review")
+		if review == "" {
+			var p *intentResult
+			review, p = inv.uniqueExamination(goalID, "accept-risk")
+			if p != nil {
+				return channel.NamedAct{}, p
+			}
+		}
+		chain, p := inv.reviewRoot(goalID, review)
+		if p != nil {
+			return channel.NamedAct{}, p
+		}
+		if chain != goal.HumanCarriedChain {
+			if _, err := dispatchcore.CritiqueRegisterDecisionFinding(branch.CriticStore(inv.layout.InstallationRoot.Path(), chain), chain, args.text("finding"), goalID); err != nil {
+				return channel.NamedAct{}, refuse(err.Error())
+			}
+		}
+		act.Target, act.Finding = chain, args.text("finding")
+	case "work stop":
+		if !strings.HasPrefix(args.args[0], "run:") {
+			return channel.NamedAct{}, refuse("name a single run to stop")
+		}
+		record, err := inv.unitRunner().Status(strings.TrimPrefix(args.args[0], "run:"))
+		if err != nil || record.Goal != goalID || record.ID == "" {
+			return channel.NamedAct{}, refuse("the run must belong to this goal")
+		}
+		act.Target = record.ID
+	default:
+		return channel.NamedAct{}, refuse("declare accepting a risk or stopping a run")
+	}
+	return act, nil
 }
 
 // Only command prefixes in option consequences are recognized. Other prose
 // and commands outside the completed-act allowlist remain ordinary choices.
 var questionActCommand = regexp.MustCompile(`(?:^|[^[:alnum:]_-])metasystem[[:space:]]+(goal[[:space:]]+accept-risk(?:[[:space:]]|$)|work[[:space:]]+stop[[:space:]]+run:)`)
 
+// Recognize the command suffix only; surrounding prose is not interpreted.
+func optionActCommand(consequence string) string {
+	match := questionActCommand.FindStringIndex(consequence)
+	if match == nil {
+		return ""
+	}
+	start := match[0] + strings.Index(consequence[match[0]:match[1]], "metasystem")
+	return strings.Trim(strings.TrimSpace(consequence[start:]), "`")
+}
+
 func (inv *intentInvocation) requireQuestionActDeclarations(in *channelAskInput) *intentResult {
 	for _, raw := range in.Options {
 		label, consequence, ok := strings.Cut(raw, ":")
 		label = strings.TrimSpace(label)
-		match := questionActCommand.FindStringSubmatch(consequence)
-		if !ok || match == nil {
+		command := optionActCommand(consequence)
+		if !ok || command == "" {
 			continue
 		}
 		if _, declared := in.NamedActs[label]; declared {
@@ -135,13 +189,13 @@ func (inv *intentInvocation) requireQuestionActDeclarations(in *channelAskInput)
 		if !namedSession && !inv.agentSessionCaller() {
 			return nil
 		}
-		command := "metasystem goal accept-risk " + in.Goal + " --review REVIEW --finding FINDING"
-		if strings.HasPrefix(match[1], "work") {
-			command = "metasystem work stop run:RUN"
+		act, problem := inv.declarableQuestionAct(in, label, command)
+		if problem != nil {
+			continue
 		}
 		return &intentResult{Outcome: intentRefused, code: 2,
 			Summary:    "the agent's option names a person's command without declaring it; nothing was asked",
-			next:       inv.retryWith(nil, "--option-act", label+": "+command),
+			next:       inv.retryWith(nil, "--option-act", label+": "+shellCommand(act.Command())),
 			nextReason: "declare this option's exact command on its goal so the person's act answers the question"}
 	}
 	return nil
