@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,8 +71,16 @@ func locked(root string, f func() error) error {
 // Write publishes only a hint: callers keep their original operation's result
 // if publication fails, and the scheduled tick remains the fallback.
 func Write(root, reason string, at time.Time) error {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	root = resolved
 	return locked(root, func() error {
 		r, err := Read(root)
+		if errors.Is(err, errForeignCheckout) {
+			return err
+		}
 		if err != nil {
 			var token [16]byte
 			if _, err := rand.Read(token[:]); err != nil {
@@ -86,6 +95,8 @@ func Write(root, reason string, at time.Time) error {
 		return write(root, r)
 	})
 }
+
+var errForeignCheckout = errors.New("tick request does not identify this checkout")
 
 func write(root string, r Request) error {
 	data, err := json.Marshal(r)
@@ -122,7 +133,12 @@ func Read(root string) (Request, error) {
 	if err = json.Unmarshal(data, &r); err != nil {
 		return Request{}, fmt.Errorf("tick request is malformed")
 	}
-	if r.Root != filepath.Clean(root) || r.Batch == "" || r.Count == 0 || r.Generation == 0 || r.At.IsZero() {
+	resolved, rootErr := filepath.EvalSymlinks(root)
+	requestRoot, requestErr := filepath.EvalSymlinks(r.Root)
+	if rootErr != nil || requestErr != nil || !filepath.IsAbs(r.Root) || requestRoot != resolved {
+		return Request{}, errForeignCheckout
+	}
+	if r.Batch == "" || r.Count == 0 || r.Generation == 0 || r.At.IsZero() {
 		return Request{}, fmt.Errorf("tick request does not identify this checkout and a completion")
 	}
 	r.Reason = Reason(r.Reason)

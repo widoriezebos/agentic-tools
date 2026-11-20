@@ -565,6 +565,106 @@ func TestRequestHealthObservationKeepsUnknownPatience(t *testing.T) {
 	}
 }
 
+func TestRequestHealthObservationPreservesRepairPatience(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
+	evaluate := func(string, string, time.Time, identity.Prober, bool) ([]RoleVerdict, SpendObservation) {
+		return []RoleVerdict{{Role: RoleRepoWatcher, Status: HealthDead, Reason: "the latest watcher pass failed: census unavailable"}}, SpendObservation{}
+	}
+	for _, initialScheduled := range []bool{false, true} {
+		t.Run(fmt.Sprint(initialScheduled), func(t *testing.T) {
+			bed := newHealthBed(t, EnrollmentFixture, "")
+			root := bed.root
+			want := 0
+			if initialScheduled {
+				if _, err := observeHealthWithEvaluation(root, now, nil, evaluate); err != nil {
+					t.Fatal(err)
+				}
+				want = 1
+			}
+			for i := 1; i <= 8; i++ {
+				observed, err := observeHealthWithEvaluation(root, now.Add(time.Duration(i)*15*time.Second), nil, evaluate, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if observed.State.FailureCounts[RoleRepoWatcher] != want || len(observed.State.FailureEpisodes[RoleRepoWatcher]) != want || observed.Roles[0].FailureEscalation != AutoHealEligible {
+					t.Fatalf("request exhausted watcher repair patience: %+v", observed)
+				}
+				if ended, err := AutoHealingEnded(root, RoleRepoWatcher); err != nil || ended {
+					t.Fatalf("request ended automatic repair: %t %v", ended, err)
+				}
+				if err := requestWatcherRepair(root, observed, now.Add(time.Duration(i)*15*time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				request, err := readHealthObject(filepath.Join(root, "artifacts/agents/supervision/watcher-restart-request.json"))
+				if err != nil || request["completed"] != false {
+					t.Fatalf("request retired the pending watcher repair: %+v %v", request, err)
+				}
+			}
+			last, err := observeHealthWithEvaluation(root, now.Add(10*time.Minute), nil, evaluate)
+			if err != nil || last.State.FailureCounts[RoleRepoWatcher] != want+1 {
+				t.Fatalf("scheduled observation did not advance patience: %+v %v", last.State, err)
+			}
+		})
+	}
+}
+
+func TestRunnerWithoutRequestsKeepsProviderProbeTiming(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                   string
+		limitTick              int
+		work, probeWork, until time.Duration
+		want                   []time.Duration
+	}{
+		{"late limit", 2, 0, 0, 730 * time.Second, []time.Duration{720 * time.Second}},
+		{"cycle work", 1, 30 * time.Second, 0, 160 * time.Second, []time.Duration{150 * time.Second}},
+		{"slow probe", 1, 0, 10 * time.Second, 370 * time.Second, []time.Duration{120 * time.Second, 240 * time.Second, 360 * time.Second}},
+		{"scheduled reset", 1, 0, 0, 730 * time.Second, []time.Duration{120 * time.Second, 240 * time.Second, 360 * time.Second, 480 * time.Second, 720 * time.Second}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			loop := newHelmLoop(t)
+			start := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
+			now := start
+			deps := idleRunnerDependencies(&now)
+			deps.ProviderHome = testprovider.Home(loop.root)
+			ticks := 0
+			deps.Tick = func(_ string, cfg TickConfig, _ WorkerCensus) (TickResult, error) {
+				ticks++
+				if cfg.RequestDriven {
+					t.Fatal("unexpected request-driven cycle")
+				}
+				if ticks == tc.limitTick {
+					if _, err := testprovider.Record(loop.root, outage.ProviderLimit, "limited", "fixture", now); err != nil {
+						t.Fatal(err)
+					}
+				}
+				now = now.Add(tc.work)
+				return TickResult{}, nil
+			}
+			deps.Sleep = func(d time.Duration) {
+				now = now.Add(d)
+				if now.Sub(start) >= tc.until {
+					loop.stop(t)
+				}
+			}
+			var got []time.Duration
+			cfg := TickConfig{Now: start, ProviderHome: deps.ProviderHome, ProbeProvider: func(string) (bool, error) {
+				got = append(got, now.Sub(start))
+				now = now.Add(tc.probeWork)
+				return false, nil
+			}}
+			if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 600*time.Second, cfg, deps); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("probe times=%v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRequestPatternObservationsKeepQuietTickCount(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -602,6 +702,10 @@ func TestRequestPatternObservationsKeepQuietTickCount(t *testing.T) {
 func TestQuestionWithdrawalWakesTheRunnerAndReleasesItsGoal(t *testing.T) {
 	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("asked", "Build it."))
+	alias := filepath.Join(t.TempDir(), "checkout")
+	if err := os.Symlink(bed.root, alias); err != nil {
+		t.Fatal(err)
+	}
 	question, err := channel.Ask(channel.AskRequest{RepoRoot: bed.root, Goal: "asked", Kind: "other", Machine: seatBedMachine, Facts: []string{"A choice is needed"}, Now: bed.now})
 	if err != nil {
 		t.Fatal(err)
@@ -644,7 +748,7 @@ func TestQuestionWithdrawalWakesTheRunnerAndReleasesItsGoal(t *testing.T) {
 		now = now.Add(d)
 		if !withdrawn && now.Sub(start) >= 20*time.Second {
 			withdrawn = true
-			if _, err := channel.Withdraw(bed.root, question.ID, "choice no longer needed", nil, channel.DestinationConfig{}, now); err != nil {
+			if _, err := channel.Withdraw(alias, question.ID, "choice no longer needed", nil, channel.DestinationConfig{}, now); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -697,7 +801,11 @@ func TestSeatLaunchCompletionWakesItsSuccessorDecision(t *testing.T) {
 	t.Parallel()
 	bed := newSeatBed(t, seatClaimedGoal("held", SeatLineage))
 	store := launch.Store{Root: t.TempDir()}
-	fence, _ := json.Marshal(bed.root)
+	alias := filepath.Join(t.TempDir(), "checkout")
+	if err := os.Symlink(bed.root, alias); err != nil {
+		t.Fatal(err)
+	}
+	fence, _ := json.Marshal(alias)
 	if err := store.Create(launch.Record{ID: "current-seat", Kind: "seat", State: launch.Running, AdapterData: map[string]json.RawMessage{"fenceRoot": fence}}); err != nil {
 		t.Fatal(err)
 	}

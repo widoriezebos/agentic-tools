@@ -969,7 +969,7 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 		}
 		unknownCounts[role.Role] = 0
 		if role.Status == HealthDead {
-			if len(requestDriven) > 0 && requestDriven[0] && !hasLawfulAutomaticRemedy(*role, ordered) {
+			if len(requestDriven) > 0 && requestDriven[0] {
 				continue
 			}
 			cause := healthCause(*role)

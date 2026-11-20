@@ -325,7 +325,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	var served tickrequest.Request
 	var requestWake, unreadableRequest bool
 	var requestDiagnostic string
-	probeAt := deps.Now().Add(limitProbe)
+	var probeAt time.Time
 	deps.ProviderProbeAt = &probeAt
 	reportRequest := func(line string) {
 		if strings.HasPrefix(line, "ignored tick request:") {
@@ -366,6 +366,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		}
 		var slept time.Duration
 		waiting := deps
+		// Scheduled waits start their own probe cadence. A completion wake
+		// preserves an active watch so requests cannot postpone its probe.
+		if !cfg.RequestDriven {
+			probeAt = time.Time{}
+		}
 		waiting.Sleep = func(d time.Duration) { before := deps.Now(); deps.Sleep(d); slept += deps.Now().Sub(before) }
 		waiting.Wake = func() bool {
 			pending := readRequest().Batch != ""
@@ -589,7 +594,7 @@ func (k *laneKeeping) run() {
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
 	start := deps.Now()
 	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
-	if deps.ProviderProbeAt != nil {
+	if deps.ProviderProbeAt != nil && !deps.ProviderProbeAt.IsZero() {
 		probeAt = *deps.ProviderProbeAt
 	}
 	settings, settingsErr := launch.ResolveSettings(filepath.Join(top, "metasystem.conf"), nil)
@@ -598,6 +603,12 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 		mark, standing = providerOutageFrom(outage.Providers{}, settingsErr, settings.SeatRuntime, start, nil)
 	}
 	watching := probe != nil && standing && mark.LastClass == outage.ProviderLimit
+	if deps.ProviderProbeAt != nil {
+		*deps.ProviderProbeAt = time.Time{}
+		if watching {
+			*deps.ProviderProbeAt = probeAt
+		}
+	}
 	probeLine := ""
 	for deps.Now().Before(deadline) {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
@@ -638,7 +649,7 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 				fmt.Fprintln(os.Stderr, line)
 				probeLine = line
 			}
-			probeAt = deps.Now().Add(limitProbe)
+			probeAt = probeAt.Add(limitProbe)
 			if deps.ProviderProbeAt != nil {
 				*deps.ProviderProbeAt = probeAt
 			}
