@@ -368,6 +368,7 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 }
 
 func TestCodexRosterModelsAcrossDefaults(t *testing.T) {
+	t.Parallel()
 	seen := 0
 	for _, def := range CompiledSettings() {
 		if strings.HasSuffix(def.Key, ".model.codex") {

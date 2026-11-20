@@ -533,6 +533,7 @@ func TestIntentSettingsShowAndKeysAnswerCompiledDefaults(t *testing.T) {
 }
 
 func TestSettingsShowEffectiveLaneRoster(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0700); err != nil {
 		t.Fatal(err)

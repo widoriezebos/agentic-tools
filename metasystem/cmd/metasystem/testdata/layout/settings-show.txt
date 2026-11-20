@@ -1,5 +1,14 @@
 30 settings of m1e · 4 configured · 26 defaults
 
+Launch lanes
+  LANE       RUNTIME   MODEL        EFFORT
+  build      fake      fake-model   xhigh
+  critique   fake      fake-model   xhigh
+  design     fake      fake-model   xhigh
+  read       fake      fake-model   xhigh
+  seat       off
+  landing    claude    unbound
+
 landing.fix-minutes                  120               default
 landing.fix-rounds                   1                 default
 launch.brief.admitted.tokens         120000            default

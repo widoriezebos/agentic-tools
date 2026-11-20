@@ -2550,7 +2550,6 @@ func runIntentSettings(inv *intentInvocation) int {
 	var lanes []launch.LaneBinding
 	if len(inv.input.args) == 0 {
 		lanes = settings.LaneBindings()
-		data["lanes"] = lanes
 		for _, lane := range lanes {
 			text = append(text, strings.TrimSpace(strings.Join([]string{lane.Lane, lane.Runtime, lane.Model, lane.Effort}, "  ")))
 		}

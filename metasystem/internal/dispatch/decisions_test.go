@@ -1147,6 +1147,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 }
 
 func TestCodexRoleRosterInJobRecords(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		role, mode  string
 		hazard      HazardClass

@@ -396,10 +396,7 @@ func invalidSetting(key string, cause error) error {
 
 // LaneBinding describes the runtime, model and effort selected before launch overrides.
 type LaneBinding struct {
-	Lane    string `json:"lane"`
-	Runtime string `json:"runtime"`
-	Model   string `json:"model"`
-	Effort  string `json:"effort"`
+	Lane, Runtime, Model, Effort string
 }
 
 func (s Settings) LaneBindings() []LaneBinding {

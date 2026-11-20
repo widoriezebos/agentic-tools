@@ -300,6 +300,7 @@ func TestCodexDesignMeasureCopiesThePage(t *testing.T) {
 }
 
 func TestRosterLaunchCommand(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ kind, runtime, pins, model, effort string }{
 		{"build", "codex", "", "gpt-6.2-astra", "high"},
 		{"critique", "codex", "", "gpt-6.2-astra", "xhigh"},
