@@ -365,7 +365,7 @@ func TestCleanEndHandoffMustBelongToTheEndedProcess(t *testing.T) {
 			b.now = handoffCaptureNow.Add(-time.Minute)
 			b.units = nil
 			record := b.begin()
-			fixture := &handoffGoalFixture{t: t, root: b.root, state: "claimed", file: b.goals["held"]}
+			fixture := &handoffGoalFixture{t: t, root: handoffWaitsTestRoot(t, b.root), state: "claimed", file: b.goals["held"]}
 			caller := handoffMainCaller()
 			result, err := fixture.handoff(b.root, caller, handoffTestRecord(t, b.root, nil), handoffCaptureNow, filepath.Join(b.root, "memory", "receipts.log"))
 			if err != nil {
