@@ -17,11 +17,16 @@ import (
 
 // SummaryPrefix starts the final machine-readable proof record.
 const SummaryPrefix = "landing result "
+
+// MissingTestSuffix annotates a test without a terminal result in the lane footer.
+const MissingTestSuffix = "(did not report)"
+
 const coveragePrefix = "landing passed "
 
 // ProofSummary binds the native reporter's final verdict to its checkout and selection.
 type ProofSummary struct {
 	Commit    string              `json:"commit"`
+	Clean     bool                `json:"clean"`
 	Platform  string              `json:"platform"`
 	Route     string              `json:"route"`
 	Scope     string              `json:"scope"`
@@ -53,11 +58,11 @@ func hostSummary(root, fingerprint string, getenv func(string) string, command C
 	if commit == "" {
 		return nil, nil
 	}
-	var head bytes.Buffer
-	if err := command([]string{"git", "-C", root, "rev-parse", "--verify", "HEAD^{commit}"}, &head, io.Discard); err != nil || !commitID.MatchString(commit) || strings.TrimSpace(head.String()) != commit {
-		return nil, errors.New("the landing commit does not match the proof checkout's HEAD")
+	clean, err := cleanProofCheckout(root, commit, command)
+	if err != nil {
+		return nil, err
 	}
-	summary := &ProofSummary{Commit: commit, Platform: platformFromEnvironment(fingerprint), Route: "host", Scope: "complete"}
+	summary := &ProofSummary{Commit: commit, Clean: clean, Platform: platformFromEnvironment(fingerprint), Route: "host", Scope: "complete"}
 	if summary.Platform == "" {
 		return nil, errors.New("the landing environment has no platform")
 	}
@@ -75,6 +80,40 @@ func hostSummary(root, fingerprint string, getenv func(string) string, command C
 		summary.Narrowing = append(summary.Narrowing, "LANDING_PROOF_SCOPE")
 	}
 	return summary, nil
+}
+
+// Check the whole repository, including staged changes and ignored source or
+// embed inputs. The only untracked exceptions are files the engine produces.
+func cleanProofCheckout(root, commit string, command Command) (bool, error) {
+	var output bytes.Buffer
+	git := func(args ...string) error {
+		output.Reset()
+		return command(append([]string{"git", "-C", root}, args...), &output, io.Discard)
+	}
+	if !commitID.MatchString(commit) || git("rev-parse", "--verify", "HEAD^{commit}") != nil || strings.TrimSpace(output.String()) != commit {
+		return false, errors.New("the landing commit does not match the proof checkout's HEAD")
+	}
+	if err := git("status", "--porcelain=v1", "--untracked-files=no", "--ignore-submodules=none"); err != nil {
+		return false, errors.New("the proof checkout's tracked changes could not be checked")
+	}
+	if output.Len() != 0 {
+		return false, nil
+	}
+	err := git("ls-files", "-v", "-z", "--cached", "--others", "--directory", "--no-empty-directory", "--", ":/",
+		":(exclude,glob)artifacts/agents/supervision/gate-runs/*.json",
+		":(exclude,glob)artifacts/agents/proof-runs/advisory/native-*.json",
+		":(exclude)artifacts/agents/steward/retro-debt.flock", ":(exclude)bin/metasystem")
+	if err != nil {
+		return false, errors.New("the proof checkout's files could not be checked")
+	}
+	// H is an ordinary cached path. An untracked (?), skip-worktree (S)
+	// or assume-unchanged (lowercase) path cannot attest the commit.
+	for path := range bytes.SplitSeq(output.Bytes(), []byte{0}) {
+		if len(path) > 0 && path[0] != 'H' {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // ReadPlatformProof hashes the same stream it inspects. A legacy verdict or a
@@ -157,6 +196,9 @@ func ReadPlatformProof(path string) (PlatformProof, error) {
 		if !ok || strings.Join(names, " ") != words {
 			return p, incomplete
 		}
+	}
+	if !p.Clean {
+		return p, errors.New("a platform incident needs a proof of a clean checkout of its commit")
 	}
 	if p.Route != "host" {
 		return p, errors.New("a platform incident needs a native host proof")

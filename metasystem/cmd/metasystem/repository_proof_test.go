@@ -124,9 +124,66 @@ func TestRepositoryLandingProofRunsHostSuiteAndReports(t *testing.T) {
 		t.Fatalf("missing package execution in proof output: %v", err)
 	}
 	bound, err := repoproof.ReadPlatformProof(result.Data.Log)
-	if err != nil || bound.Commit != head || bound.Route != "host" || bound.Verdict != "green" {
+	if err != nil || !bound.Clean || bound.Commit != head || bound.Route != "host" || bound.Verdict != "green" {
 		t.Fatalf("native proof of checkout: commit=%s verdict=%s error=%v", bound.Commit, bound.Verdict, err)
 	}
+}
+
+// This adapter test needs Git's index, ignore rules and whole-repository pathspecs.
+func TestRepositoryProofGitAdapterDetectsDirtyInputs(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	root := filepath.Join(repo, "metasystem")
+	write := func(name, contents string) {
+		t.Helper()
+		path := filepath.Join(repo, name)
+		helmMust(t, os.MkdirAll(filepath.Dir(path), 0755))
+		helmMust(t, os.WriteFile(path, []byte(contents), 0644))
+	}
+	contract, err := os.ReadFile("../../testing.json")
+	helmMust(t, err)
+	write("metasystem/testing.json", string(contract))
+	write(".gitignore", "ignored.go\nartifacts/\n")
+	connectionGit(t, repo, "init", "-q")
+	connectionGit(t, repo, "add", ".")
+	connectionGit(t, repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "proof inputs")
+	head := connectionGit(t, repo, "rev-parse", "HEAD")
+	get := func(key string) string {
+		switch key {
+		case "LANDING_COMMIT":
+			return head
+		case "LANDING_ONLY":
+			return "fixture/package"
+		}
+		return ""
+	}
+	check := func(wantClean bool) {
+		t.Helper()
+		var output, diagnostics bytes.Buffer
+		if repoproof.RunHostAt(root, &output, &diagnostics, get, repoproof.Execute, repositoryProofRunners()) != 0 {
+			t.Fatalf("proof failed: %s", &diagnostics)
+		}
+		lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+		var record repoproof.ProofSummary
+		helmMust(t, json.Unmarshal([]byte(strings.TrimPrefix(lines[len(lines)-1], repoproof.SummaryPrefix)), &record))
+		if record.Commit != head || record.Clean != wantClean {
+			t.Fatalf("proof clean=%t, want %t", record.Clean, wantClean)
+		}
+	}
+	write("metasystem/artifacts/agents/supervision/gate-runs/123.json", "{}")
+	check(true)
+	for _, name := range []string{"metasystem/source.go", "metasystem/ignored.go", "outside-installation.txt"} {
+		write(name, "extra input")
+		check(false)
+		helmMust(t, os.Remove(filepath.Join(repo, name)))
+	}
+	connectionGit(t, repo, "update-index", "--assume-unchanged", ".gitignore")
+	write(".gitignore", "*.tmp\n")
+	check(false)
+	connectionGit(t, repo, "update-index", "--no-assume-unchanged", ".gitignore")
+	check(false)
+	connectionGit(t, repo, "add", ".gitignore")
+	check(false)
 }
 
 func TestRepositoryBatchtestFailureReplaysAndStaysRed(t *testing.T) {

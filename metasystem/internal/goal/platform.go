@@ -12,6 +12,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 )
 
+const missingReportReason = "did not report"
+
 func platformIdentity(platform, unit, test string) string {
 	id := "platform:" + platform + ":" + unit
 	if test != "" {
@@ -64,7 +66,7 @@ func platformFilingAllowed(e Endpoint, tip, platform string) error {
 	}
 	deciding := strings.Fields(value)
 	if len(deciding) == 0 {
-		return fmt.Errorf("declare the deciding platforms in %s after every engine reading main supports platform incidents", config.DecidingPlatformsKey)
+		return fmt.Errorf("a person sets %s at handover, once all readers support platform incidents", config.DecidingPlatformsKey)
 	}
 	if slices.Contains(deciding, platform) {
 		return fmt.Errorf("%s decides landings; its reds are trunk reds", platform)
@@ -90,10 +92,14 @@ func RecordPlatformProof(r VerbRequest, path, id string) (PublishResult, error) 
 		if len(tests) == 0 {
 			tests = []string{""}
 		}
-		for _, test := range tests {
+		for _, reported := range tests {
+			test, missing := strings.CutSuffix(reported, repoproof.MissingTestSuffix)
 			group := TrunkRedRecordGroup{Group: unit, Identity: platformIdentity(proof.Platform, unit, test), Status: "failed", LogPath: proof.Path, LogDigest: proof.Digest}
 			if test != "" {
 				group.Failures = []TrunkRedFailure{{Report: proof.Path, Classname: unit, Name: test, Status: "failed"}}
+				if missing {
+					group.Failures[0].Reason = missingReportReason
+				}
 			}
 			args.Groups = append(args.Groups, group)
 		}
@@ -129,7 +135,9 @@ func closePlatformProof(r VerbRequest, id string, p repoproof.PlatformProof) (Pu
 		return PublishResult{}, fmt.Errorf("platform %s is not %s", p.Platform, entry.Platform)
 	}
 	passed, ran := p.Passed[entry.Group]
-	if !ran || entry.TestName != "" && !slices.Contains(passed, entry.TestName) {
+	// Older platform entries stored the missing-report annotation in TestName.
+	test := strings.TrimSuffix(entry.TestName, repoproof.MissingTestSuffix)
+	if !ran || test != "" && !slices.Contains(passed, test) {
 		return PublishResult{}, fmt.Errorf("the check did not pass %s %s", entry.Group, entry.TestName)
 	}
 	args := platformClear{Entry: id, Unit: entry.Group, Test: entry.TestName, Platform: p.Platform, Commit: p.Commit, LogPath: p.Path, LogDigest: p.Digest, At: r.stamp()}

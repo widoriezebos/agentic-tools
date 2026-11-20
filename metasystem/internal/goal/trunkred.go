@@ -96,7 +96,8 @@ type TrunkRedSighting struct {
 	Rerun  *TrunkRedRerun `json:"rerun,omitempty"`
 	Hang   *TrunkRedHang  `json:"hang,omitempty"`
 
-	Output *repoproof.TestOutput `json:"output,omitempty"`
+	DidNotReport bool                  `json:"didNotReport,omitempty"`
+	Output       *repoproof.TestOutput `json:"output,omitempty"`
 
 	Load     float64  `json:"load,omitempty"`
 	Surfaces []string `json:"surfaces,omitempty"`
@@ -703,6 +704,9 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 					BaseTree: args.BaseTree, LogPath: group.LogPath, LogDigest: group.LogDigest, SeenAt: args.SeenAt, Opid: r.opid(),
 					Where: args.Where, Tree: args.Tree, Sample: args.Sample, Rerun: args.Rerun, Hang: group.Hang}
 				class := args.Class
+				if class == TrunkRedClassPlatform && len(group.Failures) == 1 {
+					sighting.DidNotReport = group.Failures[0].Reason == missingReportReason
+				}
 				if class == TrunkRedClassTrunkRed {
 					class = ""
 				}

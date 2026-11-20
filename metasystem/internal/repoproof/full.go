@@ -333,7 +333,7 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				}
 				name := identity.Name
 				if strings.HasPrefix(identity.Status, "missing") {
-					name += "(did not report)"
+					name += MissingTestSuffix
 				}
 				unit := packageUnit(identity.Classname)
 				if slices.Contains(tags, "batchtest") {
@@ -451,6 +451,12 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	sort.Strings(units)
 	if summary != nil {
+		if summary.Clean {
+			summary.Clean, err = cleanProofCheckout(root, summary.Commit, command)
+			if err != nil {
+				return notRun(err)
+			}
+		}
 		for unit, names := range passed {
 			sort.Strings(names)
 			passed[unit] = slices.Compact(names)

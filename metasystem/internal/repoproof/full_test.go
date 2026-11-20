@@ -664,13 +664,25 @@ func TestPlatformProofBindsHostCommitScopeAndCoverage(t *testing.T) {
 	t.Parallel()
 	commit := strings.Repeat("a", 40)
 	for _, row := range []struct{ name, key, value, head, scope string }{
-		{"complete", "", "", commit, "complete"}, {"package", "LANDING_ONLY", "fixture/unit", commit, "narrowed"}, {"test", "LANDING_ONLY_TESTS", "TestOne", commit, "narrowed"}, {"scope", "LANDING_PROOF_SCOPE", "scoped", commit, "scoped"}, {"wrong checkout", "", "", strings.Repeat("b", 40), ""},
+		{"complete", "", "", commit, "complete"}, {"edit during proof", "", "", commit, "complete"}, {"package", "LANDING_ONLY", "fixture/unit", commit, "narrowed"}, {"test", "LANDING_ONLY_TESTS", "TestOne", commit, "narrowed"}, {"scope", "LANDING_PROOF_SCOPE", "scoped", commit, "scoped"}, {"wrong checkout", "", "", strings.Repeat("b", 40), ""},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			var out, diag bytes.Buffer
+			statusChecks := 0
 			command := func(argv []string, w, _ io.Writer) error {
 				if argv[0] == "git" {
-					fmt.Fprintln(w, row.head)
+					switch argv[3] {
+					case "rev-parse":
+						fmt.Fprintln(w, row.head)
+					case "status":
+						statusChecks++
+						if statusChecks == 2 && row.name == "edit during proof" {
+							fmt.Fprintln(w, " M tracked.go")
+						}
+					case "ls-files":
+					default:
+						return fmt.Errorf("unexpected Git command %s", argv[3])
+					}
 					return nil
 				}
 				fmt.Fprintf(w, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])
@@ -690,17 +702,14 @@ func TestPlatformProofBindsHostCommitScopeAndCoverage(t *testing.T) {
 			}
 			code := runHost(&out, &diag, get, command, "testdata/testing.json", hooks)
 			if row.scope == "" {
-				if code == 0 || strings.Contains(out.String(), "landing result ") {
+				if code == 0 || !strings.HasSuffix(out.String(), "LANDING-NOT-RUN\tenvironment\n") || strings.Contains(out.String(), "landing result ") {
 					t.Fatal("certified the wrong checkout")
 				}
 				return
 			}
-			var summary struct {
-				Platform, Scope, Route, Commit, Verdict string
-				Narrowing                               []string
-			}
+			var summary ProofSummary
 			lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-			if code != 0 || json.Unmarshal([]byte(strings.TrimPrefix(lines[len(lines)-1], "landing result ")), &summary) != nil || summary.Platform != "darwin/arm64" || summary.Commit != commit || summary.Route != "host" || summary.Scope != row.scope || summary.Verdict != "green" || row.key != "" && !slices.Contains(summary.Narrowing, row.key) {
+			if code != 0 || json.Unmarshal([]byte(strings.TrimPrefix(lines[len(lines)-1], "landing result ")), &summary) != nil || summary.Clean != (row.name != "edit during proof") || summary.Platform != "darwin/arm64" || summary.Commit != commit || summary.Route != "host" || summary.Scope != row.scope || summary.Verdict != "green" || row.key != "" && !slices.Contains(summary.Narrowing, row.key) {
 				t.Fatalf("missing bound summary: %+v code=%d", summary, code)
 			}
 			if row.scope == "complete" && (!strings.Contains(out.String(), `"fixture/unit":["TestOne"]`) || strings.Contains(out.String(), "TestSkipped")) {

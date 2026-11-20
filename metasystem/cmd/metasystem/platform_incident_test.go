@@ -30,7 +30,7 @@ func platformFixtureLog(commit, platform, route, scope, verdict string, failed, 
 		fmt.Fprintf(&output, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(tests, " "))
 	}
 	fmt.Fprintf(&output, "LANDING-CHECKED\t%d\n", len(failed))
-	record, _ := json.Marshal(map[string]any{"commit": commit, "platform": platform, "route": route, "scope": scope, "verdict": verdict, "failed": failed})
+	record, _ := json.Marshal(map[string]any{"commit": commit, "clean": true, "platform": platform, "route": route, "scope": scope, "verdict": verdict, "failed": failed})
 	fmt.Fprintf(&output, "landing result %s\n", record)
 	return output.String()
 }
@@ -90,6 +90,50 @@ func TestPlatformIncidentFilingRefusals(t *testing.T) {
 				t.Fatalf("unexpected filing result: %d %+v", code, res)
 			}
 		})
+	}
+}
+
+func TestPlatformIncidentRequiresCleanTreeAndClosesMissingTest(t *testing.T) {
+	t.Parallel()
+	b := newIntentBed(t, false, nil)
+	b.lineage = "m1"
+	commit := platformTestSetting(t, b, "linux/amd64")
+	path := filepath.Join(t.TempDir(), "proof.log")
+	act := func(log string, wantRefusal bool, args ...string) {
+		t.Helper()
+		helmMust(t, os.WriteFile(path, []byte(log), 0600))
+		before := b.repo.accepted
+		code, result := b.runJSON(b.owners(), append(args, path)...)
+		if wantRefusal {
+			if code == 0 || b.repo.accepted != before || !strings.Contains(result.Summary, "clean") {
+				t.Fatalf("expected clean-tree refusal, got %d %s", code, result.Summary)
+			}
+		} else if code != 0 {
+			t.Fatalf("%v: %s", args, result.Summary)
+		}
+	}
+	red := platformFixtureLog(commit, "darwin/arm64", "host", "complete", "red", map[string][]string{"internal/unit": {"TestOne(did not report)"}}, nil)
+	act(strings.Replace(red, `"clean":true`, `"clean":false`, 1), true, "incident", "file")
+	act(strings.Replace(red, `"clean":true,`, "", 1), true, "incident", "file")
+	act(red, false, "incident", "file")
+	entry := platformEntries(t, b)[0]
+	if entry.ID != platformFixtureID || entry.Identity != platformFixtureID || entry.TestName != "TestOne" || len(entry.Failures) != 1 || entry.Failures[0].Name != "TestOne" || entry.Failures[0].Reason != "did not report" {
+		t.Fatalf("wrong timeout identity or failure: %+v", entry)
+	}
+	ordinary := platformFixtureLog(commit, "darwin/arm64", "host", "complete", "red", map[string][]string{"internal/unit": {"TestOne"}}, nil)
+	act(ordinary, false, "incident", "file")
+	entries := platformEntries(t, b)
+	if len(entries) != 1 || len(entries[0].Sightings) != 2 {
+		t.Fatal("the two runs must record sightings of the same test")
+	}
+	if !entries[0].Sightings[0].DidNotReport || entries[0].Sightings[1].DidNotReport {
+		t.Fatal("the missing report must belong only to the first sighting")
+	}
+	green := platformFixtureLog(b.repo.accepted, "darwin/arm64", "host", "complete", "green", nil, map[string][]string{"internal/unit": {"TestOne"}})
+	act(strings.Replace(green, `"clean":true`, `"clean":false`, 1), true, "incident", "prove-closed", entry.ID)
+	act(green, false, "incident", "prove-closed", entry.ID)
+	if platformEntries(t, b)[0].Closed == nil {
+		t.Fatal("the passing run did not close the timeout")
 	}
 }
 
