@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
 func rewriteUnitPlan(t *testing.T, path string, change func(*UnitPlan)) {
@@ -81,9 +83,29 @@ func TestNamedUnitRetrySharesTheRunAndTheLaunch(t *testing.T) {
 	}
 }
 
+// Each caller checks the goal branch when it resumes an unfinished run.
+// Starting the run also checks the branch once, before any resume.
+type namedCallerGit struct {
+	GitRunner
+	branch *testgit.Stub
+}
+
+func (git *namedCallerGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "symbolic-ref" {
+		result := git.branch.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
+		return result.Stdout, result.Err
+	}
+	return git.GitRunner.Run(directory, environment, args...)
+}
+
 func TestNamedUnitConcurrentRepeatLaunchesOnce(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "before", "round")
+	branch := testgit.Expectation{
+		Call:   testgit.Call{Dir: fixture.worktree, Args: []string{"symbolic-ref", "--short", "HEAD"}},
+		Result: testgit.Result{Stdout: []byte("goal/goal\n")},
+	}
+	admission := testgit.New(t, branch)
 	var wait sync.WaitGroup
 	results := make([]UnitResult, 6)
 	errs := make([]error, len(results))
@@ -91,14 +113,26 @@ func TestNamedUnitConcurrentRepeatLaunchesOnce(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			results[index], errs[index] = fixture.runner.AdvanceNamed(fixture.plan)
+			git := &namedCallerGit{GitRunner: fixture.git, branch: admission}
+			runner := *fixture.runner
+			runner.Git = git
+			runner.BeforeResume = func(record UnitRunRecord, _ UnitRequest) error {
+				if record.State != "awaiting-judgement" {
+					git.branch = testgit.New(t, branch)
+				}
+				return nil
+			}
+			results[index], errs[index] = runner.AdvanceNamed(fixture.plan)
 		}()
 	}
 	wait.Wait()
 	run := ""
 	for index, err := range errs {
 		if err != nil {
-			if !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "repeat the same command when it finishes") {
+			if IsCode(err, "UNIT_WAIT_RETRY") && err.Error() == "the run changed during the wait; repeat the command to follow its current state" {
+				continue
+			}
+			if !IsCode(err, "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "repeat the same command when it finishes") {
 				t.Fatalf("err=%v", err)
 			}
 			continue
@@ -110,6 +144,16 @@ func TestNamedUnitConcurrentRepeatLaunchesOnce(t *testing.T) {
 	}
 	if run == "" {
 		t.Fatal("no caller advanced the unit")
+	}
+	record, err := fixture.runner.Status(run)
+	if err != nil || record.State != "awaiting-judgement" || len(record.Rounds) != 1 {
+		t.Fatalf("run=%s state=%s rounds=%d err=%v", run, record.State, len(record.Rounds), err)
+	}
+	if outcome := record.Rounds[0].Outcome; outcome != "green" {
+		t.Fatalf("run=%s outcome=%s", run, outcome)
+	}
+	if !slices.Equal(fixture.starter.order, []string{"build", "proof", "read"}) {
+		t.Fatalf("launch order=%v", fixture.starter.order)
 	}
 	requireLaunchedOnce(t, fixture, 3)
 	if runs := unitRunDirectories(t, fixture.runner.Root); !slices.Equal(runs, []string{run}) {

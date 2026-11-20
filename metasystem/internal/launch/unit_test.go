@@ -26,7 +26,7 @@ import (
 )
 
 type stubGit struct {
-	once         sync.Once
+	mu           sync.Mutex
 	stub         *testgit.Stub
 	makeStub     func() *testgit.Stub
 	normalize    func([]string) []string
@@ -39,7 +39,11 @@ type stubGit struct {
 }
 
 func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
-	git.once.Do(func() { git.stub = git.makeStub() })
+	git.mu.Lock()
+	defer git.mu.Unlock()
+	if git.stub == nil {
+		git.stub = git.makeStub()
+	}
 	if len(args) == 6 && slices.Equal(args[:4], []string{"clone", "--shared", "--no-checkout", "--"}) && args[4] == git.worktree {
 		git.checkout = args[5]
 		return nil, os.MkdirAll(filepath.Join(git.checkout, ".git", "objects"), 0700)
