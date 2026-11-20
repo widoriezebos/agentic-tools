@@ -92,8 +92,25 @@ func TestCancelledWorkDoesNotCompeteWithItsReplacement(t *testing.T) {
 
 func TestACancelledRunHidesNoHandSubmission(t *testing.T) {
 	t.Parallel()
-	bed, _ := cancelledWorkBed(t)
+	bed, run := cancelledWorkBed(t)
 	commit := strings.Repeat("c", 40)
+	path := filepath.Join(bed.unitRoot, run, "run.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record launch.UnitRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.Subjects = []launch.UnitSubject{{Round: len(record.Rounds), Commit: commit}}
+	saved, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, saved, 0600); err != nil {
+		t.Fatal(err)
+	}
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		read := owners.git
 		owners.git = func(dir string, args ...string) ([]byte, error) {
@@ -111,7 +128,7 @@ func TestACancelledRunHidesNoHandSubmission(t *testing.T) {
 		}
 	}
 	code, result := cancelledCommand(bed, "work", "status", bed.id)
-	data, err := json.Marshal(result.Data)
+	data, err = json.Marshal(result.Data)
 	if err != nil || code != 0 || !strings.Contains(string(data), `"source":"goal branch"`) || !strings.Contains(string(data), `"commit":"`+commit+`"`) {
 		t.Fatalf("cancelled run hid manual work: %d %+v %v", code, result, err)
 	}

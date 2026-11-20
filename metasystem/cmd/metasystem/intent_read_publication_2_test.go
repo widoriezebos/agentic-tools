@@ -240,7 +240,8 @@ func TestCommitReadPublicationRetirementGitAdapter(t *testing.T) {
 	if err != nil || string(retained) != string(original) {
 		t.Fatal("retirement changed the original critic evidence")
 	}
-	// Following the printed command examines the overwrite, not the old version.
+	// A read restricted to the overwrite must leave the earlier change unread.
+	next = next[:len(next)-2]
 	code, result = c.runJSON(owners, next[1:]...)
 	if result.Outcome != intentInProgress || len(c.delegates) != 2 || c.delegates[1] != tip {
 		t.Fatalf("new-version remedy did not start its own read: exit=%d %+v", code, result)
@@ -252,8 +253,11 @@ func TestCommitReadPublicationRetirementGitAdapter(t *testing.T) {
 	}
 	code, result = c.runJSON(owners, review...)
 	if code == 0 || c.commitReads != 1 || c.publications != 1 || result.Next == nil ||
-		!strings.Contains(strings.Join(result.Next.Argv, " "), "work review --commit "+tip+" --goal "+c.id) {
-		t.Fatalf("new read revived the retired read or hid its current version: exit=%d %+v", code, result)
+		!strings.Contains(strings.Join(result.Next.Argv, " "), "--units hand,hand2") {
+		t.Fatalf("new read revived the retired read or lost its full-range remedy: exit=%d %+v", code, result)
+	}
+	if _, again := c.runJSON(owners, result.Next.Argv[1:]...); again.Outcome != intentInProgress {
+		t.Fatalf("printed full-range remedy did not start: %+v", again)
 	}
 }
 

@@ -172,7 +172,9 @@ func TestUnitReviewCoverageRequiresCleanAncestorRead(t *testing.T) {
 					Attestation{CoveredUnits: []string{"U1", "U2"}, Source: AttestationSource{Kind: tc.source}}, readErr))
 			}
 			f := newStatusFacts(t, facts...)
-			status, err := inspectStatus(repo, statusBase, statusR3, "goal-a", f.dependencies())
+			deps := f.dependencies()
+			deps.coversRange = func(string, Attestation, UnitStatus) bool { return tc.name == "clean" }
+			status, err := inspectStatus(repo, statusBase, statusR3, "goal-a", deps)
 			want := 0
 			if tc.name == "clean" {
 				want = 2

@@ -28,6 +28,7 @@ type Status struct {
 }
 
 type statusDependencies struct {
+	coversRange         func(string, Attestation, UnitStatus) bool
 	validatedRange      func(repo, endpointTip, tip, goalID string) ([]Commit, error)
 	kind                func(repo, commit, goalID string) (KindInfo, error)
 	attestation         func(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error)
@@ -40,7 +41,7 @@ type statusDependencies struct {
 }
 
 func defaultStatusDependencies() statusDependencies {
-	return statusDependencies{validatedRange: ValidateRange, kind: KindOf, attestation: ValidateAttestationAt, localTip: localBranchTip, gitOutput: gitOutput,
+	return statusDependencies{coversRange: readRangeCovers, validatedRange: ValidateRange, kind: KindOf, attestation: ValidateAttestationAt, localTip: localBranchTip, gitOutput: gitOutput,
 		drops: committedDrops, scope: committedScope, dropTree: func(repo, commit string) (string, error) {
 			out, err := gitOutput(repo, "rev-parse", commit+"^{tree}")
 			return strings.TrimSpace(string(out)), err
@@ -134,7 +135,7 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 					result.CleanReads = append(result.CleanReads, att)
 					for i := range result.Units {
 						unit := &result.Units[i]
-						if commitIndex[unit.Commit] <= subjectIndex && att.CoversUnit(*unit) {
+						if commitIndex[unit.Commit] <= subjectIndex && att.CoversUnit(*unit) && deps.coversRange != nil && deps.coversRange(repo, att, *unit) {
 							unit.ReadState = "read clean"
 						}
 					}

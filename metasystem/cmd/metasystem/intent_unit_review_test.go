@@ -372,6 +372,7 @@ func (c *connectionBed) connectionOwners() intentOwners {
 				Collect: slices.Contains(args, "--collect"), Join: slices.Contains(args, "--join"), BriefPath: flagValue(args, "--brief"), Selected: flagValue(args, "--selected-installation"),
 				BuildBriefSHA256: flagValue(args, "--build-brief-sha256"),
 				UnitRead:         unitRead,
+				Units:            strings.FieldsFunc(flagValue(args, "--units"), func(r rune) bool { return r == ',' }),
 				CheckClaim:       func() error { return nil },
 				Gate:             func(string) (string, error) { return "gate-run-1", nil },
 				Delegate:         delegate,

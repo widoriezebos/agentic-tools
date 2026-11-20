@@ -38,7 +38,7 @@ func ReadUnitBoundaries(root string) ([]UnitBoundary, error) {
 	}
 	var readable []UnitBoundary
 	for _, event := range events {
-		if event.Seat == canonicalPath(root) && (event.Session == "" || event.Goal == "" || event.Unit == "" || !launch.UnitReviewReadyOutcomes[event.Outcome]) {
+		if event.Seat == canonicalPath(root) && (event.Session == "" || event.Goal == "" || event.Unit == "" || (!launch.UnitReviewReadyOutcomes[event.Outcome] && event.Outcome != "settled")) {
 			err = errors.Join(err, fmt.Errorf("unit boundary record is incomplete"))
 			continue
 		}
@@ -110,6 +110,31 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 			events = append(events, event)
 		}
 	}
+	if len(runs) == 0 {
+		// An all-retired or hand-written goal has no completed builder run.
+		// Record the observed boundary without inventing a successful read.
+		for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
+			stages, err := units(root, id)
+			if err != nil {
+				return err
+			}
+			for _, stage := range stages {
+				if !unitBoundarySettled(stage.Stage) {
+					return nil
+				}
+				event := UnitBoundary{Seat: canonicalPath(root), Session: goal.NormalizeSession(session), Goal: id, Unit: "unit:" + stage.Unit, Outcome: "settled"}
+				found := false
+				for _, prior := range events {
+					if prior.Seat == event.Seat && prior.Session == event.Session && prior.Goal == event.Goal && prior.Unit == event.Unit {
+						found = true
+					}
+				}
+				if !found {
+					events = append(events, event)
+				}
+			}
+		}
+	}
 	if len(events) == retained {
 		return nil
 	}
@@ -124,19 +149,20 @@ func heldWorkCompleted(root, home string, work goal.ClaimableBudgetedWork, units
 	}
 	var completedRuns []launch.UnitRunRecord
 	completed := map[string]bool{}
+	settled := 0
 	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
 		stages, err := units(root, id)
 		if err != nil {
 			return false, nil, err
 		}
 		for _, stage := range stages {
-			if stage.Stage == "committed, ready to land without a read" {
-				continue
-			}
-			if !strings.HasPrefix(stage.Stage, "reviewed; its read is collected and published") {
+			if !unitBoundarySettled(stage.Stage) {
 				return false, nil, nil
 			}
-			completed[id+"/"+stage.Run] = true
+			settled++
+			if stage.Run != "" && (strings.HasPrefix(stage.Stage, "reviewed; its read is collected and published") || strings.HasPrefix(stage.Stage, "superseded by ")) {
+				completed[id+"/"+stage.Run] = true
+			}
 		}
 	}
 	entries, err := os.ReadDir(filepath.Join(home, "unit"))
@@ -174,7 +200,24 @@ func heldWorkCompleted(root, home string, work goal.ClaimableBudgetedWork, units
 				return false, nil, nil
 			}
 		}
+		delete(completed, run.Goal+"/"+run.ID)
 		completedRuns = append(completedRuns, run)
 	}
-	return len(completedRuns) > 0, completedRuns, nil
+	if len(completed) > 0 {
+		return false, nil, nil
+	}
+	return settled > 0, completedRuns, nil
+}
+
+// unitBoundarySettled consumes the public projection: cancelled work with a
+// surviving commit is projected as committed work, and pending drops stay open.
+// Quota accounting has a different contract: stopped work still consumes no
+// active build slot, while it cannot authorize a completion boundary.
+func unitBoundarySettled(stage string) bool {
+	return stage == "committed, ready to land without a read" ||
+		strings.HasPrefix(stage, "reviewed; its read is collected and published") ||
+		strings.HasPrefix(stage, "superseded by ") ||
+		stage == "cancelled; new work starts under another name" ||
+		strings.HasPrefix(stage, "dropped; prior reads retained") ||
+		stage == "transferred; its destinations remain required"
 }

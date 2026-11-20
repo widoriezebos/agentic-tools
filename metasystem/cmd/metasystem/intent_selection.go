@@ -64,6 +64,9 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 	case work.Record == nil:
 		return "starting"
 	case work.Cancelled():
+		if subject := currentSubject(work); subject != nil && subject.Commit != "" {
+			return "committed, ready for review"
+		}
 		return "cancelled; new work starts under another name"
 	case work.Record.State == launch.UnitStepEnded:
 		return "step ended; awaiting collection by a session"
@@ -105,6 +108,8 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 		if subject := currentSubject(work); subject != nil && subject.Commit != "" {
 			if read, err := inspect(work.Record.Worktree, work.Record.Goal, subject.Commit); err == nil && read.State == "review refused" {
 				return "review refused: " + read.DispatchRefusal
+			} else if err == nil && read.State == "superseded" && read.Published {
+				return "superseded by " + read.SupersededBy + ", read under " + read.AttestationCommit
 			} else if err == nil && read.State == "collected" && read.Published {
 				return "reviewed; its read is collected and published (attestation " + shortSHA(read.AttestationCommit) + ")"
 			} else if err == nil && read.State == "collected" {
@@ -177,6 +182,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		return work, manual, views, lines, units, problem
 	}
 	file, _ := goalRecord(projection, id)
+	lines = append(lines, acceptedRiskLines(file)...)
 	for _, one := range work {
 		stage := workStage(one, inv.work().inspectRead)
 		if file.ExcludesScope(one.Unit, "") {
@@ -353,6 +359,8 @@ func (item manualWorkItem) stage(readers ...func(string, string, string) (branch
 	}
 	read, err := inspect(item.Worktree, item.Goal, item.Commit)
 	switch {
+	case err == nil && read.State == "superseded" && read.Published:
+		return "superseded by " + read.SupersededBy + ", read under " + read.AttestationCommit
 	case err == nil && read.State == "review refused":
 		return "review refused: " + read.DispatchRefusal
 	case err == nil && read.State == "collected" && read.Published:
@@ -438,7 +446,7 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 		name := commit.Units[0]
 		index := slices.IndexFunc(work, func(one launch.NamedWork) bool { return one.Unit == name })
 		if index >= 0 {
-			if subject := currentSubject(work[index]); subject != nil && subject.Commit == commit.ID && !dropped[commit.ID] {
+			if subject := currentSubject(work[index]); subject != nil && subject.Commit == commit.ID && !work[index].Cancelled() && !dropped[commit.ID] {
 				continue
 			}
 			if subject := currentSubject(work[index]); !work[index].Cancelled() && (subject == nil || subject.Commit == "") {
@@ -828,6 +836,12 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to finish"})
+	}
+	if subject := currentSubject(*selected); subject != nil && subject.Commit != "" {
+		install := inv.goalWorktreeInstallation(selected.Record.Worktree)
+		if read, err := inv.work().inspectRead(install, id, subject.Commit); err == nil && read.SupersededBy != "" {
+			return inv.render(inv.commitReviewChecked(workTargets(id, *selected), install, id, subject.Commit, nil, nil, nil))
+		}
 	}
 	heldBuild := selected.Record != nil && len(selected.Record.Rounds) > 0 && selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop != nil && selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop.Loop == "unit-build"
 	if !builtWork(*selected) && lastOutcome(*selected) != "build-size" && lastOutcome(*selected) != "build-gap" && !heldBuild {

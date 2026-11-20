@@ -1048,13 +1048,49 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	}
 	var branchRead func([]string) (branch.BranchReadResult, int, error)
 	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
+	if inspectErr == nil && installed.SupersededBy != "" {
+		if installed.Published {
+			return intentResult{Targets: targets, Outcome: intentConfirmed, Summary: "superseded by " + installed.SupersededBy + ", read under " + shortSHA(installed.AttestationCommit), Data: installed, Details: acceptedRiskLines(file)}
+		}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the covering read is collected but not yet published", Details: []string{installed.SupersededBy + " read " + installed.AttestationCommit}, next: inv.publicArgv("work", "review", "--commit", installed.CoveredCommit, "--goal", goalID), nextReason: "publishes the covering read"}
+	}
 	alreadyPublished := inspectErr == nil && installed.Published
 	changed, discardRecord := false, false
 	newVersion := "SHA"
 	changedResult := func() intentResult {
+		next := inv.publicArgv("work", "review", "--commit", newVersion, "--goal", goalID)
+		details := acceptedRiskLines(file)
+		if paths, err := inv.work().git(root, "diff-tree", "-r", "-z", "--no-commit-id", "--no-relative", "--no-renames", "--name-only", unit+"^", unit); err == nil {
+			details = append(details, "Still unread from "+shortSHA(unit)+": "+strings.Join(splitNUL(paths), ", "))
+		}
+		if names, err := inv.work().git(root, "log", "--reverse", "--format=%B", unit+"^..HEAD"); err == nil {
+			units := strings.FieldsFunc(inv.input.text("units"), func(r rune) bool { return r == ',' })
+			for _, line := range strings.Split(string(names), "\n") {
+				if tail, ok := strings.CutPrefix(line, "Goal-Unit: "+goalID+"/"); ok {
+					for _, name := range strings.Split(tail, "+") {
+						if !slices.Contains(units, name) {
+							units = append(units, name)
+						}
+					}
+				}
+			}
+			if len(units) > 0 {
+				if later, e := inv.work().inspectRead(root, goalID, newVersion); e == nil && later.Published {
+					if tip, e := inv.work().git(root, "rev-parse", "HEAD"); e == nil {
+						newVersion = strings.TrimSpace(string(tip))
+					}
+				}
+				next = inv.publicArgv("work", "review", "--commit", newVersion, "--goal", goalID, "--units", strings.Join(units, ","))
+			}
+		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": "environment"},
-			Summary: "the worktree changed after the read; review a new version of this work before publishing",
-			next:    inv.publicArgv("work", "review", "--commit", newVersion, "--goal", goalID), nextReason: "starts a new read of the changed version; commit any uncommitted changes first and use their new commit"}
+			Summary: "the worktree changed after the read; review a new version of this work before publishing", Details: details,
+			next: next, nextReason: "examines the named units from the branch base; commit or remove uncommitted changes first"}
+	}
+
+	if alreadyPublished && inv.input.has("units") && !branch.ReadCoversUnits(root, goalID, unit, strings.Split(inv.input.text("units"), ",")) {
+		newVersion = unit
+		return changedResult()
 	}
 	if alreadyPublished {
 		// A built subject's check knows the publication tip, including any

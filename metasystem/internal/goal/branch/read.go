@@ -67,6 +67,8 @@ type BranchReadRequest struct {
 }
 
 type BranchReadResult struct {
+	SupersededBy                                 string                 `json:"supersededBy,omitempty"`
+	CoveredCommit                                string                 `json:"coveredCommit,omitempty"`
 	TransferCoverage                             *goal.TransferCoverage `json:"transferCoverage,omitempty"`
 	State, RootJob, GateRunID, AttestationCommit string
 	DispatchRefusal                              string
@@ -1186,6 +1188,11 @@ func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error
 		result.State = "examining"
 	case record.DispatchRetryable:
 		result.State, result.DispatchRefusal = "review refused", record.DispatchRefusal
+	}
+	if !result.Published {
+		if covered, coverErr := supersedingRead(repo, goalID, unitCommit); coverErr == nil && covered.SupersededBy != "" {
+			return covered, nil
+		}
 	}
 	return result, nil
 }
