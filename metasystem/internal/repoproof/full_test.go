@@ -504,7 +504,10 @@ cat >"$3" <<'REPORTER'
 printf '%s\n%s\n' "$0" "$METASYSTEM_FULL_REPORTER"
 printf 'ready\n' >"$REPORTER_STARTED"
 read -r release <&3
-exit "${REPORTER_EXIT:-0}"
+case "$REPORTER_EXIT" in
+    signal) kill -TERM "$PPID"; exit 0 ;;
+    *) exit "$REPORTER_EXIT" ;;
+esac
 REPORTER
 chmod +x "$3"
 `
@@ -512,13 +515,18 @@ chmod +x "$3"
 		t.Fatal(err)
 	}
 	type result struct {
-		output []byte
-		err    error
+		wantExit int
+		output   []byte
+		err      error
 	}
-	results := make(chan result, 2)
+	outcomes := []struct {
+		mode     string
+		wantExit int
+	}{{"0", 0}, {"7", 7}, {"signal", 1}}
+	results := make(chan result, len(outcomes))
 	var releases []*os.File
 	var startedPaths []string
-	for run := range 2 {
+	for run, outcome := range outcomes {
 		releaseRead, releaseWrite, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
@@ -532,14 +540,14 @@ chmod +x "$3"
 		startedPaths = append(startedPaths, started)
 		go func() {
 			cmd := exec.Command("/bin/sh", entry)
-			cmd.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "TMPDIR="+root, "REPORTER_EXIT=7", "REPORTER_STARTED="+started)
+			cmd.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "TMPDIR="+root, "REPORTER_EXIT="+outcome.mode, "REPORTER_STARTED="+started)
 			cmd.ExtraFiles = []*os.File{releaseRead}
 			output, err := cmd.CombinedOutput()
-			results <- result{output, err}
+			results <- result{outcome.wantExit, output, err}
 		}()
 	}
-	// Both reporters must be running before either can exit.
-	testenv.Await(t, "both concurrent reporters to start", func() bool {
+	// All reporters must be running before any can exit.
+	testenv.Await(t, "concurrent reporters to start", func() bool {
 		select {
 		case got := <-results:
 			t.Fatalf("reporter exited before release: %v\n%s", got.err, got.output)
@@ -559,10 +567,10 @@ chmod +x "$3"
 		_ = release.Close()
 	}
 	paths := map[string]bool{}
-	for range 2 {
+	for range outcomes {
 		got := <-results
 		var exit *exec.ExitError
-		if !errors.As(got.err, &exit) || exit.ExitCode() != 7 {
+		if got.wantExit == 0 && got.err != nil || got.wantExit != 0 && (!errors.As(got.err, &exit) || exit.ExitCode() != got.wantExit) {
 			t.Fatalf("reporter exit was lost: %v\n%s", got.err, got.output)
 		}
 		lines := strings.Split(strings.TrimSpace(string(got.output)), "\n")
@@ -573,8 +581,8 @@ chmod +x "$3"
 			t.Fatalf("concurrent runs built to the same path: %s", lines[0])
 		}
 		paths[lines[0]] = true
-		if info, err := os.Stat(lines[0]); err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-			t.Fatalf("private reporter must remain executable after exit: %v", err)
+		if _, err := os.Stat(filepath.Dir(lines[0])); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("private reporter directory survived exit %d: stat error %v", got.wantExit, err)
 		}
 	}
 }
