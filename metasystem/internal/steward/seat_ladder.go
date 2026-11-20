@@ -210,7 +210,7 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 	}
 	if candidate != nil && goalsAllowed {
 		if count := SeatNoProgressCount(records, candidate.Goal, candidate.ApprovalOpid); count >= maxRevivals {
-			return seatCapped(verdict, candidate.Goal, count), nil
+			return seatCapped(verdict, candidate.Goal, count, records), nil
 		}
 		selection.Goal, selection.Held, selection.ApprovalOpid = candidate.Goal, true, candidate.ApprovalOpid
 		return Decision{verdict, ActRevive, fmt.Sprintf("this seat's main is dead holding %s; starting its successor", candidate.Goal)}, &selection
@@ -269,13 +269,25 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 		selection.Goal, selection.ApprovalOpid = ready.Goal, ready.ApprovalOpid
 		return Decision{verdict, ActRevive, fmt.Sprintf("ready work has no seat; starting a seat for %s", ready.Goal)}, &selection
 	}
-	return seatCapped(verdict, capped, cappedCount), nil
+	return seatCapped(verdict, capped, cappedCount, records), nil
 }
 
-func seatCapped(verdict Verdict, id string, count int) Decision {
+func seatCapped(verdict Verdict, id string, count int, records ...[]SeatRecord) Decision {
+	tried := ""
+	remaining := count
+	if len(records) > 0 {
+		for i := len(records[0]) - 1; i >= 0 && remaining > 0; i-- {
+			r := records[0][i]
+			if r.Goal != id || r.ReapedAt == "" {
+				continue
+			}
+			tried += "; tried session " + r.LaunchID + ": " + r.LaunchState + ", " + r.GoalEvidence
+			remaining--
+		}
+	}
 	return Decision{verdict, ActNotify, fmt.Sprintf(
 		"%d seats ended without progress on %s"+personRemedyMark+"metasystem goal approve %s\nmetasystem goal approve %s approves it afresh and seats start again, keeping its claim; metasystem goal pause %s --reason TEXT parks it",
-		count, id, id, id, id)}
+		count, id, id, id, id) + tried}
 }
 
 // SeatCapped reports whether the steward of the installation at root has
@@ -304,13 +316,19 @@ func SeatNoProgressCount(records []SeatRecord, goalID, approvalOpid string) int 
 	})
 	count := 0
 	for _, record := range ordered {
-		switch record.Outcome {
-		case SeatProgress:
-			return count
-		case SeatNoProgress, SeatStartFailed:
-			if record.Goal == goalID && record.ApprovalOpid == approvalOpid {
-				count++
+		if record.Goal != goalID || record.ApprovalOpid != approvalOpid {
+			continue
+		}
+		if record.Kind == "steward" {
+			if record.Outcome == SeatProgress {
+				return count
 			}
+		} else if record.GoalProgress != nil && *record.GoalProgress {
+			return count
+		}
+		switch record.Outcome {
+		case SeatProgress, SeatNoProgress, SeatStartFailed:
+			count++
 		}
 	}
 	return count

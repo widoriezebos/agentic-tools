@@ -209,6 +209,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 			run = one.Record.ID
 		}
 		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at, Run: run})
+		seatUnitProgress(&units[len(units)-1], one, next)
 	}
 	for _, item := range manual {
 		stage := item.stage(inv.work().inspectRead)
@@ -216,6 +217,13 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		next, _ := inv.manualContinuation(id, item)
 		lines = append(lines, fmt.Sprintf("  %s: %s, version %s; next: %s", item.Unit, stage, shortSHA(item.Commit), shellCommand(next)))
 		units = append(units, steward.UnitStage{Unit: item.Unit, Stage: stage, Line: lines[len(lines)-1]})
+		units[len(units)-1].Continuable = len(next) > 0
+		if strings.HasPrefix(stage, "reviewed; its read is collected") {
+			units[len(units)-1].Advances = []string{"read:" + item.Commit}
+			if strings.HasPrefix(stage, "reviewed; its read is collected and published") {
+				units[len(units)-1].Advances = append(units[len(units)-1].Advances, "published:"+item.Commit)
+			}
+		}
 	}
 	return
 }

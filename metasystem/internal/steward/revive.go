@@ -473,7 +473,7 @@ func abnormalRemedy(root, reason string) string {
 // abnormalRestartState reads a seat launch that holds only a start of its own
 // goal under its own approval; an abnormal restart entry speaks only for the
 // launch it reserved. Arbitration protects its callers.
-func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSelection) (string, string, error) {
+func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSelection, cleanEnd ...bool) (string, string, error) {
 	class, progressed := "process-lost", false
 	if ev.AbnormalCount < 0 || ev.AbnormalCount > len(ev.Abnormal) {
 		return class, abnormalRemedy(root, "the abnormal restart history is unreadable"), nil
@@ -484,6 +484,11 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 		progressed = ev.Marks != last.Marks
 		if last.Pending {
 			return class, abnormalRemedy(root, "the previous automatic restart has an unknown launch outcome"), nil
+		}
+	}
+	for i := 0; i < ev.AbnormalCount; i++ {
+		if ev.Abnormal[i].At.IsZero() || ev.Abnormal[i].Class == "" {
+			return class, abnormalRemedy(root, "the abnormal restart history is unreadable"), nil
 		}
 	}
 	records, err := readSeatRecords(root)
@@ -548,6 +553,9 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 			return class, abnormalRemedy(root, "the previous seat start has an unknown launch outcome"), nil
 		}
 		class = current.LaunchState
+		if class != "completed" && class != "failed" && class != "cancelled" && class != "missing" {
+			return class, abnormalRemedy(root, "the seat launch outcome is unknown"), nil
+		}
 		if mark := ev.StewardStopCleared; class == "missing" && current.Kind == "steward" && mark != nil && mark.Root == canonicalPath(root) && !seatTime(current.StartedAt).After(mark.At) {
 			class = ""
 		}
@@ -557,7 +565,7 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 		progressed = current.Outcome == SeatProgress
 		if class == "completed" {
 			class = SeatNoProgress
-			if progressed {
+			if progressed || len(cleanEnd) > 0 && cleanEnd[0] {
 				class = ""
 			}
 		}

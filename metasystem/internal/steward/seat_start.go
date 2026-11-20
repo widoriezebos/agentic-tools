@@ -55,6 +55,7 @@ type SeatLaunchSpec struct {
 
 // SeatLaunchState is one seat launch as its launch record says.
 type SeatLaunchState struct {
+	Child                *identity.Ref
 	Found                bool
 	Terminal             bool
 	State                string
@@ -91,6 +92,9 @@ type SeatRecovery struct {
 
 // SeatRecord is one seat start under artifacts/agents/steward/seats.
 type SeatRecord struct {
+	WorkAtStart  *SeatWorkSnapshot `json:"workAtStart,omitempty"`
+	GoalProgress *bool             `json:"goalProgress,omitempty"`
+	GoalEvidence string            `json:"goalEvidence,omitempty"`
 	Kind         string            `json:"kind,omitempty"`
 	Subject      string            `json:"subject,omitempty"`
 	Occurrence   string            `json:"occurrence,omitempty"`
@@ -179,8 +183,15 @@ func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 			}
 			return goal.Project(endpoint, false, now)
 		},
-		Tips:  gitGoalTips,
-		Units: func(string, string) ([]UnitStage, error) { return nil, errors.New("unit reader unavailable") },
+		Tips: gitGoalTips,
+		Units: func(root, id string) ([]UnitStage, error) {
+			if reader, ok := launcher.(interface {
+				SeatUnits(string, string) ([]UnitStage, error)
+			}); ok {
+				return reader.SeatUnits(root, id)
+			}
+			return nil, errors.New("unit reader unavailable")
+		},
 		Main: func(root string) (string, error) {
 			out, err := exec.Command("git", "-C", root, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}").Output()
 			return strings.TrimSpace(string(out)), err
@@ -347,6 +358,10 @@ func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.T
 			if progress {
 				record.Outcome, record.Evidence = SeatProgress, evidence
 			}
+		}
+		if record.Kind != "steward" && record.Outcome != SeatProviderLimit {
+			progress, evidence := seatGoalProgress(repoRoot, *record, dependencies)
+			record.GoalProgress, record.GoalEvidence = &progress, evidence
 		}
 		record.ReapedAt = now.UTC().Format(time.RFC3339)
 		if err := writeSeatRecord(repoRoot, *record); err != nil {
@@ -552,10 +567,17 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned, stewardOnly)
 	if d.Action == ActRevive && selection != nil {
-		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection); err != nil {
+		clean, explanation, err := cleanSeatEnd(repoRoot, state.Records, *selection, dependencies)
+		if err != nil {
+			return Decision{VerdictDegraded, ActNotify, "the session end cannot be read: " + err.Error()}, nil, true
+		}
+		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection, clean); err != nil {
 			return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 		} else if reason != "" {
-			return Decision{verdict, ActNotify, reason}, nil, true
+			return Decision{verdict, ActNotify, "not clean; waits for you: " + reason}, nil, true
+		}
+		if explanation != "" {
+			d.Reason = explanation + "; " + d.Reason
 		}
 	}
 	return d, selection, true
@@ -637,7 +659,7 @@ func ReviveSeat(root string, cfg TickConfig, census WorkerCensus, after string, 
 	if !seatPerson(root, person) || cfg.Seat == nil {
 		return SeatRecord{}, errors.New("seat revival needs the person's enrolled terminal and a seat launcher")
 	}
-	d := defaultSeatDependencies(cfg.Seat)
+	d := seatDependenciesForConfig(cfg)
 	d.Now, d.ProviderHome, d.Person, d.After, d.RegistryPath, d.Census, d.WorkStateRoot = cfg.now, cfg.ProviderHome, person, after, registryPath, census, cfg.WorkStateRoot
 	d.Prober = cfg.Prober
 	return startSeatWithDependencies(root, SeatSelection{}, d)
@@ -714,6 +736,8 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 // SeatRevivalClosed confirms a person's close without starting a replacement.
 type SeatRevivalClosed struct {
 	Launch, Goal, Why string
+	Automatic, Live   bool
+	Wait              string
 	Cleared           bool
 	Continuation      string
 	ContinuationLive  bool
@@ -722,6 +746,15 @@ type SeatRevivalClosed struct {
 }
 
 func (c SeatRevivalClosed) Error() string {
+	if c.Automatic {
+		return "this end is clean; the steward starts the successor at its next decision by itself"
+	}
+	if c.Live {
+		return "successor " + c.Launch + " is already live; no extra session starts"
+	}
+	if c.Wait != "" {
+		return "waits for you: " + c.Wait
+	}
 	if c.steward {
 		return fmt.Sprintf("steward launch %s %s; the steward stop is lifted by your word; the steward's next tick selects again", c.Launch, c.Why)
 	}
@@ -905,6 +938,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if last.RecoveryOf != nil && last.RecoveryOf.LaunchID == after {
 			return confirmSeatStart(last, dependencies.Launcher)
 		}
+		if last.Held && state.Found && !state.Terminal && (dependencies.After == "" || len(records) > 1 && records[len(records)-2].LaunchID == after) {
+			return SeatRecord{}, SeatRevivalClosed{Launch: last.LaunchID, Goal: last.Goal, Live: true}
+		}
 		if last.LaunchID != after {
 			return SeatRecord{}, fmt.Errorf("failed launch %s is stale; current seat launch is %s", after, last.LaunchID)
 		}
@@ -919,6 +955,11 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if state.Found && (!state.Terminal || state.State != "failed" && state.State != "cancelled") {
 			if state.Terminal {
 				last.LaunchState = state.State
+				if state.State == "completed" {
+					if result, handled := completedSeatRevival(repoRoot, dependencies); handled {
+						return SeatRecord{}, result
+					}
+				}
 				return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, "it ended "+state.State+", not failed", dependencies)
 			}
 			return SeatRecord{}, errors.New("the current seat launch is not a confirmed failed launch; no replacement starts")
@@ -984,10 +1025,17 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, err
 		}
 	}
-	class := ""
+	class, endNotice := "", ""
 	if !person && (len(records) > 0 || ev.AbnormalCount > 0 || ev.CurrentContinuation != "" || ev.SettledContinuation != "") {
 		var reason string
-		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now(), &selection)
+		clean, explanation, readErr := cleanSeatEnd(repoRoot, records, selection, dependencies)
+		if clean {
+			endNotice = explanation + "; "
+		}
+		if readErr != nil {
+			return SeatRecord{}, readErr
+		}
+		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now(), &selection, clean)
 		if err != nil {
 			return SeatRecord{}, err
 		}
@@ -1047,6 +1095,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			break
 		}
 	}
+	if selection.Kind != "steward" {
+		record.WorkAtStart, _ = seatWorkSnapshot(repoRoot, selection.Goal, dependencies)
+	}
 	if err := writeSeatRecord(repoRoot, record); err != nil {
 		return SeatRecord{}, err
 	}
@@ -1087,8 +1138,8 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce: "seat-start-" + id,
-		Message: fmt.Sprintf("steward: started seat %s on %s for %s; `metasystem work stop %s` ends it, `metasystem helm take` keeps the steward from starting another",
-			id, machine, selection.Goal, id),
+		Message: fmt.Sprintf("steward: %sstarted seat %s on %s for %s; `metasystem work stop %s` ends it, `metasystem helm take` keeps the steward from starting another",
+			endNotice, id, machine, selection.Goal, id),
 	}); err != nil {
 		return record, err
 	}
@@ -1179,7 +1230,12 @@ func providerOutageFrom(providers outage.Providers, err error, runtime string, n
 }
 
 // UnitStage is one unit as the public status reader describes it.
-type UnitStage struct{ Unit, Stage, Line, At, Run string }
+type UnitStage struct {
+	Unit, Stage, Line, At, Run string
+	// Continuable and Advances come from the public work reader, not display text.
+	Continuable bool
+	Advances    []string
+}
 
 type seatFactLine struct {
 	text, omitted string

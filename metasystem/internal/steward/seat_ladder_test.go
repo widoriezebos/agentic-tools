@@ -1201,7 +1201,7 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 		t.Fatalf("with no other goal the cap starts none and notifies: %+v", result.Decision)
 	}
 
-	t.Run("a seat whose goal branch gained a commit resets the count", func(t *testing.T) {
+	t.Run("a branch commit alone does not reset the goal work cap", func(t *testing.T) {
 		t.Parallel()
 		bed := newSeatBed(t, seatReadyGoal("a-stuck", "Build it."))
 		seatCycle(t, bed, "a-stuck", "Blocked.")
@@ -1212,11 +1212,11 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 		// its branch gains a commit.
 		bed.tips["a-stuck"] = "1111111111111111111111111111111111111111"
 		result := seatLadderTick(t, bed)
-		if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "a-stuck" {
-			t.Fatalf("progress resets the count: %+v %+v", result.Decision, result.Seat)
+		if result.Decision.Action != ActNotify || result.Seat != nil {
+			t.Fatalf("a branch tip alone must not reset the count: %+v %+v", result.Decision, result.Seat)
 		}
-		if count := SeatNoProgressCount(bed.records(), "a-stuck", bed.goals["a-stuck"].Approved.Opid); count != 0 {
-			t.Fatalf("the newest seat made progress: %d", count)
+		if count := SeatNoProgressCount(bed.records(), "a-stuck", bed.goals["a-stuck"].Approved.Opid); count != 3 {
+			t.Fatalf("the newest seat moved only its branch tip: %d", count)
 		}
 	})
 }

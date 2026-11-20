@@ -35,6 +35,11 @@ func TestMachineRevivePublicAct(t *testing.T) {
 	machineRevivePublicAct(t, []string{"closed-stranded-continuation", "closed-live-continuation", "closed-not-held", "closed-completed", "person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"})
 }
 
+func TestMachineReviveCleanEnd(t *testing.T) {
+	t.Parallel()
+	machineRevivePublicAct(t, []string{"clean-completed", "clean-capped", "clean-question"})
+}
+
 func machineRevivePublicAct(t *testing.T, scenarios []string) {
 	t.Helper()
 	if os.Getenv("MACHINE_REVIVE_ISOLATED") == "" {
@@ -98,6 +103,15 @@ esac
 			bed.manager.Adapters["codex-exec"] = launch.CodexExec{Binary: "codex", Now: bed.manager.Now}
 			bed.manager.Adapters["claude-headless"] = launch.ClaudeHeadless{Binary: "claude"}
 			owners := bed.owners()
+			cleanCase := strings.HasPrefix(scenario, "clean-")
+			if cleanCase {
+				brief := bed.brief("continuable.md", "Build it.\n\n| Unit | Lines |\n| --- | --- |\n| first | 40 |\n")
+				code, result, _ := bed.work(append([]string{"work", "build", bed.id, "first", "--brief", brief}, workCheck...)...)
+				if code != 0 {
+					t.Fatalf("build: %+v", result)
+				}
+				owners.work = bed.workOwners().work
+			}
 			owners.processes.launches = func() *launch.Manager { return bed.manager }
 			owners.processes.process.repositoryTop = fakeTop(root)
 			owners.landing.home = func() (string, error) { return home, nil }
@@ -116,7 +130,7 @@ esac
 				t.Fatal(err)
 			}
 			conf := []byte("metasystem.runtimes=claude,codex\nlaunch.seat.runtime=off\nseat.driver=person\n")
-			if strings.HasPrefix(scenario, "automatic") {
+			if strings.HasPrefix(scenario, "automatic") || cleanCase {
 				conf = []byte("metasystem.runtimes=claude,codex\nlaunch.seat.runtime=claude\n")
 			}
 			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), conf, 0600); err != nil {
@@ -125,7 +139,7 @@ esac
 			if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.HasPrefix(scenario, "automatic") {
+			if !strings.HasPrefix(scenario, "automatic") && !cleanCase {
 				seat, err := helm.Locate(root)
 				if err != nil {
 					t.Fatal(err)
@@ -144,6 +158,10 @@ esac
 				t.Fatal(err)
 			}
 			failed := steward.SeatRecord{Schema: 1, LaunchID: "failed-seat", Goal: bed.id, Held: true, ApprovalOpid: bed.goalFile(bed.id).Approved.Opid, Machine: "mac-cli", StartedAt: now.Add(-2 * time.Minute).UTC().Format("2006-01-02T15:04:05.000000000Z"), ReapedAt: now.Add(-time.Minute).Format(time.RFC3339), LaunchState: "failed", Outcome: steward.SeatProviderLimit}
+			if cleanCase {
+				failed.LaunchState = "completed"
+				failed.Outcome = steward.SeatNoProgress
+			}
 			seats := filepath.Join(root, "artifacts", "agents", "steward", "seats")
 			if err := os.MkdirAll(seats, 0700); err != nil {
 				t.Fatal(err)
@@ -153,7 +171,7 @@ esac
 				t.Fatal(err)
 			}
 			launchState := launch.Failed
-			if scenario == "closed-completed" || strings.HasSuffix(scenario, "-continuation") {
+			if cleanCase || scenario == "closed-completed" || strings.HasSuffix(scenario, "-continuation") {
 				launchState = launch.Completed
 			}
 			if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launchState, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
@@ -162,7 +180,7 @@ esac
 			before := steward.Evidence{AbnormalCount: 2, DryRevivals: 3}
 			before.Abnormal[0] = steward.AbnormalRestart{At: now.Add(-2 * time.Minute), Class: "failed"}
 			before.Abnormal[1] = steward.AbnormalRestart{At: now.Add(-time.Minute), Class: "failed", Pending: true}
-			if strings.HasPrefix(scenario, "automatic") {
+			if strings.HasPrefix(scenario, "automatic") || cleanCase {
 				before = steward.Evidence{}
 				if err := outage.Clear(home, "anthropic", now); err != nil {
 					t.Fatal(err)
@@ -348,6 +366,65 @@ esac
 				actual, err := bed.manager.Status(record.LaunchID)
 				if err != nil || actual.State != launch.Running {
 					t.Fatalf("automatic actual launch: %+v %v", actual, err)
+				}
+				return
+			}
+			if cleanCase {
+				if scenario == "clean-capped" {
+					for i := 0; i < 2; i++ {
+						r := failed
+						r.LaunchID = fmt.Sprintf("prior-%d", i)
+						r.StartedAt = now.Add(time.Duration(-4-i) * time.Minute).Format("2006-01-02T15:04:05.000000000Z")
+						data, _ := json.Marshal(r)
+						if err := os.WriteFile(filepath.Join(seats, r.LaunchID+".json"), data, 0600); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if scenario == "clean-question" {
+					dir := filepath.Join(root, "artifacts", "agents", "channel", "questions")
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+					data, _ := json.Marshal(channel.Question{ID: "q-clean", Goal: bed.id, OpenedAt: now, State: "open"})
+					if err := os.WriteFile(filepath.Join(dir, "q-clean.json"), data, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				starts := len(bed.starter.launched())
+				want := "this end is clean; the steward starts the successor at its next decision by itself"
+				if scenario == "clean-capped" {
+					want = "goal approve " + bed.id
+				}
+				if scenario == "clean-question" {
+					want = "open question"
+				}
+				data, err := os.ReadFile(steward.EvidencePath(root))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for n := 0; n < 2; n++ {
+					code, result := run(true)
+					if code != 0 || !strings.Contains(result.Summary, want) || len(bed.starter.launched()) != starts {
+						t.Fatalf("clean revive: %d %+v", code, result)
+					}
+				}
+				after, err := os.ReadFile(steward.EvidencePath(root))
+				if err != nil || !bytes.Equal(data, after) {
+					t.Fatal("clean revival rewrote history")
+				}
+				if scenario == "clean-completed" {
+					cfg := steward.TickConfig{Now: now, ProviderHome: home, Seat: launcher, Units: stewardUnitStages(owners)}
+					successor, err := steward.StartSeat(root, cfg, seatTickCensus{}, steward.SeatSelection{Goal: bed.id, Held: true, ApprovalOpid: failed.ApprovalOpid})
+					if err != nil || successor.LaunchID == "" {
+						t.Fatalf("automatic successor: %+v %v", successor, err)
+					}
+					for n := 0; n < 2; n++ {
+						code, result := run(true)
+						if code != 0 || !strings.Contains(result.Summary, "already live") || len(bed.starter.launched()) != starts+1 {
+							t.Fatalf("revive beside live successor: %d %+v", code, result)
+						}
+					}
 				}
 				return
 			}

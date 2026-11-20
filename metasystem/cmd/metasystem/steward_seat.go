@@ -171,7 +171,7 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 	if record.State == launch.Starting && record.Child == nil {
 		state = "reserved"
 	}
-	return steward.SeatLaunchState{Found: true, Terminal: record.State.Terminal(), State: state,
+	return steward.SeatLaunchState{Child: record.Child, Found: true, Terminal: record.State.Terminal(), State: state,
 		ResultPath: filepath.Join(dir, "result.json"), FinishedAt: record.FinishedAt, Runtime: record.Adapter, Model: launchModel(record)}, nil
 }
 
@@ -340,4 +340,9 @@ func hostSeatCapped(id, approvalOpid string) bool {
 		}
 	}
 	return false
+}
+
+// SeatUnits gives status the same work projection as seat admission.
+func (l stewardSeatLauncher) SeatUnits(root, id string) ([]steward.UnitStage, error) {
+	return stewardUnitStages(defaultIntentOwners())(root, id)
 }

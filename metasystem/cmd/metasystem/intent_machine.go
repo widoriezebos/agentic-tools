@@ -124,7 +124,7 @@ func runIntentMachineRevive(inv *intentInvocation) int {
 	if _, err := inv.machineSeams().runnerRepair(root); err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the enrolled runner could not be repaired: " + err.Error(), next: inv.publicArgv("system", "start", "--repo", target.Checkout)})
 	}
-	record, err := steward.ReviveSeat(root, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home}, census, inv.input.text("after"), person, reading.Registry)
+	record, err := steward.ReviveSeat(root, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home, Units: stewardUnitStages(inv.owners)}, census, inv.input.text("after"), person, reading.Registry)
 	var revivalClosed steward.SeatRevivalClosed
 	if errors.As(err, &revivalClosed) {
 		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "seat " + target.Name + ": " + revivalClosed.Error(), Data: revivalClosed})
