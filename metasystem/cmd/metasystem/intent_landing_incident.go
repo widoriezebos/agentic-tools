@@ -70,7 +70,19 @@ func (owners laneVerbOwners) landingIncidentRecorder(installation string) func([
 			record = goal.RecordTrunkRed
 		}
 		result, err := record(r, args)
+		owners.notePublication(result)
 		return confirmedIncidentWrite(result, err)
+	}
+}
+
+func (owners laneVerbOwners) notePublication(result goal.PublishResult) {
+	if result.DurabilityWarning == "" {
+		return
+	}
+	if owners.durabilityNotice != nil {
+		owners.durabilityNotice(result.DurabilityWarning)
+	} else {
+		fmt.Fprintln(os.Stderr, result.DurabilityWarning)
 	}
 }
 
@@ -165,6 +177,7 @@ func (owners laneVerbOwners) clearLandingIncidents(installation string, proof pl
 		return nil
 	}
 	result, err := clear(r, clears)
+	owners.notePublication(result)
 	if result.Code == "TRUNK_RED_PROOF_STALE" || goal.RefusalCode(err) == "TRUNK_RED_PROOF_STALE" {
 		fmt.Fprintln(os.Stderr, "the green no longer applies to main; run metasystem landing prove")
 		return nil

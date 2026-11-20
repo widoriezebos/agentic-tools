@@ -1,7 +1,6 @@
 package goal
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 // A receiver may unpack a small push or keep its pack. Only Git creates those names.
 func TestLedgerDurabilityGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"local", "pack", "nested", "external", "uncreated", "copied", "injected", "recovered", "doubt"} {
+	for _, mode := range []string{"local", "pack", "nested", "external", "uncreated", "copied", "injected", "recovered", "recovered-doubt", "doubt"} {
 		t.Run(mode, func(t *testing.T) {
 			origin, root := oneClone(t)
 			e := endpointFor(root)
@@ -54,7 +53,7 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 					return endpoint.Repository.Publish(parent, commit)
 				})
 			}
-			if mode == "recovered" {
+			if strings.HasPrefix(mode, "recovered") {
 				e = e.WithCASPublisher(func(endpoint Endpoint, parent, commit string) (CASOutcome, error) {
 					endpoint.casPublisher = nil
 					if outcome, err := PublishCAS(endpoint, parent, commit); outcome != CASLanded {
@@ -64,11 +63,10 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 				})
 			}
 			dirs := map[string]bool{}
-			var warnings bytes.Buffer
-			e.durabilityWarnings = &warnings
+			var detail string
 			e.syncDirectory = func(path string) error {
 				dirs[path] = true
-				if mode == "doubt" {
+				if strings.HasSuffix(mode, "doubt") {
 					return fmt.Errorf("injected sync error")
 				}
 				return nil
@@ -76,7 +74,8 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 			result, err := Publish(e, PublishRequest{Opid: "small-update", Machine: "seat", Lineage: "test", Intent: testIntentFor("open"), Message: "record payload", Mutate: func(string) ([]Change, error) {
 				return []Change{{Path: "ledger-payload", Content: []byte("payload\n")}}, nil
 			}})
-			if mode == "recovered" {
+			detail = result.DurabilityWarning
+			if strings.HasPrefix(mode, "recovered") {
 				if err == nil || len(dirs) != 0 {
 					t.Fatal("lost acknowledgement should await recovery")
 				}
@@ -84,6 +83,7 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 				if err != nil || len(reports) != 1 || reports[0].Action != ActionConfirm {
 					t.Fatal(reports, err)
 				}
+				detail = reports[0].Detail
 			} else if err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("%+v %v", result, err)
 			}
@@ -96,14 +96,14 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 				t.Fatal("receiving ledger differs")
 			}
 			if runtime.GOOS != "linux" || mode == "external" || mode == "uncreated" || mode == "copied" {
-				if len(dirs) != 0 || warnings.Len() != 0 {
-					t.Fatal(dirs, warnings.String())
+				if len(dirs) != 0 || strings.Contains(detail, "durability in doubt") {
+					t.Fatal(dirs, detail)
 				}
 				return
 			}
-			if mode == "doubt" {
-				if strings.Count(warnings.String(), "published; durability in doubt") != 1 || !strings.Contains(warnings.String(), root) {
-					t.Fatal(warnings.String())
+			if strings.HasSuffix(mode, "doubt") {
+				if strings.Count(detail, "published; durability in doubt") != 1 || !strings.Contains(detail, dest) {
+					t.Fatal(detail)
 				}
 				return
 			}

@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,9 +67,8 @@ type Endpoint struct {
 	// casPublisher is the publication boundary this endpoint's
 	// compare-and-swap goes through; nil is the plain lease push. Set only
 	// through WithCASPublisher.
-	casPublisher       CASPublisher
-	syncDirectory      func(string) error
-	durabilityWarnings io.Writer
+	casPublisher  CASPublisher
+	syncDirectory func(string) error
 }
 
 // CASPublisher publishes one ledger commit onto tip in place of the plain
@@ -666,10 +664,11 @@ func hintConfirmedWaiters(root string, req PublishRequest, publicationID, bootID
 
 // PublishResult is the transaction's terminal classification.
 type PublishResult struct {
-	Outcome Outcome
-	Tip     string // the canonical tip this outcome was decided on
-	Commit  string // our transaction commit, when one was built
-	Detail  string
+	Outcome           Outcome
+	Tip               string // the canonical tip this outcome was decided on
+	Commit            string // our transaction commit, when one was built
+	Detail            string
+	DurabilityWarning string
 	// Code is a rejected outcome's refusal code, when it has one: data for
 	// --verbose, --json and records, never the default words.
 	Code       string
@@ -818,7 +817,7 @@ func intentsEqual(left, right Intent) bool {
 // recovery takes over a dead owner's entry then runs the same loop
 // from the stored intent (recovery completes, it does not
 // kill).
-func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
+func runTransaction(e Endpoint, req PublishRequest) (result PublishResult, err error) {
 	deadline := req.Deadline
 	if deadline <= 0 {
 		deadline = DefaultPublishDeadline
@@ -947,7 +946,8 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		outcome, pushErr := PublishCAS(e, tip, commit)
 		switch outcome {
 		case CASLanded:
-			e.syncPublished(commit, "")
+			warning := e.syncPublished(commit, "")
+			defer func() { result.DurabilityWarning = warning }()
 			// The postcondition, not the push's exit code, is the
 			// truth: refetch and find OUR trailer before
 			// anything terminalizes.

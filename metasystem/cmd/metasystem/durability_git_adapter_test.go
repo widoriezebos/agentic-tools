@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -53,5 +56,35 @@ func TestGitAdapterSystemDurability(t *testing.T) {
 		if err := os.Chmod(cfg, 0644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// The goal owner commits to the fixture repository. Git cannot find that
+// commit in the owned directory, so the real barrier reports a doubt.
+func TestGitAdapterPageReceivesPublicationDoubt(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("the directory barrier runs on Linux")
+	}
+	bed := newIntentBed(t, false, nil)
+	bed.lineage = "m1"
+	bed.addGoal(queuedIntentGoal("queued-goal", 1))
+	root := bed.root()
+	if _, err := systemSetupGit(t, root, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	const id = "01J5X0000000000000000000K0"
+	setupCLIWrite(t, filepath.Join(root, "artifacts", "agents", "ui", "launches", id+".json"),
+		fmt.Sprintf(`{"launch":%q,"destination":%q,"created":{"destination":true}}`, id, root), 0644)
+	cmd, args, _ := resolveIntentArgv([]string{"goal", "edit", "queued-goal", "--next", "Measure it.", "--json"})
+	before := bed.publications()
+	answer, err := verbAnswer(cmd.name, cmd, args, func(cmd intentCommand, args []string, stdout, stderr io.Writer) {
+		if code := runIntentIn(cmd, args, stdout, stderr, root, bed.owners()); code != 0 {
+			t.Errorf("goal edit exited %d", code)
+		}
+	})
+	if err != nil || answer.Outcome != intentConfirmed || strings.Count(answer.Summary, "published; durability in doubt for "+filepath.Join(root, ".git")) != 1 ||
+		bed.publications() != before+1 || bed.goalFile("queued-goal").NextStep != "Measure it." {
+		t.Fatalf("captured goal edit: %+v, %v", answer, err)
 	}
 }

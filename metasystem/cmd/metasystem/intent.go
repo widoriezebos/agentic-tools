@@ -637,15 +637,16 @@ func defaultIntentOwners() intentOwners {
 // intentInvocation is one public command run: its own output streams, the
 // directory it was started in, and the one state root it selected.
 type intentInvocation struct {
-	command   intentCommand
-	input     intentInput
-	raw       []string
-	stdout    io.Writer
-	stderr    io.Writer
-	cwd       string
-	owners    intentOwners
-	layout    stateroot.Layout
-	stateRoot string
+	command            intentCommand
+	input              intentInput
+	raw                []string
+	stdout             io.Writer
+	stderr             io.Writer
+	cwd                string
+	owners             intentOwners
+	layout             stateroot.Layout
+	stateRoot          string
+	durabilityWarnings []string
 	// claimPreparation retains preparation facts when an acquired claim lets
 	// work proceed despite another reservation awaiting adoption.
 	claimPreparation *up.Result
@@ -890,6 +891,18 @@ type intentResult struct {
 	headline *string
 }
 
+func (inv *intentInvocation) noteOwnerDurability(report *ownerReport) {
+	if report.result != nil {
+		inv.noteDurability(report.result.DurabilityWarning)
+	}
+}
+
+func (inv *intentInvocation) noteDurability(warning string) {
+	if warning != "" {
+		inv.durabilityWarnings = append(inv.durabilityWarnings, warning)
+	}
+}
+
 func (inv *intentInvocation) render(result intentResult) int {
 	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "work wait" || inv.command.name == "goal budget" || inv.command.name == "machine revive" || inv.command.name == "goal approve") && inv.input.has("answer") {
 		result = inv.answerProgress(result)
@@ -931,6 +944,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 		// is next with an empty argv, so a reader shows both lines too.
 		if result.Next == nil && result.nextReason != "" {
 			result.Next = &intentNext{Argv: []string{}, Reason: result.nextReason}
+		}
+		for _, warning := range inv.durabilityWarnings {
+			result.Summary += "\n" + warning
 		}
 		encoded, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
@@ -980,6 +996,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 	}
 	if len(result.problems) > 0 {
 		page.Section("Problems", "").Text(strings.Join(result.problems, "\n"))
+	}
+	for _, warning := range inv.durabilityWarnings {
+		page.Section("", "").Text(warning)
 	}
 	_, _ = io.WriteString(stream, page.String())
 	return code
@@ -1176,7 +1195,7 @@ func (d syncRequestDependencies) publish(res goal.PublishResult, err error) int 
 	if err != nil {
 		// A landed act keeps its publication even when later work failed.
 		d.report.failure = err
-		if publicationLanded(res) {
+		if publicationLanded(res) || res.DurabilityWarning != "" {
 			d.report.result = &res
 		}
 		return 1
@@ -1355,7 +1374,11 @@ func partialResult(report *ownerReport, code int, confirmed intentResult, lines 
 }
 
 func ownerPublication(res goal.PublishResult) map[string]any {
-	return publicationRecord(res)
+	record := map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail}
+	if res.Code != "" {
+		record["code"] = res.Code
+	}
+	return record
 }
 
 // shellWords reads back a command line rendered by shellCommand.

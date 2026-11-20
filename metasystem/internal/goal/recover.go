@@ -137,8 +137,10 @@ func recoverEntry(e Endpoint, tip string, entry Entry, policy SensitiveRecoveryP
 	}
 	action := ClassifyRecovery(entry, post, OwnerAlive(entry), callerIsOwner(entry), PastDeadline(entry, timeNowUTC()))
 	report := RecoveryReport{Opid: entry.Opid, Action: action}
+	var warning string
 	if action == ActionConfirm || action == ActionConfirmLate {
-		e.syncPublished(tip, entry.Opid)
+		warning = e.syncPublished(tip, entry.Opid)
+		report.Detail = warning
 	}
 	switch action {
 	case ActionConfirm:
@@ -197,6 +199,9 @@ func recoverEntry(e Endpoint, tip string, entry Entry, policy SensitiveRecoveryP
 		report.Detail = "expired at its own deadline"
 	default:
 		report.Detail = "nothing to do"
+	}
+	if warning != "" {
+		report.Detail += "\n" + warning
 	}
 	return report, nil
 }
@@ -290,7 +295,11 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 	if err != nil {
 		return "", err
 	}
-	return "completed from the stored intent: " + string(res.Outcome), nil
+	detail := "completed from the stored intent: " + string(res.Outcome)
+	if res.DurabilityWarning != "" {
+		detail += "\n" + res.DurabilityWarning
+	}
+	return detail, nil
 }
 
 // recoveryHumanBoundaryRequest leaves ordinary replay unchanged. For the

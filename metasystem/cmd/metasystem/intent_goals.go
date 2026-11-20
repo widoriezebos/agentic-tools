@@ -163,6 +163,7 @@ func (inv *intentInvocation) ownerCall(targets []intentTarget, run func(syncRequ
 	dependencies := inv.owners.dependencies
 	dependencies.report = report
 	code := run(dependencies)
+	inv.noteOwnerDurability(report)
 	var confirmed intentResult
 	if code == 0 && report.result != nil && report.result.Outcome == goal.OutcomeConfirmed && report.refusal == nil {
 		confirmed = after()

@@ -12,14 +12,14 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/durable"
 )
 
-func (e Endpoint) syncPublished(commit, recoveredOp string) {
+func (e Endpoint) syncPublished(commit, recoveredOp string) string {
 	home, err := board.Home()
 	if err != nil {
-		return
+		return ""
 	}
 	stores, _ := ownedStores(home, e.Root)
 	if len(stores) == 0 {
-		return
+		return ""
 	}
 	ref := e.Branch
 	receivers := []string{e.Root}
@@ -32,6 +32,7 @@ func (e Endpoint) syncPublished(commit, recoveredOp string) {
 	if syncDir == nil {
 		syncDir = durable.SyncDir
 	}
+	var warnings []string
 	for _, receiver := range receivers {
 		common := commonStore(receiver)
 		if _, ok := stores[common]; !ok {
@@ -39,19 +40,16 @@ func (e Endpoint) syncPublished(commit, recoveredOp string) {
 		}
 		delete(stores, common)
 		if err := syncLedgerNames(common, ref, commit, recoveredOp, syncDir); err != nil {
-			w := e.durabilityWarnings
-			if w == nil {
-				w = os.Stderr
-			}
-			fmt.Fprintf(w, "%s published; durability in doubt for %s: %v\n", ref, common, err)
+			warnings = append(warnings, fmt.Sprintf("%s published; durability in doubt for %s: %v", ref, common, err))
 		}
 	}
+	return strings.Join(warnings, "\n")
 }
 
 func syncLedgerNames(common, ref, commit, recoveredOp string, syncDir func(string) error) error {
 	if recoveredOp != "" {
 		var err error
-		commit, err = commitWithTrailer(common, commit, "Goal-Transaction", recoveredOp)
+		commit, err = commitWithTrailer(common, ref, "Goal-Transaction", recoveredOp)
 		if err != nil {
 			return err
 		}

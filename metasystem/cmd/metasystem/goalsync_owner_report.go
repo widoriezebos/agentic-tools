@@ -63,7 +63,9 @@ func (d syncRequestDependencies) outcomeBeforeRefusal(res goal.PublishResult) {
 // seat names with --under, or keeps both for the public result.
 func (d syncRequestDependencies) publishGrant(res goal.PublishResult, entry string) int {
 	if d.report == nil {
-		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "entry": entry, "detail": res.Detail})
+		record := publicationRecord(res)
+		record["entry"] = entry
+		writeJSONLine(d.outStream(), d.errStream(), record)
 		if res.Outcome != goal.OutcomeConfirmed {
 			return 1
 		}
@@ -76,9 +78,9 @@ func (d syncRequestDependencies) publishGrant(res goal.PublishResult, entry stri
 // publicationRecord is an owner's publication as its JSON line and --json
 // data carry it: the refusal code beside the words, when it has one.
 func publicationRecord(res goal.PublishResult) map[string]any {
-	record := map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail}
-	if res.Code != "" {
-		record["code"] = res.Code
+	record := ownerPublication(res)
+	if res.DurabilityWarning != "" {
+		record["durabilityWarning"] = res.DurabilityWarning
 	}
 	return record
 }
