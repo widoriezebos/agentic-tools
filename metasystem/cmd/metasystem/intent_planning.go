@@ -2028,7 +2028,6 @@ func runIntentGrant(inv *intentInvocation) int {
 	dependencies := inv.owners.dependencies
 	dependencies.report = report
 	code := runGoalGrantWithInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies)
-	inv.noteOwnerDurability(report)
 	result := ownerResult(report, code, intentResult{Summary: "granted " + report.entry,
 		Data: map[string]any{"grant": report.entry, "tiers": inv.input.text("tiers"), "acts": verbs, "until": inv.input.text("until")}})
 	if report.entry != "" {

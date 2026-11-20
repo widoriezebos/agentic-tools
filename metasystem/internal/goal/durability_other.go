@@ -2,4 +2,4 @@
 
 package goal
 
-func (Endpoint) syncPublished(commit, recoveredOp string) string { return "" }
+func (Endpoint) syncPublished(commit, recoveredOp string) {}

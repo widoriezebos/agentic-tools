@@ -134,7 +134,6 @@ func (owners laneVerbOwners) landingFlakeRecorder(installation string) func(plai
 		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
 			goal.FlakeRecordArgs{ObserveOnly: true, Unit: f.Unit, Tests: f.Tests, Surfaces: f.Surfaces, Commit: f.Commit, Tree: f.Tree, Attempt: f.Attempt, LogPath: f.Log, Load: f.Load, Repeat: f.Repeat, Where: f.Where, Outputs: f.Outputs, RepeatOutputs: f.RepeatOutputs,
 				Rerun: goal.TrunkRedRerun{Attempt: f.RepeatAttempt, LogPath: f.RepeatLog}})
-		owners.notePublication(result.Publish)
 		if err != nil {
 			return plain.FlakeRecorded{}, err
 		}
@@ -171,7 +170,6 @@ func (owners laneVerbOwners) landingFlakeFixer(installation string) func(goal.Fl
 		}
 		ulid := strings.ToUpper(fmt.Sprintf("%x", sha256.Sum256([]byte(f.Identity+"\x00fix\x00"+sighting)))[:26])
 		result, err := goal.RecordFlake(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: now}, goal.FlakeRecordArgs{Unit: f.TestUnit, Fix: &fix})
-		owners.notePublication(result.Publish)
 		if err == nil {
 			f.FixGoal, f.FixOpenedAt = result.FixGoal, result.FixOpenedAt
 		}

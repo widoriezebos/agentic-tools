@@ -70,7 +70,6 @@ type laneVerbOwners struct {
 	plainProve        plain.ProveSeams
 	settle            func(lane.Layout) (lane.Settlement, error)
 	restartSupervisor func(string) error
-	durabilityNotice  func(string)
 	mainEndpoint      func(string) (goal.Endpoint, error)
 	recordFlake       func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
 	recordMain        func(goal.VerbRequest, goal.TrunkRedRecordArgs) (goal.PublishResult, error)
@@ -87,7 +86,6 @@ type laneVerbOwners struct {
 
 func (inv *intentInvocation) landing() laneVerbOwners {
 	owners := inv.owners.landing
-	owners.durabilityNotice = inv.noteDurability
 	if owners.home == nil {
 		owners.home = batchowner.LandingLaneHome
 	}
@@ -152,11 +150,7 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		}
 	}
 	if owners.keeper == nil {
-		owners.keeper = func(home, root string) lane.AgentKeeper {
-			agent := newLandingAgent()
-			agent.durabilityNotice = inv.noteDurability
-			return newLandingAgentKeeper(root, home, agent)
-		}
+		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
 	}
 	if owners.settle == nil {
 		agent := newLandingAgent()

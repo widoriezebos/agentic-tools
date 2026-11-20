@@ -63,7 +63,6 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 // landingAgent starts, finds and reaps the landing agent through the launch
 // manager the work verbs use.
 type landingAgent struct {
-	durabilityNotice   func(string)
 	residentObserver   bool
 	engineHasProofSlot func() bool
 	// proofEffects are the lane Git and process boundaries; zero uses the host.
@@ -269,7 +268,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 
 	var keeper lane.AgentKeeper
 	mainProof := func(record lane.Record) plain.ProveSeams {
-		owners := laneVerbOwners{durabilityNotice: agent.durabilityNotice, plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
+		owners := laneVerbOwners{plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
 		proof := owners.proveSeams(record.Install)
 		proof.BatchMayContinue = func() bool {
 			state, err := lane.ReadAgentState(home)
@@ -332,7 +331,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		Helmed:       func(root string) bool { return helm.Active(root).Active },
 		Continuation: func(record lane.Record) string { return plain.PersonBatchContinuation(record.Install, record, home) },
 		Clock: func(record lane.Record, prepare func(lane.Record) error) (string, error) {
-			proof := (laneVerbOwners{durabilityNotice: agent.durabilityNotice, plainProve: seams}).proveSeams(record.Install)
+			proof := (laneVerbOwners{plainProve: seams}).proveSeams(record.Install)
 			proof.FenceCheck = func() error {
 				current, err := seams.Lane()
 				if err == nil && (current != record || seams.TimerHeld()) {
@@ -362,7 +361,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			effects := agent.proofEffects
 			effects.Now = agent.now
 			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
-			owners := laneVerbOwners{durabilityNotice: agent.durabilityNotice, plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
+			owners := laneVerbOwners{plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
 			proof := mainProof(record)
 			restartErr := plain.RestartDeployedProof(record.Install, record.Root, proof)
 			if restartErr != nil {
@@ -503,7 +502,7 @@ func configureLandingRunner(repo, home string, agent landingAgent, cfg *steward.
 		return problem
 	}
 
-	seams := (laneVerbOwners{durabilityNotice: agent.durabilityNotice, plainProve: agent.proofEffects}).proveSeams(repo)
+	seams := (laneVerbOwners{plainProve: agent.proofEffects}).proveSeams(repo)
 	seams.Machine = agent.machine
 	seams.Steward = landingAgentStewardEffects(home, agent, keeper)
 	tick := landingStewardTick(keeper.Run, func() (plain.StewardRun, error) {
@@ -538,7 +537,7 @@ func configureLandingRunner(repo, home string, agent landingAgent, cfg *steward.
 func landingAgentStewardEffects(home string, agent landingAgent, keeper lane.AgentKeeper) *plain.StewardEffects {
 	agent.home = home
 	return &plain.StewardEffects{Owner: agent.probe,
-		FlakeFix: (laneVerbOwners{durabilityNotice: agent.durabilityNotice}).landingFlakeFixer(keeper.Self),
+		FlakeFix: (laneVerbOwners{}).landingFlakeFixer(keeper.Self),
 		Settle: func(record lane.Record) (string, error) {
 			layout, err := record.Layout()
 			if err != nil {

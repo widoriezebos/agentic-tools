@@ -136,9 +136,6 @@ func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error)
 // process-stream default exists below the edge, so a carry ask never lands in
 // a parallel test's capture of os.Stderr.
 func printCarryMutationTo(stdout, stderr io.Writer, res goal.PublishResult, detail string, err error) int {
-	if res.DurabilityWarning != "" && (err != nil || detail != "") {
-		fmt.Fprintln(stderr, res.DurabilityWarning)
-	}
 	if err != nil {
 		var ask *goal.CarryAskError
 		if errors.As(err, &ask) {
@@ -818,9 +815,6 @@ func classifyGoalAuthorityFirstWithFacts(verb string, f *syncFlags, facts goalAu
 
 func writeSyncResult(stdout, stderr io.Writer, res goal.PublishResult, err error) int {
 	if err != nil {
-		if res.DurabilityWarning != "" {
-			fmt.Fprintln(stderr, res.DurabilityWarning)
-		}
 		fmt.Fprintln(stderr, err)
 		return 1
 	}

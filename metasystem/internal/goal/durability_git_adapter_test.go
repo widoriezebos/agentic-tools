@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,7 +64,8 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 				})
 			}
 			dirs := map[string]bool{}
-			var detail string
+			var warnings bytes.Buffer
+			e.durabilityWarnings = &warnings
 			e.syncDirectory = func(path string) error {
 				dirs[path] = true
 				if strings.HasSuffix(mode, "doubt") {
@@ -74,7 +76,6 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 			result, err := Publish(e, PublishRequest{Opid: "small-update", Machine: "seat", Lineage: "test", Intent: testIntentFor("open"), Message: "record payload", Mutate: func(string) ([]Change, error) {
 				return []Change{{Path: "ledger-payload", Content: []byte("payload\n")}}, nil
 			}})
-			detail = result.DurabilityWarning
 			if strings.HasPrefix(mode, "recovered") {
 				if err == nil || len(dirs) != 0 {
 					t.Fatal("lost acknowledgement should await recovery")
@@ -83,7 +84,6 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 				if err != nil || len(reports) != 1 || reports[0].Action != ActionConfirm {
 					t.Fatal(reports, err)
 				}
-				detail = reports[0].Detail
 			} else if err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("%+v %v", result, err)
 			}
@@ -96,16 +96,19 @@ func TestLedgerDurabilityGitAdapter(t *testing.T) {
 				t.Fatal("receiving ledger differs")
 			}
 			if runtime.GOOS != "linux" || mode == "external" || mode == "uncreated" || mode == "copied" {
-				if len(dirs) != 0 || strings.Contains(detail, "durability in doubt") {
-					t.Fatal(dirs, detail)
+				if len(dirs) != 0 || warnings.Len() != 0 {
+					t.Fatal(dirs, warnings.String())
 				}
 				return
 			}
 			if strings.HasSuffix(mode, "doubt") {
-				if strings.Count(detail, "published; durability in doubt") != 1 || !strings.Contains(detail, dest) {
-					t.Fatal(detail)
+				if strings.Count(warnings.String(), "published; durability in doubt") != 1 || !strings.Contains(warnings.String(), dest) {
+					t.Fatal(warnings.String())
 				}
 				return
+			}
+			if warnings.Len() != 0 {
+				t.Fatal(warnings.String())
 			}
 			common := mustGit(t, dest, "rev-parse", "--path-format=absolute", "--git-common-dir")
 			want := []string{".", "objects", filepath.Dir(ref), "refs", "refs/heads"}

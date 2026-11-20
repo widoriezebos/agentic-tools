@@ -1,10 +1,12 @@
 package httpd
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +58,12 @@ func edgeEndpoint(root string) goal.Endpoint {
 
 func edgeLedger(t *testing.T) string {
 	t.Helper()
+	root, _ := edgeLedgerWithOrigin(t)
+	return root
+}
+
+func edgeLedgerWithOrigin(t *testing.T) (string, string) {
+	t.Helper()
 	origin := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, t.TempDir(), "init", "-q", "--bare", "-b", "main", origin)
 	seed := filepath.Join(t.TempDir(), "seed")
@@ -95,7 +103,7 @@ func edgeLedger(t *testing.T) string {
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("seeding the ledger: %+v %v", result, err)
 	}
-	return root
+	return root, origin
 }
 
 // openBlockedGoal plants the one shape these tests are about: a live goal,
@@ -392,4 +400,30 @@ func TestAnEarlyUnblockIsRefusedWhenNoHumanIsBehindTheAct(t *testing.T) {
 	testutil.Expect(t, "the engine's own sentence",
 		strings.Contains(actRefusal(t, response).Error, "early lift and a human act"), true)
 	testutil.Expect(t, "the ledger is untouched", acceptedTip(t, root), before)
+}
+
+// The bare receiver uses loose refs. The sync of the device fails after Git
+// accepts the new goal, so the real HTTP route must still answer success.
+func TestGitAdapterOpenRouteWithDurabilityDoubt(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("the directory barrier runs on Linux")
+	}
+	root, receiver := edgeLedgerWithOrigin(t)
+	const launch = "01J5X0000000000000000000K0"
+	writeFixture(t, filepath.Join(root, "artifacts", "agents", "ui", "launches", launch+".json"),
+		fmt.Sprintf(`{"launch":%q,"destination":%q,"created":{"destination":true}}`, launch, receiver), 0644)
+	if err := os.Symlink(os.DevNull, filepath.Join(receiver, "reftable")); err != nil {
+		t.Fatal(err)
+	}
+	hand, err := act.Fixture(root, "Wido", "terminal-fixture", edgeNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := (&acted{authorized: proven()}).acting()
+	info.Open = func(_ *session.Session, opened act.Opened) error { return hand.Open(opened) }
+	response := post(t, New(info, loopback(), testBundle()), goalsPath, wholeIntake, nil)
+	testutil.Require(t, "open after a sync error", response.Code, http.StatusOK)
+	testutil.Expect(t, "response is the backlog", decodeBacklog(t, response.Result())["schemaVersion"] != nil, true)
+	testutil.Expect(t, "published intent", readGoalFile(t, root, "ui-new").Intent, "The board opens a goal.")
 }

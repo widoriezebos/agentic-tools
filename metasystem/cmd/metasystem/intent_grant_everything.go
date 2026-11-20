@@ -160,7 +160,6 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 	dependencies := inv.owners.dependencies
 	dependencies.report = report
 	code := runGoalGrantGeneralWithInputs(args, grant, inv.owners.prove, inv.owners.commandNow, dependencies)
-	inv.noteOwnerDurability(report)
 	local := end.In(zone).Format("15:04 MST (2006-01-02)")
 	by := strings.TrimPrefix(actorValue(actor, "--by"), "human:")
 	session, scope := "the main session", ""

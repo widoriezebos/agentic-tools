@@ -1555,7 +1555,6 @@ func runIntentEnroll(inv *intentInvocation) int {
 	dependencies.report = report
 	args := append([]string{"--root", inv.stateRoot, "--by", name}, inv.forward("lineage")...)
 	code := runGoalEnrollTerminalWithDependencies(args, inv.owners.processes.enroll, inv.owners.commandNow, dependencies)
-	inv.noteOwnerDurability(report)
 	targets := []intentTarget{{Kind: "terminal", ID: name}}
 	switch {
 	case report.refusal != nil && report.value != nil:
