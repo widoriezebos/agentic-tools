@@ -95,6 +95,7 @@ type RefMove struct {
 }
 
 type UnitRound struct {
+	ReadSourceRoot  string `json:"readSourceRoot,omitempty"`
 	JoiningOutcome  string `json:"joiningOutcome,omitempty"`
 	ReadStore       string `json:"readStore,omitempty"`
 	ReadCheckout    string `json:"readCheckout,omitempty"`
@@ -877,7 +878,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 		for _, step := range round.Steps[readStart:] {
-			if len(step.Moved) > 0 || (step.State == StepPassed && (step.ExaminedTree != round.Result.Tree || step.ExaminedBase != record.Base)) || observed.TreeID != round.Result.Tree {
+			if len(step.Moved) > 0 || (step.State == StepPassed && (step.ExaminedTree != round.Result.Tree || step.ExaminedBase != record.Base)) || observed.TreeID != round.Result.Tree || strings.TrimSpace(observed.Head) != round.Result.Parent {
 				names := strings.TrimPrefix(step.Reason, "the check's inputs changed during the step: ")
 				if names == "" {
 					names = "the frozen read tree"

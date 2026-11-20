@@ -512,6 +512,7 @@ func TestIntentUnitLaunchAccountingUnreadableCollection(t *testing.T) {
 // Both executions are charged even though only one goal job is available.
 // Exercise the reservation, the physical launches and reconciliation through work.
 func TestRoundCheckAndReadSpendAtOneJob(t *testing.T) {
+	t.Parallel()
 	for _, live := range []bool{false, true} {
 		t.Run(fmt.Sprintf("live-%t", live), func(t *testing.T) {
 			bed := newWorkBedWith(t, func(file *goal.GoalFile) {
@@ -547,6 +548,17 @@ func TestRoundCheckAndReadSpendAtOneJob(t *testing.T) {
 			budget := project()
 			if budget.ActiveJobs != 1 || budget.Attempts != 1 || live && budget.OpenCapMinutes != 240 {
 				t.Fatalf("overlap: attempts=%d jobs=%d cap=%d", budget.Attempts, budget.ActiveJobs, budget.OpenCapMinutes)
+			}
+			if live {
+				code, status, _ := bed.work("work", "status", bed.id, "--work", "paired")
+				rows, _ := resultData(t, status)["work"].([]any)
+				if code != 0 || len(rows) != 1 {
+					t.Fatal("work status could not find the overlapping unit")
+				}
+				row, _ := rows[0].(map[string]any)
+				if row["stage"] != "running "+proof.Name+", "+read.Name {
+					t.Fatalf("work status stage: %v", row["stage"])
+				}
 			}
 			probe.dead = true
 			_, err = bed.manager.Store.Update(proof.LaunchID, func(r *launch.Record) error {

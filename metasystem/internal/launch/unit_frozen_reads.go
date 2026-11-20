@@ -79,8 +79,8 @@ func (runner *UnitRunner) frozenReadCheckout(record *UnitRunRecord, round *UnitR
 	}
 	// Resuming engines parse the retained run plan strictly. Install its
 	// compatibility guard before any launch can enter the paired phase.
-	retained, err := readUnitPlan(record.Plan, record.PlanDirectory)
-	if err != nil {
+	var retained UnitPlan
+	if err := readJSONFile(record.Plan, &retained); err != nil {
 		return "", err
 	}
 	if !retained.PairedReads {
@@ -90,6 +90,7 @@ func (runner *UnitRunner) frozenReadCheckout(record *UnitRunRecord, round *UnitR
 		}
 	}
 	round.ReadStore, round.ReadCheckout, round.CheckoutRemoved = store, filepath.Join(clone, prefix), false
+	round.ReadSourceRoot = root
 	if err := runner.save(*record); err != nil {
 		return "", err
 	}
@@ -246,14 +247,49 @@ func (sequence readSequence) startReadyReads(first int) (bool, error) {
 	return false, nil
 }
 
+func relocateReadPath(path, root, target string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || !filepath.IsLocal(rel) {
+		return path
+	}
+	return filepath.Join(target, rel)
+}
+
 func (runner *UnitRunner) prepareRoundReadBrief(record *UnitRunRecord, round *UnitRound, plan UnitPlan, sequence *readSequence) error {
 	packet, err := runner.warmRead(*record, *round)
 	if err != nil {
 		return err
 	}
-	brief, err := os.ReadFile(plan.Read.Brief)
+	source, clone := round.ReadSourceRoot, filepath.Join(round.ReadStore, "checkout")
+	if source == "" {
+		source, clone = plan.Worktree, round.ReadCheckout
+	}
+	var paths []string
+	if round.ReadStore != "" {
+		// Explicit auxiliary inputs can live outside the Git subject. For a
+		// file present in the frozen tree, both its bytes and the brief's path
+		// must come from that tree, even when the check rewrites the source.
+		freeze := func(path string) string {
+			copy := relocateReadPath(path, source, clone)
+			if copy != path {
+				if info, err := os.Stat(copy); err == nil && info.Mode().IsRegular() {
+					paths = append(paths, path, copy)
+					return copy
+				}
+			}
+			return path
+		}
+		sequence.spec.Brief = freeze(plan.Read.Brief)
+		sequence.spec.Inputs = slices.Clone(sequence.spec.Inputs)
+		for i, path := range sequence.spec.Inputs {
+			sequence.spec.Inputs[i] = freeze(path)
+		}
+	}
+	brief, err := os.ReadFile(sequence.spec.Brief)
 	if err != nil {
-		return err
+		// The step driver retains and classifies an unreadable input.
+		// An existing launch already owns its copy. Neither blocks the proof.
+		return nil
 	}
 	// The prepared-copy field in an existing unit plan names its original
 	// worktree. Give the reader the path it actually owns for this round.
@@ -262,11 +298,9 @@ func (runner *UnitRunner) prepareRoundReadBrief(record *UnitRunRecord, round *Un
 	// outputs outside both trees and let normal launch collection retain them.
 	if round.ReadStore != "" {
 		sequence.spec.Outputs = slices.Clone(sequence.spec.Outputs)
-		var paths []string
 		for i, path := range sequence.spec.Outputs {
-			rel, err := filepath.Rel(plan.Worktree, path)
-			if err == nil && filepath.IsLocal(rel) {
-				dest := filepath.Join(round.ReadStore, "outputs", rel)
+			dest := relocateReadPath(path, source, filepath.Join(round.ReadStore, "outputs"))
+			if dest != path {
 				paths = append(paths, path, dest)
 				sequence.spec.Outputs[i] = dest
 			}
