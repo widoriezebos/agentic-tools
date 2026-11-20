@@ -175,7 +175,7 @@ func init() {
 		goalRepeatWitness(nil, nil, "is already released",
 			"goal", "release", bedGoal, "--reason", "handing it back", "--lineage", "m1"))
 	stateful("goal accept-risk", "the same person's acceptance of the same finding is success with no record",
-		TestQ1AcceptRiskIdempotencyAtEnrolledTerminal)
+		witnessAcceptRiskAtEnrolledTerminal)
 	stateful("goal pin", "the pin the goal already has is success with no record",
 		goalRepeatWitness(nil, nil, "already reads exactly that",
 			"goal", "pin", bedGoal, "mac-cli"))

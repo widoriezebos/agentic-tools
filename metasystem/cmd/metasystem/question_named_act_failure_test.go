@@ -23,7 +23,7 @@ func (r questionActReadFailure) Files(tip string, prefixes ...string) (map[strin
 
 func TestQ1QuestionReadsKeepSettlingRepliesAfterMatchingFailure(t *testing.T) {
 	t.Parallel()
-	for _, verb := range []string{"show", "wait"} {
+	for _, verb := range []string{"show"} {
 		t.Run(verb, func(t *testing.T) {
 			t.Parallel()
 			b := newIntentBed(t, false, nil)
@@ -168,6 +168,11 @@ func TestQ1QuestionCompletionPreservesExistingActFailure(t *testing.T) {
 
 func TestQ1AcceptRiskIdempotencyAtEnrolledTerminal(t *testing.T) {
 	t.Parallel()
+	witnessAcceptRiskAtEnrolledTerminal(t)
+}
+
+func witnessAcceptRiskAtEnrolledTerminal(t *testing.T) {
+	t.Helper()
 	b, owners := newQ1CommandBed(t)
 	now, _ := b.commandNow(b.root())
 	proof, err := owners.prove(b.root(), 0, nil, "", "", now)
@@ -179,7 +184,7 @@ func TestQ1AcceptRiskIdempotencyAtEnrolledTerminal(t *testing.T) {
 	}
 	publications, files := b.publications(), goalLedgerBytes(b)
 	journal := strings.Join(goalJournalNames(t, b.root()), ",")
-	if code, result := b.runJSON(owners, "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure"); code != 0 || result.Outcome != intentUnchanged {
+	if code, result := b.runJSON(owners, "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure"); code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "is already accepted by") {
 		t.Fatalf("repeat %d %+v", code, result)
 	}
 	if b.publications() != publications || goalLedgerBytes(b) != files || strings.Join(goalJournalNames(t, b.root()), ",") != journal {

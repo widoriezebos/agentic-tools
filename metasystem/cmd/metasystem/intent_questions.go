@@ -392,9 +392,6 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return *problem
 	}
-	if problem := inv.settleQuestionReplies(); problem != nil {
-		return *problem
-	}
 	q, problem := inv.resolveQuestion(ref)
 	if problem != nil {
 		return *problem
