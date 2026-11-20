@@ -109,7 +109,7 @@ func TestRunnerPendingFollowGetsNextFreeProofSlot(t *testing.T) {
 			return nil
 		}}
 		var waiting atomic.Bool
-		cfg.FollowWaitingForProof = waiting.Load
+		cfg.EngineHasProofSlot = waiting.Load
 		cfg.FollowDeployedEngine = func() (bool, bool, error) {
 			tries++
 			blocked := runnerNow().Before(proofEnds)

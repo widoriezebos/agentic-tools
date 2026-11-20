@@ -15,19 +15,20 @@ import (
 )
 
 type stewardRearmDependencies struct {
-	now      func() time.Time
-	facts    func() (landedRearmFacts, error)
-	boundary func() (bool, error)
-	lock     func() (func(), error)
-	attempts func() ([]proofrun.Attempt, error)
-	forward  func(string) error
-	rebuild  func() error
-	start    func() error
+	now              func() time.Time
+	facts            func() (landedRearmFacts, error)
+	boundary         func() (bool, error)
+	laneProofRunning func() (bool, error)
+	lock             func() (func(), error)
+	attempts         func() ([]proofrun.Attempt, error)
+	forward          func(string) error
+	rebuild          func() error
+	start            func() error
 }
 
 // RearmStewardAtBoundary uses the seat's own fetch and build. The replacement
 // up runs detached: the resident runner must exit before up can replace it.
-func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error)) (replaced bool, err error) {
+func RearmStewardAtBoundary(projectRoot string, boundary, laneProofRunning func() (bool, error)) (replaced bool, err error) {
 	defer func() {
 		if err != nil {
 			_ = steward.NoteRearmFailure(projectRoot, err, time.Now())
@@ -49,7 +50,9 @@ func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error)) (
 	if err != nil {
 		return false, nil
 	}
-	return rearmStewardWithDependencies(projectRoot, stewardBoundaryDependencies(ctx, projectRoot, prefix, boundary, steward.RearmOperations{Clock: landedRearmClock}))
+	deps := stewardBoundaryDependencies(ctx, projectRoot, prefix, boundary, steward.RearmOperations{Clock: landedRearmClock})
+	deps.laneProofRunning = laneProofRunning
+	return rearmStewardWithDependencies(projectRoot, deps)
 }
 
 func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string, boundary func() (bool, error), ops steward.RearmOperations) stewardRearmDependencies {
@@ -159,6 +162,11 @@ func rearmStewardWithDependencies(root string, deps stewardRearmDependencies) (r
 	for _, attempt := range attempts {
 		if attempt.Terminal == nil {
 			return false, nil
+		}
+	}
+	if deps.laneProofRunning != nil {
+		if alive, err := deps.laneProofRunning(); err != nil || alive {
+			return false, err
 		}
 	}
 	if err := deps.forward(facts.Tip); err != nil {

@@ -104,13 +104,6 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 		ctx = context.WithValue(ctx, landedRearmGitOutputContextKey{}, ops.Git)
 	}
 	clock, seconds := ops.Clock, ops.ResolveSeconds(root)
-	lane := plain.ProveSeams{}
-	if ops.Prober != nil {
-		lane.Alive = func(run plain.Running) bool {
-			ref, err := identity.ParseRef(run.Process)
-			return err == nil && identity.LiveRef(ops.Prober, ref) != identity.Dead
-		}
-	}
 	read := func(args ...string) (string, error) {
 		return landedRearmGitStep(ctx, clock, seconds, "engine-follow", root, args...)
 	}
@@ -158,7 +151,7 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 			}
 			return true, ""
 		},
-		LaneProofRunning: func() (bool, error) { _, _, alive, err := plain.ReadRunning(root, lane); return alive, err },
+		LaneProofRunning: func() (bool, error) { return EngineLaneProofRunning(root, ops.Prober) },
 		Lock:             func() (func(), error) { return landedRearmMutationLock(root) },
 		Forward: func(commit string) error {
 			prefix, err := read("rev-parse", "--show-prefix")
@@ -187,4 +180,17 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 		},
 		Start: stewardBoundaryDependencies(ctx, root, "", nil, steward.RearmOperations{Clock: landedRearmClock}).start,
 	}
+}
+
+// EngineLaneProofRunning checks the detached proof before a boundary engine change.
+func EngineLaneProofRunning(install string, prober identity.Prober) (bool, error) {
+	lane := plain.ProveSeams{}
+	if prober != nil {
+		lane.Alive = func(run plain.Running) bool {
+			ref, err := identity.ParseRef(run.Process)
+			return err == nil && identity.LiveRef(prober, ref) != identity.Dead
+		}
+	}
+	_, _, alive, err := plain.ReadRunning(install, lane)
+	return alive, err
 }

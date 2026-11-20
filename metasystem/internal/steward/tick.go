@@ -87,10 +87,10 @@ type TickConfig struct {
 	// r10 §3) and returns its outcome and line. The command layer supplies
 	// it; nil keeps nothing. RunLoop calls it once per cycle outside the
 	// helm, and between cycles every laneRecheck while the lane waits.
-	KeepLandingLane       func() lane.AgentRun
-	OwnsLandingLane       func() bool
-	ObserveMovedMain      func(held func() bool) error
-	FollowWaitingForProof func() bool
+	KeepLandingLane    func() lane.AgentRun
+	OwnsLandingLane    func() bool
+	ObserveMovedMain   func(held func() bool) error
+	EngineHasProofSlot func() bool
 	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
 	// A true result ends this runner so its replacement can take the lock.
 	RearmAtBoundary func() (bool, error)

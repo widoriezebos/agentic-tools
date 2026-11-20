@@ -64,7 +64,7 @@ func TestStewardBoundaryRefreshSkipsNonSourceInstallation(t *testing.T) {
 	changed, err := RearmStewardAtBoundary(t.TempDir(), func() (bool, error) {
 		t.Fatal("a non-source installation reached the unit boundary check")
 		return true, nil
-	})
+	}, nil)
 	if changed || err != nil {
 		t.Fatalf("non-source refresh: changed=%t err=%v", changed, err)
 	}
@@ -105,6 +105,12 @@ func TestStewardFetchRebuildAndRearmAtUnitBoundary(t *testing.T) {
 		t.Fatal("busy seat changed or deferral was hidden")
 	}
 	boundary = true
+	deps.laneProofRunning = func() (bool, error) { return true, nil }
+	acts = nil
+	if changed, err := rearmStewardWithDependencies(root, deps); err != nil || changed || !reflect.DeepEqual(acts, []string{"fetch"}) {
+		t.Fatalf("live lane proof: changed=%t err=%v acts=%v", changed, err, acts)
+	}
+	deps.laneProofRunning = func() (bool, error) { return false, nil }
 	acts = nil
 	if changed, err := rearmStewardWithDependencies(root, deps); err != nil || !changed || !reflect.DeepEqual(acts, []string{"fetch", "forward", "rebuild", "re-arm"}) || head != "main" || engine != "main" {
 		t.Fatalf("next tick at %s: %t %v acts=%v head=%s engine=%s", now, changed, err, acts, head, engine)

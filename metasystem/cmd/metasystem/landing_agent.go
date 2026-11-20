@@ -63,8 +63,8 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 // landingAgent starts, finds and reaps the landing agent through the launch
 // manager the work verbs use.
 type landingAgent struct {
-	residentObserver      bool
-	followWaitingForProof func() bool
+	residentObserver   bool
+	engineHasProofSlot func() bool
 	// proofEffects are the lane Git and process boundaries; zero uses the host.
 	proofEffects plain.ProveSeams
 	mainEndpoint func(string) (goal.Endpoint, error)
@@ -305,7 +305,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		hold := proof.MainHold
 		proof.MainHold = func() string {
 			if stopping() {
-				if agent.followWaitingForProof != nil && agent.followWaitingForProof() {
+				if agent.engineHasProofSlot != nil && agent.engineHasProofSlot() {
 					return landingstate.Phrase("main-update-next")
 				}
 				return landingstate.Phrase("main-handoff")
@@ -479,7 +479,7 @@ func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
 // recovery. Other callers of the keeper still recover main during their observation.
 func configureLandingRunner(repo, home string, agent landingAgent, cfg *steward.TickConfig) {
 	agent.residentObserver = true
-	agent.followWaitingForProof = cfg.FollowWaitingForProof
+	agent.engineHasProofSlot = cfg.EngineHasProofSlot
 	keeper := newLandingAgentKeeper(repo, home, agent)
 	cfg.OwnsLandingLane = func() bool {
 		current, present, err := lane.Read(home)

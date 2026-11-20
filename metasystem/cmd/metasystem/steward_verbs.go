@@ -33,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pattern"
@@ -364,7 +365,7 @@ type stewardRunDependencies struct {
 	ReviveLaunch     steward.LaunchSeam
 	FollowOperations steward.RearmOperations
 	FollowStart      func() error
-	RearmBoundary    func(string, func() (bool, error)) (bool, error)
+	RearmBoundary    func(string, func() (bool, error), func() (bool, error)) (bool, error)
 }
 
 func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
@@ -405,12 +406,39 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	tickConfig.Prober, tickConfig.Signal = dependencies.Prober, dependencies.Signal
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.RunnerClock = clock
+	home, homeErr := batchowner.LandingLaneHome()
+	var engineTurn atomic.Bool
+	tickConfig.EngineHasProofSlot = engineTurn.Load
+	reserveEngineTurn := func() (bool, error) {
+		// Set the hold before probing. An observer already past its hold check
+		// finishes admission under the install flock before we read running.json.
+		engineTurn.Store(true)
+		if homeErr != nil {
+			return testrun.EngineLaneProofRunning(*repo, dependencies.Prober)
+		}
+		record, present, err := lane.Read(home)
+		if err != nil {
+			return false, err
+		}
+		if !present || !lane.OwnsLane(*repo, record) {
+			return testrun.EngineLaneProofRunning(*repo, dependencies.Prober)
+		}
+		var alive bool
+		err = plain.WithLaneLock(record.Install, func() error {
+			var err error
+			alive, err = testrun.EngineLaneProofRunning(record.Install, dependencies.Prober)
+			return err
+		})
+		return alive, err
+	}
 	rearm := testrun.RearmStewardAtBoundary
 	if dependencies.RearmBoundary != nil {
 		rearm = dependencies.RearmBoundary
 	}
-	tickConfig.RearmAtBoundary = func() (bool, error) {
-		_, err := steward.VerifyIdentity(steward.RepoIdentityPath(*repo), *repo)
+	tickConfig.RearmAtBoundary = func() (replaced bool, err error) {
+		var waiting bool
+		defer func() { engineTurn.Store(replaced || waiting) }()
+		_, err = steward.VerifyIdentity(steward.RepoIdentityPath(*repo), *repo)
 		if err != nil {
 			return false, nil
 		}
@@ -427,6 +455,9 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 				now = clock.Now()
 			}
 			return steward.SeatAtUnitBoundary(*repo, home, now, tickConfig.Prober)
+		}, func() (bool, error) {
+			waiting, err = reserveEngineTurn()
+			return waiting, err
 		})
 	}
 	if followsDeployedEngine(*repo) {
@@ -445,33 +476,12 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 		if dependencies.FollowStart != nil {
 			follow.Start = dependencies.FollowStart
 		}
-		var waitingForProof atomic.Bool
-		tickConfig.FollowWaitingForProof = waitingForProof.Load
-		probe := follow.LaneProofRunning
-		follow.LaneProofRunning = func() (bool, error) {
-			if tickConfig.OwnsLandingLane == nil || !tickConfig.OwnsLandingLane() {
-				return probe()
-			}
-			var alive bool
-			// Bind the pending follow to the live proof while admission has the same
-			// install flock. Another main cannot take the slot between read and handoff.
-			err := plain.WithLaneLock(*repo, func() error {
-				var err error
-				alive, err = probe()
-				if alive {
-					waitingForProof.Store(true)
-				}
-				return err
-			})
-			return alive, err
-		}
+		follow.LaneProofRunning = reserveEngineTurn
 		tickConfig.FollowDeployedEngine = func() (bool, bool, error) {
 			replaced, refusal, err := testrun.FollowDeployedEngineAtBoundary(*repo, follow)
 			// Keep the turn through successful replacement. A changed or failed
 			// deployment releases it when the follow no longer waits on the lane.
-			if !replaced && (refusal == nil || !refusal.LaneProof) {
-				waitingForProof.Store(false)
-			}
+			engineTurn.Store(replaced || refusal != nil && refusal.LaneProof)
 			machine := "this machine"
 			if enrolled, resolveErr := goal.ResolveMachine(*repo); resolveErr == nil {
 				machine = enrolled
@@ -492,7 +502,7 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The lane checkout's own steward wakes its landing agent on demand;
 	// every other steward's step finds it is not the lane's.
-	if home, err := batchowner.LandingLaneHome(); err == nil {
+	if homeErr == nil {
 		configureLandingRunner(*repo, home, newLandingAgent(), &tickConfig)
 	}
 	// The lane's steward reports behaviour patterns; every other steward's

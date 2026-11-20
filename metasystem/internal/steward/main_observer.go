@@ -8,7 +8,7 @@ import (
 
 // The runner flock outlives this watcher. Its timer and the cycle's keeper
 // serialize lane work; the tick, notifications and engine follow run independently.
-func (k *laneKeeping) watchMain(pass func(func() bool) error, stopping, followWaiting func() bool, clock *HandoffClock, log io.Writer) func() {
+func (k *laneKeeping) watchMain(pass func(func() bool) error, stopping, engineHasSlot func() bool, clock *HandoffClock, log io.Writer) func() {
 	quit, done := make(chan struct{}), make(chan struct{})
 	held := func() bool {
 		select {
@@ -16,7 +16,7 @@ func (k *laneKeeping) watchMain(pass func(func() bool) error, stopping, followWa
 			return true
 		default:
 		}
-		return stopping() || followWaiting != nil && followWaiting()
+		return stopping() || engineHasSlot != nil && engineHasSlot()
 	}
 	last := ""
 	step := func() {

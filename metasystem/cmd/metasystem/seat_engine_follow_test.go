@@ -19,6 +19,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
@@ -55,7 +57,7 @@ esac
 		}
 		path = tools + string(os.PathListSeparator) + path
 	}
-	command.Env = append(command.Env, "CENTRAL_FOLLOW_CHILD=1", "PATH="+path)
+	command.Env = append(command.Env, "CENTRAL_FOLLOW_CHILD=1", "GO_WANT_BATCH_E2E_COMMAND=1", "PATH="+path)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("isolated follow: %v\n%s", err, output)
@@ -89,6 +91,11 @@ func newCentralFollowBed(t *testing.T) *centralFollowBed {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return centralFollowBedAt(t, root)
+}
+
+func centralFollowBedAt(t *testing.T, root string) *centralFollowBed {
+	t.Helper()
 	b := &centralFollowBed{root: root, commit: strings.Repeat("b", 40), now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC)}
 	b.binary, b.artifact = filepath.Join(root, "bin", "metasystem"), filepath.Join(t.TempDir(), "artifact")
 	if err := os.MkdirAll(filepath.Dir(b.binary), 0755); err != nil {
@@ -173,7 +180,10 @@ func (b *centralFollowBed) centralRun(t *testing.T, passes int, start func() err
 			// Preserve the command's follow and rebuild closures while other duties stay idle.
 			cfg = steward.TickConfig{Now: b.now, RunnerClock: clock, Prober: prober, FollowDeployedEngine: cfg.FollowDeployedEngine, RearmAtBoundary: cfg.RearmAtBoundary}
 			return steward.RunLoop(root, fleetHandoffCensus{}, nil, interval, cfg)
-		}, nil, clock, func(string) int { return 1 }, nil, stewardRunDependencies{Prober: prober, FollowOperations: ops, FollowStart: start, RearmBoundary: func(string, func() (bool, error)) (bool, error) { b.rebuilds++; return false, nil }})
+		}, nil, clock, func(string) int { return 1 }, nil, stewardRunDependencies{Prober: prober, FollowOperations: ops, FollowStart: start, RearmBoundary: func(string, func() (bool, error), func() (bool, error)) (bool, error) {
+			b.rebuilds++
+			return false, nil
+		}})
 	if code != 0 {
 		t.Fatalf("runner exit=%d: %s", code, &problem)
 	}
@@ -210,6 +220,155 @@ func TestCentralFollowRunnerInstallsOnce(t *testing.T) {
 	b.centralRun(t, 1, func() error { starts++; return nil }, nil)
 	if starts != 1 {
 		t.Fatalf("prefix-free digest followed twice: %d", starts)
+	}
+}
+
+// Fire the resident observer at the restart boundary and between update attempts.
+// Both operations use the command's slot decision and the install's running record.
+func TestEngineUpdateAndMovedMainsShareProofSlot(t *testing.T) {
+	t.Parallel()
+	if !centralFollowChild(t, false) {
+		return
+	}
+	for _, delivery := range []string{"central", "source"} {
+		for _, first := range []string{"update", "proof"} {
+			t.Run(delivery+"/"+first, func(t *testing.T) { exerciseEngineProofSlot(t, delivery, first) })
+		}
+	}
+}
+
+func exerciseEngineProofSlot(t *testing.T, delivery, first string) {
+	t.Helper()
+	bed := newCadenceBed(t, "", 0, false, false, true)
+	engine := centralFollowBedAt(t, bed.lane)
+	if delivery == "central" {
+		engine.centralDeployLine(t, engine.digest, engine.commit)
+	} else {
+		injectedRunnerFile(t, filepath.Join(bed.lane, "metasystem.conf"), []byte("metasystem.engine-delivery=source\n"))
+	}
+	home, err := board.Home()
+	helmMust(t, err)
+	injectedRunnerWrite(t, lane.RecordPath(home), bed.record)
+	prober := identity.KernelProber{}
+	tip := "initial"
+	seedApplicableMainProof(t, bed.lane, tip, tip+"-tree", bed.now)
+	git := bed.agent.proofEffects.Git
+	bed.agent.proofEffects.Git = func(dir string, args ...string) (string, error) {
+		if args[0] == "rev-parse" {
+			if strings.HasSuffix(args[len(args)-1], "^{tree}") {
+				return tip + "-tree", nil
+			}
+			return tip, nil
+		}
+		return git(dir, args...)
+	}
+	var pass func(string, int)
+	restarts := 0
+	restart := func() error {
+		restarts++
+		if first == "update" {
+			pass("during-update", 0)
+			return fmt.Errorf("restart failed")
+		}
+		return nil
+	}
+	deps := stewardRunDependencies{Prober: prober, FollowStart: restart,
+		FollowOperations: steward.RearmOperations{Clock: centralFollowClock{&workClock{now: engine.now}}, Git: engine.centralGit(t), Prober: prober},
+		RearmBoundary: func(_ string, boundary, laneProofRunning func() (bool, error)) (bool, error) {
+			ready, err := boundary()
+			if !ready || err != nil {
+				return false, err
+			}
+			if alive, err := laneProofRunning(); alive || err != nil {
+				return false, err
+			}
+			err = restart()
+			return err == nil, err
+		},
+	}
+	run := func(_ string, _ steward.WorkerCensus, _ func() error, _ time.Duration, cfg steward.TickConfig) error {
+		if !cfg.OwnsLandingLane() {
+			t.Fatal("runner does not own fixture lane")
+		}
+		configureLandingRunner(bed.lane, home, bed.agent, &cfg)
+		ticks := make(chan time.Time)
+		observed := make(chan error, 1)
+		observe := cfg.ObserveMovedMain
+		clock := &steward.HandoffClock{
+			Now:    func() time.Time { return bed.now },
+			Sleep:  func(d time.Duration) { bed.now = bed.now.Add(d) },
+			Ticker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
+		}
+		runner := steward.TickConfig{RunnerClock: clock, Now: bed.now, OwnsLandingLane: cfg.OwnsLandingLane, EngineHasProofSlot: cfg.EngineHasProofSlot, ObserveMovedMain: func(held func() bool) error {
+			err := observe(held)
+			if tip != "initial" {
+				observed <- err
+			}
+			return err
+		}}
+		pass = func(moved string, starts int) {
+			t.Helper()
+			bed.now = bed.now.Add(15 * time.Second)
+			tip = moved
+			ticks <- bed.now
+			helmMust(t, <-observed)
+			var sight struct{ Commit string }
+			data, err := os.ReadFile(filepath.Join(plain.Dir(bed.lane), "main-observer.json"))
+			helmMust(t, err)
+			helmMust(t, json.Unmarshal(data, &sight))
+			if sight.Commit != tip || len(bed.argv) != starts {
+				t.Fatalf("tick on %s saw %s, proof launches %d, want %d", tip, sight.Commit, len(bed.argv), starts)
+			}
+		}
+		passes := 0
+		runner.Patterns = func(string, time.Time) error {
+			if passes == 0 && first == "proof" {
+				pass("first", 1)
+			}
+			return nil
+		}
+		// Inspect the result at the boundary while the resident observer is still live.
+		after := func(replaced bool, err error) (bool, error) {
+			passes++
+			if first == "update" {
+				if replaced || restarts != 1 {
+					t.Fatalf("restart attempts %d", restarts)
+				}
+				pass("after-failure", 1)
+				injectedRunnerFile(t, filepath.Join(bed.lane, "artifacts", "agents", "steward", "stop"), nil)
+				return false, nil
+			}
+			helmMust(t, err)
+			if passes == 1 {
+				if replaced || restarts != 0 {
+					t.Fatal("updated during the timer's live proof")
+				}
+				helmMust(t, os.Remove(filepath.Join(plain.Dir(bed.lane), "running.json")))
+				bed.alive = false
+				pass("second", 1)
+				pass("third", 1)
+			} else {
+				if !replaced || restarts != 1 {
+					t.Fatal("pending update lost its turn")
+				}
+				pass("after-handoff", 1)
+			}
+			return replaced, nil
+		}
+		if delivery == "central" {
+			runner.FollowDeployedEngine = func() (bool, bool, error) {
+				replaced, refused, err := cfg.FollowDeployedEngine()
+				replaced, err = after(replaced, err)
+				return replaced, refused, err
+			}
+		} else {
+			runner.RearmAtBoundary = func() (bool, error) { return after(cfg.RearmAtBoundary()) }
+		}
+		return steward.RunLoop(bed.lane, observerCensus{}, nil, time.Second, runner)
+	}
+	code := runStewardRunWithDependencies([]string{"--repo", bed.lane}, io.Discard, io.Discard, run, nil, nil, func(string) int { return 1 }, nil, deps)
+	if code != 0 {
+		t.Fatalf("steward run exit %d", code)
 	}
 }
 

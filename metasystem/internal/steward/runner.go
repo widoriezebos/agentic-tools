@@ -400,7 +400,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		if cfg.ObserveMovedMain != nil {
 			owns := cfg.OwnsLandingLane == nil || cfg.OwnsLandingLane()
 			if owns && stopObserver == nil {
-				stopObserver = keeping.watchMain(cfg.ObserveMovedMain, stopping, cfg.FollowWaitingForProof, cfg.RunnerClock, logFile)
+				stopObserver = keeping.watchMain(cfg.ObserveMovedMain, stopping, cfg.EngineHasProofSlot, cfg.RunnerClock, logFile)
 			}
 			if !owns && stopObserver != nil {
 				stopObserver()

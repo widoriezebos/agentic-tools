@@ -28,7 +28,7 @@ func TestMovedMainObserverAndStatus(t *testing.T) {
 			want, launches := "proof batch-1 running since", 1
 			switch mode {
 			case "update next":
-				b.agent.followWaitingForProof = func() bool { return true }
+				b.agent.engineHasProofSlot = func() bool { return true }
 				b.keeper = newLandingAgentKeeper(b.lane, b.home, b.agent)
 				want, launches = "the pending engine update has the next free proof slot", 0
 			case "helm":
