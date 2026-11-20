@@ -3,7 +3,6 @@ package steward
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,8 +13,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
@@ -53,9 +50,6 @@ func TestRunnerRequestsKeepTheScheduledClock(t *testing.T) {
 			deps := runnerLoopDependencies{
 				Tick: func(_ string, cfg TickConfig, _ WorkerCensus) (TickResult, error) {
 					got = append(got, now.Sub(start))
-					if cfg.RequestDriven != (len(got) > 1 && now.Sub(start)%(600*time.Second) != 0) {
-						t.Fatalf("wrong cycle cause at %v", now.Sub(start))
-					}
 					if len(got) == 1 && tc.during {
 						for i := 0; i < 50; i++ {
 							write(fmt.Sprintf("job-ended:%d", i))
@@ -82,6 +76,12 @@ func TestRunnerRequestsKeepTheScheduledClock(t *testing.T) {
 						loop.stop(t)
 					}
 				},
+			}
+			deps.Light = func(root string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
+				if now.Sub(start)%(600*time.Second) == 0 {
+					t.Fatal("light cycle replaced a scheduled tick")
+				}
+				return deps.Tick(root, cfg, census)
 			}
 			if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 600*time.Second, TickConfig{Now: start}, deps); err != nil {
 				t.Fatal(err)
@@ -114,11 +114,7 @@ func TestRunnerRequestCeilingAndRestart(t *testing.T) {
 	requests, ticks := 0, 0
 	deps := runnerLoopDependencies{
 		Tick: func(_ string, cfg TickConfig, _ WorkerCensus) (TickResult, error) {
-			if cfg.RequestDriven {
-				requests++
-			} else {
-				ticks++
-			}
+			ticks++
 			if requests > 8 {
 				t.Fatal("request ceiling exceeded")
 			}
@@ -139,6 +135,13 @@ func TestRunnerRequestCeilingAndRestart(t *testing.T) {
 				loop.stop(t)
 			}
 		},
+	}
+	deps.Light = func(string, TickConfig, WorkerCensus) (TickResult, error) {
+		requests++
+		if requests > 8 {
+			t.Fatal("request ceiling exceeded")
+		}
+		return TickResult{}, nil
 	}
 	if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 600*time.Second, TickConfig{Now: start}, deps); err != nil {
 		t.Fatal(err)
@@ -181,11 +184,9 @@ func TestRunnerRequestHoldsAndDrain(t *testing.T) {
 				if ticks == 2 && mode == "drain-during" {
 					signal()
 				}
-				if ticks == 2 && !c.RequestDriven {
-					t.Fatal("second cycle was not requested")
-				}
 				return TickResult{Decision: Decision{Action: ActRevive}, Seat: &SeatSelection{}}, nil
 			}
+			deps.Light = deps.Tick
 			deps.StartSeat = func(string, TickConfig, WorkerCensus, SeatSelection) (SeatRecord, error) {
 				starts++
 				return SeatRecord{}, nil
@@ -229,16 +230,16 @@ func TestRunnerRequestHoldsAndDrain(t *testing.T) {
 				if _, err := tickrequest.Read(loop.root); err != nil {
 					t.Fatal("stop consumed pending request")
 				}
-			case "replacement", "drain-during":
+			case "drain-during":
 				if ticks != 2 || starts != 1 {
 					t.Fatalf("replacement continued: ticks=%d starts=%d", ticks, starts)
 				}
 				if _, err := tickrequest.Read(loop.root); err != nil {
 					t.Fatal("replacement lost unfinished request")
 				}
-			case "boundary":
-				if ticks != 2 || boundaries != 2 || rearms != 2 {
-					t.Fatalf("request skipped ordinary boundaries: %d/%d/%d", ticks, boundaries, rearms)
+			case "boundary", "replacement":
+				if ticks != 2 || boundaries != 1 || rearms != 1 || starts != 2 {
+					t.Fatalf("light cycle ran a boundary or follow: %d/%d/%d starts=%d", ticks, boundaries, rearms, starts)
 				}
 			}
 		})
@@ -411,55 +412,6 @@ func TestLaneKeeperRequestsOnlyChangedSlowOutcomes(t *testing.T) {
 	}
 }
 
-func TestRequestCyclesPreservePatienceAndProviderHold(t *testing.T) {
-	t.Parallel()
-	bed := newDecisionTickRepository(t)
-	now := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
-	first := bed.tickN(TickConfig{Now: now}, deadCensus(), 1)
-	for i := 1; i <= 8; i++ {
-		result := bed.tickN(TickConfig{Now: now.Add(time.Duration(i) * 15 * time.Second), RequestDriven: true}, deadCensus(), 1)
-		if result.Evidence.TicksSinceAdvance != first.Evidence.TicksSinceAdvance {
-			t.Fatalf("request aged patience: %+v", result.Evidence)
-		}
-	}
-	if _, err := outage.Observe(testprovider.Home(bed.root), "claude", "fixture-model", outage.ProviderLimit, "limited", "request-test", now); err != nil {
-		t.Fatal(err)
-	}
-	result := bed.tickN(TickConfig{Now: now.Add(135 * time.Second), RequestDriven: true}, deadCensus(), 1)
-	if !result.ProviderOutage || result.Decision.Action == ActRevive {
-		t.Fatalf("request lifted provider hold: %+v", result.Decision)
-	}
-
-	root := t.TempDir()
-	work := openWorkDependencies{NewWorld: func(string) bool { return true }, ReadClaimableBudgetedWork: func(string, time.Time) (goal.ClaimableBudgetedWork, error) {
-		return goal.ClaimableBudgetedWork{}, errors.New("ledger unavailable")
-	}}
-	evidence := Evidence{Marks: Marks{HeadOid: "h"}, DryRevivals: 3, Degraded: 1, TicksSinceAdvance: 4}
-	for i := 0; i < 8; i++ {
-		got, err := decideTickWithDependencies(root, TickConfig{Now: now, RequestDriven: true}, deadCensus(), evidence, evidence.Marks, work)
-		if err != nil {
-			t.Fatal(err)
-		}
-		evidence = got.Evidence
-		if evidence.Degraded != 1 || evidence.TicksSinceAdvance != 4 || evidence.DryRevivals != 3 {
-			t.Fatalf("request changed patience or cap: %+v", evidence)
-		}
-	}
-	pending, err := PendingNotifications(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, notice := range pending {
-		if notice.Nonce == "verdict-"+string(VerdictDegraded) {
-			t.Fatal("requests escalated the degraded notice")
-		}
-	}
-	got, err := decideTickWithDependencies(root, TickConfig{Now: now}, deadCensus(), evidence, evidence.Marks, work)
-	if err != nil || got.Evidence.Degraded != 2 || got.Evidence.TicksSinceAdvance != 5 {
-		t.Fatalf("scheduled patience stopped: %+v %v", got.Evidence, err)
-	}
-}
-
 func TestRunnerRequestsDoNotPostponeProviderProbe(t *testing.T) {
 	t.Parallel()
 	loop := newHelmLoop(t)
@@ -533,82 +485,6 @@ func TestInterruptedRequestIsServedByRestart(t *testing.T) {
 	}
 }
 
-func TestRequestHealthObservationKeepsUnknownPatience(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	now := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
-	evaluate := func(string, string, time.Time, identity.Prober, bool) ([]RoleVerdict, SpendObservation) {
-		return []RoleVerdict{{Role: RoleStewardRunner, Status: HealthUnknown, Reason: "observation unavailable"}}, SpendObservation{}
-	}
-	first, err := observeHealthWithEvaluation(root, now, nil, evaluate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.State.UnknownCounts[RoleStewardRunner] != 1 {
-		t.Fatal("initial health sample not counted")
-	}
-	for i := 0; i < 8; i++ {
-		observed, err := observeHealthWithEvaluation(root, now, nil, evaluate, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if observed.State.UnknownCounts[RoleStewardRunner] != 1 {
-			t.Fatalf("request advanced unknown patience: %+v", observed.State)
-		}
-	}
-	last, err := observeHealthWithEvaluation(root, now, nil, evaluate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if last.State.UnknownCounts[RoleStewardRunner] != 2 {
-		t.Fatal("scheduled health sample not counted")
-	}
-}
-
-func TestRequestHealthObservationPreservesRepairPatience(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
-	evaluate := func(string, string, time.Time, identity.Prober, bool) ([]RoleVerdict, SpendObservation) {
-		return []RoleVerdict{{Role: RoleRepoWatcher, Status: HealthDead, Reason: "the latest watcher pass failed: census unavailable"}}, SpendObservation{}
-	}
-	for _, initialScheduled := range []bool{false, true} {
-		t.Run(fmt.Sprint(initialScheduled), func(t *testing.T) {
-			bed := newHealthBed(t, EnrollmentFixture, "")
-			root := bed.root
-			want := 0
-			if initialScheduled {
-				if _, err := observeHealthWithEvaluation(root, now, nil, evaluate); err != nil {
-					t.Fatal(err)
-				}
-				want = 1
-			}
-			for i := 1; i <= 8; i++ {
-				observed, err := observeHealthWithEvaluation(root, now.Add(time.Duration(i)*15*time.Second), nil, evaluate, true)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if observed.State.FailureCounts[RoleRepoWatcher] != want || len(observed.State.FailureEpisodes[RoleRepoWatcher]) != want || observed.Roles[0].FailureEscalation != AutoHealEligible {
-					t.Fatalf("request exhausted watcher repair patience: %+v", observed)
-				}
-				if ended, err := AutoHealingEnded(root, RoleRepoWatcher); err != nil || ended {
-					t.Fatalf("request ended automatic repair: %t %v", ended, err)
-				}
-				if err := requestWatcherRepair(root, observed, now.Add(time.Duration(i)*15*time.Second)); err != nil {
-					t.Fatal(err)
-				}
-				request, err := readHealthObject(filepath.Join(root, "artifacts/agents/supervision/watcher-restart-request.json"))
-				if err != nil || request["completed"] != false {
-					t.Fatalf("request retired the pending watcher repair: %+v %v", request, err)
-				}
-			}
-			last, err := observeHealthWithEvaluation(root, now.Add(10*time.Minute), nil, evaluate)
-			if err != nil || last.State.FailureCounts[RoleRepoWatcher] != want+1 {
-				t.Fatalf("scheduled observation did not advance patience: %+v %v", last.State, err)
-			}
-		})
-	}
-}
-
 func TestRunnerWithoutRequestsKeepsProviderProbeTiming(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -632,9 +508,6 @@ func TestRunnerWithoutRequestsKeepsProviderProbeTiming(t *testing.T) {
 			ticks := 0
 			deps.Tick = func(_ string, cfg TickConfig, _ WorkerCensus) (TickResult, error) {
 				ticks++
-				if cfg.RequestDriven {
-					t.Fatal("unexpected request-driven cycle")
-				}
 				if ticks == tc.limitTick {
 					if _, err := testprovider.Record(loop.root, outage.ProviderLimit, "limited", "fixture", now); err != nil {
 						t.Fatal(err)
@@ -665,40 +538,6 @@ func TestRunnerWithoutRequestsKeepsProviderProbeTiming(t *testing.T) {
 	}
 }
 
-func TestRequestPatternObservationsKeepQuietTickCount(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	now := time.Date(2026, 11, 20, 5, 0, 0, 0, time.UTC)
-	kind := ObsFinding
-	cycle := PatternCycle{Now: now, ClearTicks: 2, Deliver: func(string, string) error { return nil }, Step: func([]byte) ([]byte, []PatternRun, error) {
-		return nil, []PatternRun{{Pattern: "completion-test", Observations: []PatternObservation{{Kind: kind, Work: "goal", Since: now, Message: "repeated changes"}}}}, nil
-	}}
-	if _, err := UpdatePatterns(root, cycle); err != nil {
-		t.Fatal(err)
-	}
-	kind = ObsClear
-	cycle.RequestDriven = true
-	for i := 0; i < 8; i++ {
-		report, err := UpdatePatterns(root, cycle)
-		if err != nil || report.Open != 1 {
-			t.Fatalf("request cleared quiet patience: %+v %v", report, err)
-		}
-	}
-	episodes, err := AlertEpisodes(root)
-	if err != nil || len(episodes) != 1 || episodes[0].CleanCount != 0 {
-		t.Fatalf("quiet count changed: %+v %v", episodes, err)
-	}
-	cycle.RequestDriven = false
-	if report, err := UpdatePatterns(root, cycle); err != nil || report.Open != 1 {
-		t.Fatalf("first scheduled observation: %+v %v", report, err)
-	}
-	if report, err := UpdatePatterns(root, cycle); err != nil || report.Open != 0 {
-		t.Fatalf("second scheduled observation: %+v %v", report, err)
-	}
-}
-
-// The completion owner, wait loop, question reader, decision owner and seat
-// starter all participate; only the accepted ledger and external launch are fixtures.
 func TestQuestionWithdrawalWakesTheRunnerAndReleasesItsGoal(t *testing.T) {
 	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("asked", "Build it."))
@@ -734,6 +573,15 @@ func TestQuestionWithdrawalWakesTheRunnerAndReleasesItsGoal(t *testing.T) {
 		}
 		return result, err
 	}
+	deps.Light = func(root string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
+		ticks++
+		bed.now, cfg.Now = now, now
+		cfg.ProviderHome = testprovider.Home(root)
+		work := bed.dependencies()
+		work.Seat.OpenQuestions = channel.GoalOpenQuestions
+		return runLightDecisionsWith(root, cfg, census, work, ReapContinuations)
+	}
+
 	deps.StartSeat = func(_ string, _ TickConfig, _ WorkerCensus, selection SeatSelection) (SeatRecord, error) {
 		if ticks != 2 || now.Sub(start) > 20*time.Second+200*time.Millisecond {
 			t.Fatalf("goal released at tick %d, %s", ticks, now.Sub(start))
@@ -778,7 +626,14 @@ func TestRequestedAndScheduledCyclesUseTheSameSeatDecision(t *testing.T) {
 			previous := Evidence{Marks: Marks{HeadOid: "h", OpidDigest: "d"}}
 			var ordinary TickResult
 			for _, requested := range []bool{false, true} {
-				result, err := decideTickWithDependencies(bed.root, TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root), RequestDriven: requested}, fakeCensus{workers: deadWorkers}, previous, previous.Marks, bed.dependencies())
+				cfg := TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root)}
+				var result TickResult
+				var err error
+				if requested {
+					result, err = runLightDecisionsWith(bed.root, cfg, fakeCensus{workers: deadWorkers}, bed.dependencies(), ReapContinuations)
+				} else {
+					result, err = decideTickWithDependencies(bed.root, cfg, fakeCensus{workers: deadWorkers}, previous, previous.Marks, bed.dependencies())
+				}
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -841,6 +696,15 @@ func TestSeatLaunchCompletionWakesItsSuccessorDecision(t *testing.T) {
 		}
 		return result, err
 	}
+	deps.Light = func(root string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
+		ticks++
+		bed.now, cfg.Now = now, now
+		cfg.ProviderHome = testprovider.Home(root)
+		work := bed.dependencies()
+		work.Seat.OpenQuestions = channel.GoalOpenQuestions
+		return runLightDecisionsWith(root, cfg, census, work, ReapContinuations)
+	}
+
 	deps.StartSeat = func(_ string, _ TickConfig, _ WorkerCensus, selection SeatSelection) (SeatRecord, error) {
 		if ticks != 2 || now.Sub(start) > 20*time.Second+200*time.Millisecond || !selection.Held || selection.Goal != "held" {
 			t.Fatalf("successor selection at %s: %+v", now.Sub(start), selection)

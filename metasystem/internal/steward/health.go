@@ -433,7 +433,7 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 
 type healthRoleEvaluator func(string, string, time.Time, identity.Prober, bool) ([]RoleVerdict, SpendObservation)
 
-func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity.Prober, evaluate healthRoleEvaluator, requestDriven ...bool) (HealthVerdict, error) {
+func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity.Prober, evaluate healthRoleEvaluator) (HealthVerdict, error) {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
@@ -466,7 +466,7 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 			}
 		}
 	}
-	verdict := applyHealthObservation(repoRoot, previous.State, roles, now.UTC(), requestDriven...)
+	verdict := applyHealthObservation(repoRoot, previous.State, roles, now.UTC())
 	verdict.Spend = spendObservation
 	if err := saveHealthRecord(repoRoot, HealthRecordPath(repoRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
 		return HealthVerdict{}, err
@@ -479,7 +479,7 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 // one observation time, so the record stays readable; FullObservedAt keeps
 // the last full observation's. It files no standing defect itself; its caller
 // hands the filer only the roles this pass observed.
-func observePartialHealth(repoRoot string, now time.Time, observed []RoleVerdict, requestDriven ...bool) (HealthVerdict, error) {
+func observePartialHealth(repoRoot string, now time.Time, observed []RoleVerdict) (HealthVerdict, error) {
 	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
 		return HealthVerdict{}, err
 	}
@@ -492,7 +492,7 @@ func observePartialHealth(repoRoot string, now time.Time, observed []RoleVerdict
 	if err != nil && !os.IsNotExist(err) {
 		return HealthVerdict{}, err
 	}
-	applied := applyHealthObservation(repoRoot, previous.State, observed, now, requestDriven...)
+	applied := applyHealthObservation(repoRoot, previous.State, observed, now)
 	byRole := make(map[HealthRole]RoleVerdict, len(healthRoleOrder))
 	for _, role := range append(previous.Verdict.Roles, applied.Roles...) {
 		byRole[role.Role] = role
@@ -917,7 +917,7 @@ func stopRearmedEngine(repoRoot string, generation int, attemptSeq int64) bool {
 	return false
 }
 
-func applyHealthObservation(repoRoot string, previous HealthObservationState, roles []RoleVerdict, now time.Time, requestDriven ...bool) HealthVerdict {
+func applyHealthObservation(repoRoot string, previous HealthObservationState, roles []RoleVerdict, now time.Time) HealthVerdict {
 	unknownCounts := make(map[HealthRole]int, len(healthRoleOrder))
 	for key, value := range previous.UnknownCounts {
 		unknownCounts[key] = value
@@ -962,16 +962,11 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 		}
 		failureEpisodes[role.Role] = roleEpisodes
 		if role.Status == HealthUnknown {
-			if len(requestDriven) == 0 || !requestDriven[0] {
-				unknownCounts[role.Role]++
-			}
+			unknownCounts[role.Role]++
 			continue
 		}
 		unknownCounts[role.Role] = 0
 		if role.Status == HealthDead {
-			if len(requestDriven) > 0 && requestDriven[0] {
-				continue
-			}
 			cause := healthCause(*role)
 			if !hasLawfulAutomaticRemedy(*role, ordered) && failureCauses[role.Role] != cause {
 				failureCounts[role.Role] = 0
@@ -1077,14 +1072,14 @@ func healthSummary(roles []RoleVerdict) (string, bool) {
 
 // fileStandingDefects files the standing roles among observed and clears the
 // other observed roles; a role it was not given keeps its defect.
-func fileStandingDefects(repoRoot string, health HealthVerdict, observed []HealthRole, now time.Time, f noticeFunnel, deliver func(string, string) error, requestDriven ...bool) error {
+func fileStandingDefects(repoRoot string, health HealthVerdict, observed []HealthRole, now time.Time, f noticeFunnel, deliver func(string, string) error) error {
 	standing := make(map[HealthRole]RoleVerdict)
 	for _, role := range health.Roles {
 		if role.Standing {
 			standing[role.Role] = role
 		}
 	}
-	_, err := UpdatePatterns(repoRoot, PatternCycle{RequestDriven: len(requestDriven) > 0 && requestDriven[0], Now: now, ClearTicks: 1, Deliver: deliver, funnel: f,
+	_, err := UpdatePatterns(repoRoot, PatternCycle{Now: now, ClearTicks: 1, Deliver: deliver, funnel: f,
 		Step: func([]byte) ([]byte, []PatternRun, error) {
 			observations := make([]PatternObservation, 0, len(observed))
 			for _, name := range observed {

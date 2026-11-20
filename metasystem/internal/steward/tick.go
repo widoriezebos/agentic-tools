@@ -36,10 +36,8 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
-	// RequestDriven observes completion without advancing scheduled patience.
-	RequestDriven bool
-	Prober        identity.Prober
-	Signal        identity.SignalFunc
+	Prober identity.Prober
+	Signal identity.SignalFunc
 	// GoalProjection supplies the accepted ledger read; nil uses the production repository.
 	GoalProjection   func(string, time.Time) (goal.Projection, error)
 	RecoveryRegistry string
@@ -123,7 +121,7 @@ type TickConfig struct {
 	// steward-acts-on-behaviour-patterns): it reports and decides nothing.
 	// It runs after the tick's health pass and, as a report, under the helm
 	// too (D2). The command layer supplies it; nil runs no pattern.
-	Patterns func(repoRoot string, now time.Time, requestDriven ...bool) error
+	Patterns func(repoRoot string, now time.Time) error
 	// StuckUnits reports this seat's stuck units after health, including
 	// under the helm. It never stops a launch.
 	StuckUnits        func(repoRoot string, now time.Time) error
@@ -431,7 +429,7 @@ func helmHealthPass(repoRoot string, cfg TickConfig) error {
 		ledger.laneState = cfg.ClaimLaneState
 		observed = append(observed, checkClaimQuotaWith(repoRoot, repoRoot, ledger))
 	}
-	health, err := observePartialHealth(repoRoot, now, observed, cfg.RequestDriven)
+	health, err := observePartialHealth(repoRoot, now, observed)
 	if err != nil {
 		return fmt.Errorf("record the helm's observation: %w", err)
 	}
@@ -440,7 +438,7 @@ func helmHealthPass(repoRoot string, cfg TickConfig) error {
 	for _, role := range observed {
 		roles = append(roles, role.Role)
 	}
-	fileErr := fileStandingDefects(repoRoot, health, roles, now, noticeFunnel{clock: cfg.now}, deliver, cfg.RequestDriven)
+	fileErr := fileStandingDefects(repoRoot, health, roles, now, noticeFunnel{clock: cfg.now}, deliver)
 	var askErr error
 	if cfg.ClaimLaneState != nil {
 		askErr = tickHealthAsk(cfg)(repoRoot, health, now)
@@ -468,7 +466,7 @@ func runTickReports(repoRoot string, cfg TickConfig, health func() error) error 
 func runPatterns(repoRoot string, cfg TickConfig) error {
 	var result error
 	if cfg.Patterns != nil {
-		if err := cfg.Patterns(repoRoot, cfg.now(), cfg.RequestDriven); err != nil {
+		if err := cfg.Patterns(repoRoot, cfg.now()); err != nil {
 			result = fmt.Errorf("behaviour patterns: %w", err)
 		}
 	}
@@ -551,7 +549,6 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 }
 
 func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus, generation int, process identity.Ref, tickAttemptSeq int64, goalStops []BreachStopReport, dependencies tickContinuationDependencies) (TickResult, bool, error) {
-	dependencies.health.requestDriven = cfg.RequestDriven
 	if cfg.GoalProjection != nil {
 		dependencies.openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
 	}
@@ -683,7 +680,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	if _, err := settleEndedContinuation(repoRoot, &prev); err != nil {
 		return TickResult{}, err
 	}
-	ev := cfg.observe(prev, marks)
+	ev := Observe(prev, marks)
 	// Age and decisions share one provider observation; progress still resets age.
 	// The seat launches are reaped before the outage is sampled: a seat the
 	// provider stopped feeds the mark this same tick holds by.
@@ -705,7 +702,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 			err = providerErr
 		}
 		outageMark, providerOutage = providerOutageFrom(providers, err, runtime, cfg.now(), log)
-		ev = cfg.observe(prev, marks)
+		ev = Observe(prev, marks)
 		if marks == prev.Marks {
 			sampled, sampleErr := time.Parse(time.RFC3339Nano, prev.SampledAt)
 			if prev.SampledAt != "" && sampleErr == nil && !cfg.now().Before(sampled) {
@@ -760,10 +757,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	// tick, and its notice waits until it holds degradedNoticeTicks in a row.
 	ev.Degraded = 0
 	if d.Verdict == VerdictDegraded {
-		ev.Degraded = prev.Degraded
-		if !cfg.RequestDriven {
-			ev.Degraded++
-		}
+		ev.Degraded = prev.Degraded + 1
 	}
 	if d.Action == ActNotify && (d.Verdict != VerdictDegraded || ev.Degraded >= degradedNoticeTicks) {
 		// A notify verdict IS the visibility the invariant promises:
@@ -790,14 +784,13 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 
 func tickHealthConfigDependencies(cfg TickConfig) tickHealthDependencies {
 	return tickHealthDependencies{
-		requestDriven: cfg.RequestDriven,
-		evaluate:      tickHealthEvaluator(cfg),
-		ask:           tickHealthAsk(cfg),
-		now:           tickHealthNow,
-		deliver:       deliver,
-		lane:          hostLaneSilence,
-		probeRuntime:  cfg.ProbeRuntime,
-		prober:        cfg.withDefaults().Prober,
+		evaluate:     tickHealthEvaluator(cfg),
+		ask:          tickHealthAsk(cfg),
+		now:          tickHealthNow,
+		deliver:      deliver,
+		lane:         hostLaneSilence,
+		probeRuntime: cfg.ProbeRuntime,
+		prober:       cfg.withDefaults().Prober,
 		examineLedger: func(root string, now time.Time) error {
 			return examineLedgerMoveWithRepositoryAndWriter(root, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 		},
@@ -824,12 +817,11 @@ func tickHealthAsk(cfg TickConfig) func(string, HealthVerdict, time.Time) error 
 }
 
 type tickHealthDependencies struct {
-	requestDriven bool
-	funnel        noticeFunnel
-	prober        identity.Prober
-	evaluate      healthRoleEvaluator
-	now           func() time.Time
-	deliver       func(string, string) error
+	funnel   noticeFunnel
+	prober   identity.Prober
+	evaluate healthRoleEvaluator
+	now      func() time.Time
+	deliver  func(string, string) error
 	// lane reads the host landing lane for the lane-silent signal; nil
 	// reads no lane.
 	lane          func(string, time.Time) LaneSilence
@@ -853,7 +845,7 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	}
 	funnel := dependencies.funnel
 	funnel.clock = healthNow
-	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), (TickConfig{Prober: dependencies.prober}).withDefaults().Prober, dependencies.evaluate, dependencies.requestDriven)
+	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), (TickConfig{Prober: dependencies.prober}).withDefaults().Prober, dependencies.evaluate)
 	if err != nil {
 		return fmt.Errorf("compute health: %w", err)
 	}
@@ -861,10 +853,9 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if err := requestWatcherRepair(repoRoot, health, healthNow()); err != nil {
 		return fmt.Errorf("request watcher repair: %w", err)
 	}
-	beforeRemedies := health.Line()
 	remedyErr := remedyHealthRoles(repoRoot, health, generation, process, healthNow, dependencies)
 	health.FindingDigest = healthFindingDigest(health.Roles)
-	if health.Line() != beforeRemedies {
+	if health.FindingDigest != result.Health.FindingDigest {
 		if err := saveRemediedHealth(repoRoot, health); err != nil {
 			return fmt.Errorf("record remedy health: %w", err)
 		}
@@ -887,7 +878,7 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := fileStandingDefects(repoRoot, health, healthRoleOrder, healthNow(), funnel, dependencies.deliver, dependencies.requestDriven); err != nil {
+	if err := fileStandingDefects(repoRoot, health, healthRoleOrder, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("file standing health defects: %w", err)
 	}
 	if dependencies.ask != nil {
@@ -931,12 +922,12 @@ func remedyHealthRoles(repoRoot string, health HealthVerdict, generation int, pr
 			}
 			_, stale := capabilitySnapshotStatus(repoRoot, repoRoot, now(), lookPath)
 			for _, runtime := range stale {
-				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "capability-probe-"+runtime, role, generation, process, now, dependencies.requestDriven,
+				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "capability-probe-"+runtime, role, generation, process, now,
 					func() error { return dependencies.probeRuntime(repoRoot, runtime) }))
 			}
 		case RoleLedgerAttention:
 			if dependencies.examineLedger != nil {
-				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "ledger-examination", role, generation, process, now, dependencies.requestDriven,
+				failures = errors.Join(failures, recordHealthRemedy(repoRoot, "ledger-examination", role, generation, process, now,
 					func() error { return dependencies.examineLedger(repoRoot, now()) }))
 			}
 		}
@@ -946,13 +937,7 @@ func remedyHealthRoles(repoRoot string, health HealthVerdict, generation int, pr
 
 // A remedy's result belongs to its health role. Only a failure to record
 // that result prevents the tick from completing its mandatory work.
-// These remedies have no attempt cap apart from the health patience
-// counter, so they may run only when a scheduled tick advances it.
-func recordHealthRemedy(root, component string, role *RoleVerdict, generation int, process identity.Ref, now func() time.Time, requestDriven bool, run func() error) error {
-	if requestDriven {
-		role.Reason += "; " + component + ": skipped until scheduled tick (attempts capped by health patience)"
-		return nil
-	}
+func recordHealthRemedy(root, component string, role *RoleVerdict, generation int, process identity.Ref, now func() time.Time, run func() error) error {
 	attempt, err := beginComponentAttempt(root, component, generation, process, now())
 	if err != nil {
 		return err
@@ -1088,14 +1073,4 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 		d = Decision{VerdictDegraded, ActNotify, "revival cannot choose its provider: " + runtimeErr.Error() + "; repair role.steward-continuation in metasystem.conf"}
 	}
 	return d, nil, workReason, nil
-}
-
-// Completion observations may reset progress, but only the scheduled clock
-// advances tick-based patience. Actual revival attempts keep their own counter.
-func (c TickConfig) observe(previous Evidence, marks Marks) Evidence {
-	observed := Observe(previous, marks)
-	if c.RequestDriven && marks == previous.Marks {
-		observed.TicksSinceAdvance = previous.TicksSinceAdvance
-	}
-	return observed
 }

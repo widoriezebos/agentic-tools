@@ -19,7 +19,7 @@ func TestTickRunsPatternsAfterHealth(t *testing.T) {
 	now := time.Date(2026, 9, 30, 11, 10, 0, 0, time.UTC)
 	var calls atomic.Int32
 	var healthBefore bool
-	cfg := TickConfig{Now: now, Patterns: func(repo string, at time.Time, _ ...bool) error {
+	cfg := TickConfig{Now: now, Patterns: func(repo string, at time.Time) error {
 		calls.Add(1)
 		_, err := os.Stat(ComponentEvidencePath(root, "narrator"))
 		healthBefore = err == nil
@@ -44,7 +44,7 @@ func TestHelmTickCompletesBeforePatterns(t *testing.T) {
 	root := t.TempDir()
 	takeHelmFixture(t, root)
 	var seen []bool
-	cfg := TickConfig{Now: helmFixtureClock, Patterns: func(string, time.Time, ...bool) error {
+	cfg := TickConfig{Now: helmFixtureClock, Patterns: func(string, time.Time) error {
 		record, err := os.ReadFile(ComponentEvidencePath(root, "steward-tick"))
 		seen = append(seen, err == nil && strings.Contains(string(record), `"HELM"`))
 		return nil
@@ -80,7 +80,7 @@ func TestTickRunsStuckUnitsAfterHealth(t *testing.T) {
 	if calls != 1 || err == nil || !strings.Contains(err.Error(), "stuck units: stuck store full") {
 		t.Fatalf("calls=%d error=%v", calls, err)
 	}
-	cfg.Patterns = func(string, time.Time, ...bool) error { return errors.New("pattern failed") }
+	cfg.Patterns = func(string, time.Time) error { return errors.New("pattern failed") }
 	err = runTickReports(bed.root, cfg, func() error { return errors.New("health failed") })
 	if calls != 2 || err == nil || err.Error() != "health failed" {
 		t.Fatalf("failed passes calls=%d error=%v", calls, err)

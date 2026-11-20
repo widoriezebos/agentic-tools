@@ -67,11 +67,9 @@ type PatternRun struct {
 // lock: it receives the pattern state the last cycle kept (nil when none)
 // and returns its successor with this cycle's runs.
 type PatternCycle struct {
-	// RequestDriven reports observations without advancing the quiet-tick counter.
-	RequestDriven bool
-	funnel        noticeFunnel
-	Now           time.Time
-	ClearTicks    int
+	funnel     noticeFunnel
+	Now        time.Time
+	ClearTicks int
 	// Deliver is the notifier; nil is the steward's own.
 	Deliver func(repoRoot, message string) error
 	Step    func(state []byte) ([]byte, []PatternRun, error)
@@ -337,9 +335,6 @@ func applyPatternObservation(repoRoot string, episodes *[]AlertEpisode, run Patt
 			}
 		}
 	case ObsClear:
-		if cycle.RequestDriven {
-			return nil, nil
-		}
 		for _, episode := range suppressed {
 			episode.Suppressed = false
 			if err := save(episode); err != nil {

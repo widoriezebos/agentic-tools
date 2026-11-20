@@ -168,6 +168,7 @@ type runnerLoopDependencies struct {
 	Self            identity.Prober
 	ExamineLedger   func(string, time.Time) error
 	Tick            func(string, TickConfig, WorkerCensus) (TickResult, error)
+	Light           func(string, TickConfig, WorkerCensus) (TickResult, error)
 	DeliverPending  func(string) (int, error)
 	Resumable       func(string) (string, bool, error)
 	Channel         func(context.Context, string) (int, error)
@@ -323,7 +324,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	keeping := &laneKeeping{step: cfg.KeepLandingLane, root: top, now: deps.Now}
 	var served tickrequest.Request
-	var requestWake, unreadableRequest bool
+	var requestWake, requestDriven, unreadableRequest bool
 	var requestDiagnostic string
 	var probeAt time.Time
 	deps.ProviderProbeAt = &probeAt
@@ -368,7 +369,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		waiting := deps
 		// Scheduled waits start their own probe cadence. A completion wake
 		// preserves an active watch so requests cannot postpone its probe.
-		if !cfg.RequestDriven {
+		if !requestDriven {
 			probeAt = time.Time{}
 		}
 		waiting.Sleep = func(d time.Duration) { before := deps.Now(); deps.Sleep(d); slept += deps.Now().Sub(before) }
@@ -378,7 +379,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			return requestWake
 		}
 		stopped := runnerWait(top, schedule.NextTick.Sub(deps.Now()), waiting, drain, keeper, cfg.ProbeProvider)
-		logTick(work, slept)
+		if !requestDriven {
+			logTick(work, slept)
+		}
 		return stopped
 	}
 
@@ -386,16 +389,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return nil
 		}
-		reads.Lock()
-		reads.tick++
-		reads.Unlock()
 		started, timed.elapsed, paged = deps.Now(), 0, 0
-		cfg.RequestDriven = requestWake
+		requestDriven = requestWake
 		requestWake = false
 		unreadableRequest = false
 		served = readRequest()
 		cause := "scheduled tick"
-		if cfg.RequestDriven {
+		if requestDriven {
 			schedule.Requests++
 			cause = "request-driven cycle"
 		} else {
@@ -405,6 +405,53 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		if served.Batch != "" {
 			fmt.Fprintf(logFile, "%s: %s (%d requests)\n", cause, served.Reason, served.Count)
 		}
+		if requestDriven {
+			// Light owners read fresh records without advancing the scheduled
+			// directory cache's audit and read counters.
+			runnerReads.Delete(top)
+			light := deps.Light
+			if light == nil {
+				light = runLightDecisions
+			}
+			result, err = light(top, cfg, census)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "light cycle failed: %v\n", err)
+			}
+			if drain.Requested() {
+				return nil
+			}
+			keeping.run()
+			if drain.Requested() {
+				return nil
+			}
+			if !helm.Active(top).Active {
+				if err == nil && result.Decision.Action == ActRevive && result.Seat != nil {
+					startSeat := deps.StartSeat
+					if startSeat == nil {
+						startSeat = startLightSeat
+					}
+					if _, startErr := startSeat(top, cfg, census, *result.Seat); startErr != nil {
+						fmt.Fprintf(os.Stderr, "seat start failed: %v\n", startErr)
+						if qErr := QueueNotification(top, PendingNotification{Nonce: "seat-start-failure", Message: "steward: seat start failed — " + startErr.Error()}); qErr != nil {
+							fmt.Fprintf(os.Stderr, "seat-start-failure incident could not queue: %v\n", qErr)
+						}
+					}
+				}
+				if !drain.Requested() {
+					if _, deliveryErr := deps.DeliverPending(top); deliveryErr != nil {
+						fmt.Fprintf(os.Stderr, "pending notification delivery failed: %v\n", deliveryErr)
+					}
+				}
+			}
+			runnerReads.Store(top, reads)
+			if stopped := wait(keeping); stopped {
+				return nil
+			}
+			continue
+		}
+		reads.Lock()
+		reads.tick++
+		reads.Unlock()
 		result, err = deps.Tick(top, cfg, timed)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
