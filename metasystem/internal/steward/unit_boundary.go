@@ -92,7 +92,7 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 	}
 	for _, run := range runs {
 		round := run.Rounds[len(run.Rounds)-1]
-		finished, err := time.Parse(time.RFC3339Nano, round.Steps[len(round.Steps)-1].FinishedAt)
+		finished, err := unitBoundaryCompletion(round)
 		if err != nil {
 			return fmt.Errorf("unit %s completion time is unknown: %w", run.ID, err)
 		}
@@ -139,6 +139,28 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 		return nil
 	}
 	return writeUnitBoundaries(root, events)
+}
+
+func unitBoundaryCompletion(round launch.UnitRound) (time.Time, error) {
+	steps := round.Steps
+	if round.ReadCheckout == "" {
+		// Serial rounds need only their final step's timestamp.
+		return time.Parse(time.RFC3339Nano, steps[len(steps)-1].FinishedAt)
+	}
+	var latest time.Time
+	for _, step := range steps {
+		if step.State == launch.StepSkipped && step.FinishedAt == "" {
+			continue
+		}
+		end, err := time.Parse(time.RFC3339Nano, step.FinishedAt)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("%s: %w", step.Name, err)
+		}
+		if end.After(latest) {
+			latest = end
+		}
+	}
+	return latest, nil
 }
 
 // heldWorkCompleted requires published independent reads and terminal steps.

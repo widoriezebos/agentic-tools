@@ -82,6 +82,26 @@ func TestRetiredUnitBoundaryStages(t *testing.T) {
 	}
 }
 
+func TestUnitBoundaryIncludesTheLastPairedStepToFinish(t *testing.T) {
+	t.Parallel()
+	bed, units, work, _ := seatBusyFixture(t)
+	round := launch.UnitRound{Number: 1, Outcome: "green", ReadCheckout: filepath.Join(bed.root, "reader"), CheckoutRemoved: true, Steps: []launch.UnitStep{
+		{Name: "proof:check", State: launch.StepPassed, FinishedAt: bed.now.Format(time.RFC3339Nano)},
+		{Name: "read", State: launch.StepPassed, FinishedAt: bed.now.Add(-2 * time.Minute).Format(time.RFC3339Nano)},
+	}}
+	writeStewardRecord(t, filepath.Join(units, "run-1", "run.json"), map[string]any{"id": "run-1", "goal": "held", "state": "awaiting-judgement", "rounds": []launch.UnitRound{round}})
+	stages := func(string, string) ([]UnitStage, error) {
+		return []UnitStage{{Run: "run-1", Stage: "superseded by replacement, read under attestation"}}, nil
+	}
+	if err := ObserveUnitBoundary(bed.root, filepath.Dir(units), "session", bed.now.Add(-time.Minute), work, stages, bed.now, seatBusyDeadProber{}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := ReadUnitBoundaries(bed.root)
+	if err != nil || len(events) != 1 || events[0].Unit != "run-1/1" {
+		t.Fatalf("boundary for proof finishing in this session: %+v %v", events, err)
+	}
+}
+
 func TestRetiredBoundaryBindsTheSessionHandoff(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

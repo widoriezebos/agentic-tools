@@ -336,6 +336,16 @@ func TestBusyRoundIncludesEverySibling(t *testing.T) {
 			if busy, _, skipped := SeatBusyAt(bed.root, units, work, options); !busy || skipped != 0 {
 				t.Fatalf("busy=%v skipped=%d", busy, skipped)
 			}
+			stages := func(string, string) ([]UnitStage, error) {
+				t.Error("unit boundary consulted retired stages while a sibling was live")
+				return []UnitStage{{Unit: "retired", Stage: "cancelled; new work starts under another name"}}, nil
+			}
+			if err := ObserveUnitBoundary(bed.root, filepath.Dir(units), "session", bed.now.Add(-time.Minute), work, stages, bed.now, attemptProbe{41: identity.Alive}); err != nil {
+				t.Fatal(err)
+			}
+			if events, err := ReadUnitBoundaries(bed.root); len(events) != 0 || err != nil {
+				t.Fatalf("live %s at the unit boundary: %+v %v", live, events, err)
+			}
 		})
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -311,6 +312,7 @@ type boundedRoundStarter struct {
 	t               *testing.T
 	engine, message string
 	checked         intentResult
+	finishProof     func() error
 }
 
 func (s *boundedRoundStarter) StartSupervisor(id, state string) (identity.Ref, error) {
@@ -328,16 +330,52 @@ func (s *boundedRoundStarter) StartSupervisor(id, state string) (identity.Ref, e
 		if err != nil {
 			return identity.Ref{}, err
 		}
-		code, result := declaredCheckAtEngine(s.t, s.b, command.Directory, "proof", s.engine, command.Args...)
-		s.checked = result
-		s.b.starter.fail["proof"] = code != 0
+		// Keep the physical check open until the reader has returned its verdict.
+		s.b.starter.hold = "proof"
+		s.finishProof = func() error {
+			code, result := declaredCheckAtEngine(s.t, s.b, command.Directory, "proof", s.engine, command.Args...)
+			s.checked = result
+			_, err := s.b.manager.Store.Update(id, func(r *launch.Record) error {
+				if r.State != launch.Running {
+					return fmt.Errorf("reader finished with proof in state %s", r.State)
+				}
+				r.State = launch.Completed
+				if code != 0 {
+					r.State = launch.Failed
+				}
+				r.ExitCode, r.FinishedAt = &code, s.b.manager.Now().UTC().Format(time.RFC3339Nano)
+				return nil
+			})
+			return err
+		}
 	}
-	return s.b.starter.StartSupervisor(id, state)
+	ref, err := s.b.starter.StartSupervisor(id, state)
+	if err == nil && record.Kind == "read" {
+		if _, err := s.b.manager.Store.Update(id, func(r *launch.Record) error {
+			r.Measurement.Verdict = "VERDICT: LAND"
+			return nil
+		}); err != nil {
+			return ref, err
+		}
+		if s.finishProof == nil {
+			return identity.Ref{}, fmt.Errorf("reader started before proof")
+		}
+		err = s.finishProof()
+	}
+	return ref, err
 }
 
 func TestBoundedRoundContinuesAndFreezesNominations(t *testing.T) {
 	t.Parallel()
-	b := declaredCheckBed(t, "proof.cheap=printf gate\nproof.audits=true\nproof.deadline=15\nproof.check-kind=bounded\n")
+	kind, found, err := config.CommittedLookup("../../metasystem.conf", "proof.check-kind")
+	if err != nil || !found || kind != "bounded" {
+		t.Fatalf("repository early check kind = %q, found = %t, error = %v", kind, found, err)
+	}
+	b := declaredCheckBed(t, "proof.cheap=printf gate\nproof.audits=true\nproof.deadline=15\nproof.check-kind="+kind+"\n")
+	file := b.goalFile(b.id)
+	file.Budget.ReservedJobMinutesLimit = 600
+	workApprovedBox(file)
+	b.addGoal(file)
 	bin := t.TempDir()
 	clock := filepath.Join(bin, "clock")
 	for name, body := range map[string]string{"metasystem": "#!/bin/sh\nexit 0\n", "go": "#!/bin/sh\nprintf 360 > '" + clock + "'\nprintf 'first completed\\n{\"Action\":\"pass\",\"Test\":\"TestFirst\"}\\n'\n"} {
@@ -375,8 +413,11 @@ func TestBoundedRoundContinuesAndFreezesNominations(t *testing.T) {
 	starter := &boundedRoundStarter{b: b, t: t, engine: filepath.Join(bin, "metasystem"), message: "RESULT: DONE\nNOMINATE: ., TestFirst, first feedback\nNOMINATE: ., TestSecond, second feedback\n"}
 	b.manager.Supervisor = starter
 	code, built, _ := b.work("work", "build", b.id, "bounded-round", "--brief", b.brief("bounded-round.md", "Read each round: yes\nBuild.\n"), "--lines", "100")
-	if code != 0 || resultData(t, starter.checked)["checkOutcome"] != "budget-exhausted" || !slices.Contains(b.starter.launched(), "read") {
-		t.Fatalf("exhaustion blocked read: code=%d outcome=%v launches=%v summary=%s", code, resultData(t, starter.checked)["checkOutcome"], b.starter.launched(), built.Summary)
+	if code != 0 || !slices.Contains(b.starter.launched(), "read") {
+		t.Fatalf("bounded build with a paired read: code=%d launches=%v summary=%s", code, b.starter.launched(), built.Summary)
+	}
+	if outcome := resultData(t, starter.checked)["checkOutcome"]; outcome != "budget-exhausted" {
+		t.Fatalf("early check outcome = %v", outcome)
 	}
 	if !strings.Contains(built.Summary, "budget-exhausted") || !strings.Contains(built.Summary, "1 of 2 selected tests not run") || !strings.Contains(built.Summary, "prerequisites passed") || built.Next == nil || !strings.Contains(built.Next.Reason, "review runs the complete check") || strings.Contains(built.Summary, "green") || strings.Contains(built.Next.Reason, "checks passed") {
 		t.Fatalf("incomplete feedback was presented as a pass: summary=%s next=%+v", built.Summary, built.Next)
@@ -394,6 +435,18 @@ func TestBoundedRoundContinuesAndFreezesNominations(t *testing.T) {
 	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(resultData(t, built)["run"].(string))
 	if err != nil {
 		t.Fatal(err)
+	}
+	round := record.Rounds[0]
+	if record.State != "awaiting-judgement" || round.Outcome != "green" || round.Material != 0 || round.Result == nil || !round.CheckoutRemoved || len(round.Steps) != 3 {
+		t.Fatalf("bounded check join: state=%s outcome=%s material=%d released=%t steps=%d", record.State, round.Outcome, round.Material, round.CheckoutRemoved, len(round.Steps))
+	}
+	read := round.Steps[2]
+	if read.State != launch.StepPassed || read.Unattached || read.ExaminedTree != round.Result.Tree || len(round.Reads) != 1 || round.Reads[0].ID != read.LaunchID {
+		t.Fatal("the join did not attach the completed examination of the frozen build")
+	}
+	execution := resultData(t, starter.checked)["execution"].(string)
+	if _, err := os.Stat(filepath.Join(execution, "evidence.json")); !os.IsNotExist(err) {
+		t.Fatalf("budget exhaustion produced complete-check evidence: %v", err)
 	}
 	state, err := b.manager.Store.StateDir(record.Rounds[0].Steps[0].LaunchID)
 	if err != nil {
