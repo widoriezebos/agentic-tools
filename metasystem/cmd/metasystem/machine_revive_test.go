@@ -37,7 +37,11 @@ func TestMachineRevivePublicAct(t *testing.T) {
 
 func TestMachineReviveCleanEnd(t *testing.T) {
 	t.Parallel()
-	machineRevivePublicAct(t, []string{"clean-completed", "clean-capped", "clean-question"})
+	if args := flag.Args(); len(args) == 2 && args[0] == "capture-wrapped-seat" {
+		captureWrappedSeat(t, args[1])
+		return
+	}
+	machineRevivePublicAct(t, []string{"clean-completed", "clean-capped", "clean-question", "clean-pending", "clean-read-error", "clean-handoff"})
 }
 
 func machineRevivePublicAct(t *testing.T, scenarios []string) {
@@ -92,7 +96,18 @@ esac
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
-			bed := newWorkBedWith(t, func(f *goal.GoalFile) {
+			newBed := newWorkBedWith
+			if scenario == "clean-handoff" {
+				// Place the fixture clock just after the isolated test process's birth.
+				main, live, err := (identity.KernelProber{}).ReadStart(int64(os.Getpid()))
+				if err != nil || live != identity.Alive {
+					t.Fatalf("read main process birth: %s %v", live, err)
+				}
+				newBed = func(t *testing.T, amend func(*goal.GoalFile)) *workBed {
+					return newWorkBedAt(t, main.StartedAt.UTC().Add(3*time.Minute), amend)
+				}
+			}
+			bed := newBed(t, func(f *goal.GoalFile) {
 				workApprovedBox(f)
 				f.Claimed.Lineage = steward.SeatLineage
 				if scenario == "closed-not-held" {
@@ -104,7 +119,10 @@ esac
 			bed.manager.Adapters["claude-headless"] = launch.ClaudeHeadless{Binary: "claude"}
 			owners := bed.owners()
 			cleanCase := strings.HasPrefix(scenario, "clean-")
-			if cleanCase {
+			if scenario == "clean-handoff" {
+				owners.commandNow = func(string) (time.Time, error) { return now, nil }
+			}
+			if cleanCase && scenario != "clean-handoff" {
 				brief := bed.brief("continuable.md", "Build it.\n\n| Unit | Lines |\n| --- | --- |\n| first | 40 |\n")
 				code, result, _ := bed.work(append([]string{"work", "build", bed.id, "first", "--brief", brief}, workCheck...)...)
 				if code != 0 {
@@ -174,7 +192,9 @@ esac
 			if cleanCase || scenario == "closed-completed" || strings.HasSuffix(scenario, "-continuation") {
 				launchState = launch.Completed
 			}
-			if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launchState, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
+			if scenario == "clean-handoff" {
+				recordWrappedSeatHandoff(t, bed, failed, now)
+			} else if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launchState, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
 				t.Fatal(err)
 			}
 			before := steward.Evidence{AbnormalCount: 2, DryRevivals: 3}
@@ -185,6 +205,10 @@ esac
 				if err := outage.Clear(home, "anthropic", now); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if scenario == "clean-pending" || scenario == "clean-read-error" {
+				before.AbnormalCount = 1
+				before.Abnormal[0] = steward.AbnormalRestart{At: now, Class: "failed", Pending: true}
 			}
 			if strings.HasSuffix(scenario, "-continuation") {
 				before.CurrentContinuation = "stranded-continuation"
@@ -370,6 +394,26 @@ esac
 				return
 			}
 			if cleanCase {
+				if scenario == "clean-read-error" {
+					path := filepath.Join(root, "artifacts", "agents", "steward", "intents", "broken.json")
+					writeTestingFixtureFile(t, path, []byte("{"), 0600)
+					code, result := run(true)
+					if code == 0 || !strings.Contains(result.Summary, "broken.json") || !strings.Contains(result.Summary, "metasystem system check") || strings.Contains(result.Summary, "machine revive") {
+						t.Fatalf("missing actionable read failure: %d %s", code, result.Summary)
+					}
+					after, err := steward.LoadEvidence(steward.EvidencePath(root))
+					if err != nil || after != before {
+						t.Fatal("read failure changed restart evidence")
+					}
+					return
+				}
+				if scenario == "clean-pending" {
+					code, result := run(true)
+					after, err := steward.LoadEvidence(steward.EvidencePath(root))
+					if code != 0 || !strings.Contains(result.Summary, "restart history cleared") || strings.Contains(result.Summary, "machine revive") || err != nil || after.AbnormalCount != 0 {
+						t.Fatalf("pending restart was not cleared: %d %s (%v)", code, result.Summary, err)
+					}
+				}
 				if scenario == "clean-capped" {
 					for i := 0; i < 2; i++ {
 						r := failed
@@ -413,7 +457,7 @@ esac
 				if err != nil || !bytes.Equal(data, after) {
 					t.Fatal("clean revival rewrote history")
 				}
-				if scenario == "clean-completed" {
+				if scenario == "clean-completed" || scenario == "clean-pending" || scenario == "clean-handoff" {
 					cfg := steward.TickConfig{Now: now, ProviderHome: home, Seat: launcher, Units: stewardUnitStages(owners)}
 					successor, err := steward.StartSeat(root, cfg, seatTickCensus{}, steward.SeatSelection{Goal: bed.id, Held: true, ApprovalOpid: failed.ApprovalOpid})
 					if err != nil || successor.LaunchID == "" {

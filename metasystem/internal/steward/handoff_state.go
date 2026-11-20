@@ -57,6 +57,7 @@ type HandoffSeat struct {
 	Machine           string       `json:"machine"`
 	Runtime           string       `json:"runtime"`
 	Session           string       `json:"session"`
+	RuntimeSession    string       `json:"runtimeSession,omitempty"`
 	NormalizedSession string       `json:"normalizedSession"`
 	MainID            string       `json:"mainId,omitempty"`
 	Identity          identity.Ref `json:"identity"`
@@ -385,7 +386,7 @@ func validateHandoffState(root, nonce, goalID string, binding HandoffBinding, st
 		return fmt.Errorf("handoff seat identity is incomplete")
 	}
 	if state.Seat.NormalizedSession != goal.NormalizeSession(state.Seat.Session) || state.Seat.NormalizedSession != binding.Session ||
-		state.Seat.Runtime != binding.Runtime || state.Seat.MainID != binding.MainId || state.Seat.Identity != binding.Predecessor ||
+		state.Seat.RuntimeSession != binding.RuntimeSession || state.Seat.Runtime != binding.Runtime || state.Seat.MainID != binding.MainId || state.Seat.Identity != binding.Predecessor ||
 		state.Seat.Tag != binding.PredecessorTag || state.Seat.JobID != binding.PredecessorJob {
 		return fmt.Errorf("handoff seat does not match its launch binding")
 	}

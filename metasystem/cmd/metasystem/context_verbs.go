@@ -543,6 +543,11 @@ func contextHandoffCallerWithMachine(installation stateroot.Installation, stateR
 	}
 	announcement := classified.Announcement
 	caller.HolderMainId, caller.Runtime, caller.Session, caller.Tag = holder.MainId, announcement.Runtime, announcement.SessionId, announcement.InstanceTag
+	// The announcement keeps its original session key across compaction or
+	// resume. Preserve a later association alongside that key for the launch.
+	if session := announcement.EffectiveRuntimeSession(); session != caller.Session {
+		caller.RuntimeSession = session
+	}
 	caller.Ref = identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt,
 		StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
 	return caller, nil

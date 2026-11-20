@@ -1,8 +1,10 @@
 package steward
 
 import (
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -61,7 +63,7 @@ func seatWorkSnapshot(root, id string, d seatDependencies) (*SeatWorkSnapshot, e
 }
 
 func seatGoalProgress(root string, record SeatRecord, d seatDependencies) (bool, string) {
-	if record.WorkAtStart == nil {
+	if record.WorkAtStart.Marks == nil {
 		return false, "no work baseline was retained; no goal progress proved"
 	}
 	current, err := seatWorkSnapshot(root, record.Goal, d)
@@ -101,9 +103,13 @@ func cleanSeatEnd(root string, records []SeatRecord, selected SeatSelection, d s
 	if err != nil {
 		return false, "", err
 	}
+	started, finished := seatTime(last.StartedAt), seatTime(state.FinishedAt)
 	for _, intent := range intents {
 		binding := intent.Handoff
-		if intent.Goal != selected.Goal || binding == nil || state.Child == nil || state.Child.Pid == 0 || binding.Predecessor != *state.Child || binding.RecordedAt.Before(seatTime(last.StartedAt)) {
+		if intent.Goal != selected.Goal || binding == nil || !state.ownsHandoff(*binding) {
+			continue
+		}
+		if started.IsZero() || binding.RecordedAt.Before(started) || (!finished.IsZero() && binding.RecordedAt.After(finished)) {
 			continue
 		}
 		if _, err := verifyBoundHandoffState(root, intent.Nonce, intent.Goal, *binding); err != nil {
@@ -128,54 +134,80 @@ func cleanSeatEnd(root string, records []SeatRecord, selected SeatSelection, d s
 	return false, "ended completed without a handoff or continuable state", nil
 }
 
+// A wrapper can be the launch child while the hook announces the runtime
+// beneath it. Both the adapter result and SessionStart identify that session.
+func (s SeatLaunchState) ownsHandoff(binding HandoffBinding) bool {
+	if binding.PredecessorJob != "" {
+		return false
+	}
+	if s.Child != nil && s.Child.Pid > 0 && *s.Child == binding.Predecessor {
+		return true
+	}
+	runtime, _, _ := strings.Cut(s.Runtime, "-")
+	session := binding.RuntimeSession
+	if session == "" {
+		session = binding.Session
+	}
+	return s.Session != "" && binding.Runtime == runtime && session == goal.NormalizeSession(s.Session)
+}
+
 // completedSeatRevival reports the same automatic decision without clearing its
 // evidence. A person's ordinary close remains available for abnormal endings.
 func completedSeatRevival(root string, d seatDependencies) (error, bool) {
 	state := reapSeatLaunches(root, d, d.Now())
 	if state.Err != nil {
-		return state.Err, true
+		return seatRevivalReadError(state.Err), true
 	}
 	last := state.Records[len(state.Records)-1]
 	clean, _, readErr := cleanSeatEnd(root, state.Records, SeatSelection{Goal: last.Goal, Held: true, ApprovalOpid: last.ApprovalOpid}, d)
 	if readErr != nil {
-		return readErr, true
+		return seatRevivalReadError(readErr), true
 	}
 	if !clean {
 		return nil, false
 	}
 	p, err := d.Project(root, d.Now())
 	if err != nil {
-		return err, true
+		return seatRevivalReadError(err), true
 	}
 	machine, err := d.Machine(root)
 	if err != nil {
-		return err, true
+		return seatRevivalReadError(err), true
 	}
 	work, err := goal.ClaimableWorkFromProjection(p, machine, d.Prober)
 	if err != nil {
-		return err, true
+		return seatRevivalReadError(err), true
 	}
 	workers, err := d.Census.Workers(root)
 	if err != nil {
-		return err, true
+		return seatRevivalReadError(err), true
 	}
 	kind, _, _ := classifySharedBacklog(work)
 	cfg := (TickConfig{Now: d.Now(), ProviderHome: d.ProviderHome}).withDefaults()
 	provider := func(runtime string, err error) (outage.Mark, bool) {
 		return standingProviderOutage(runtime, d.Now(), nil, d.ProviderHome)
 	}
-	decision, selection, _ := seatDecision(root, cfg, kind, work, workers, provider, d, state)
-	if selection != nil {
-		clean, _, err := cleanSeatEnd(root, state.Records, *selection, d)
+	var ev Evidence
+	decision, selection, _ := seatAdmission(root, cfg, kind, work, workers, provider, d, state, &ev)
+	if selection != nil && selection.Held && selection.Kind == last.Kind && selection.Goal == last.Goal && selection.ApprovalOpid == last.ApprovalOpid {
+		_, stop, err := abnormalRestartState(root, ev, d.Now(), selection, clean)
 		if err != nil {
-			return err, true
+			return seatRevivalReadError(err), true
 		}
-		if clean {
-			return SeatRevivalClosed{Launch: last.LaunchID, Goal: last.Goal, Automatic: true}, true
+		if stop != "" {
+			return closeUnboundLaunch(root, &last, "its completed session left a clean end", d), true
 		}
+		return SeatRevivalClosed{Launch: last.LaunchID, Goal: last.Goal, Automatic: true}, true
+	}
+	if decision.Verdict == VerdictDegraded {
+		return seatRevivalReadError(errors.New(decision.Reason)), true
 	}
 	if decision.Action != ActRevive && decision.Reason != "" {
 		return SeatRevivalClosed{Launch: last.LaunchID, Goal: last.Goal, Wait: decision.Reason}, true
 	}
 	return nil, false
+}
+
+func seatRevivalReadError(err error) error {
+	return fmt.Errorf("cannot confirm the session end: %w; repair the reported record and run metasystem system check", err)
 }

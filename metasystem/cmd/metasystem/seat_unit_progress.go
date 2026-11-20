@@ -15,7 +15,7 @@ func seatUnitProgress(unit *steward.UnitStage, work launch.NamedWork, next []str
 	if r == nil {
 		return
 	}
-	unit.Continuable = r.State == "awaiting-judgement" && len(next) > 0
+	unit.Continuable = (r.State == "awaiting-judgement" || r.State == launch.UnitStepEnded) && len(next) > 0
 	unit.Advances = append(unit.Advances, "admitted:"+r.ID)
 	for _, round := range r.Rounds {
 		for _, step := range round.Steps {

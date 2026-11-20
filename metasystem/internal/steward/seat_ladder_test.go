@@ -1157,7 +1157,13 @@ func seatCycle(t *testing.T, bed *seatBed, want string, blocker string) SeatReco
 	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != want {
 		t.Fatalf("seat for %s: %+v %+v", want, result.Decision, result.Seat)
 	}
-	record := SeatRecord{Schema: 1, LaunchID: fmt.Sprintf("fixture-seat-%d", len(bed.launcher.starts)+1),
+	// This fixture drives PlanSeat independently of abnormal restart history.
+	// Record the work baseline just as a current-engine start does.
+	baseline, err := seatWorkSnapshot(bed.root, want, *bed.seatDependencies())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := SeatRecord{WorkAtStart: baseline, Schema: 1, LaunchID: fmt.Sprintf("fixture-seat-%d", len(bed.launcher.starts)+1),
 		Goal: want, ApprovalOpid: bed.goals[want].Approved.Opid, Machine: seatBedMachine,
 		Tips: map[string]string{want: bed.tips[want]}, StartedAt: bed.now.Format(seatStartedAtLayout)}
 	if err := writeSeatRecord(bed.root, record); err != nil {

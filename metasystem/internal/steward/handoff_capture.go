@@ -46,10 +46,10 @@ var (
 // steward boundary. Main facts come from its announcement. A delegate is
 // rebound to the active continuation's job record before any state is made.
 type HandoffCaller struct {
-	Class, MainId, HolderMainId, JobId string
-	Runtime, Session, Machine          string
-	Ref                                identity.Ref
-	Tag                                string
+	Class, MainId, HolderMainId, JobId        string
+	Runtime, Session, RuntimeSession, Machine string
+	Ref                                       identity.Ref
+	Tag                                       string
 }
 
 // HandoffCanceller identifies who asks to cancel. Human is present only for
@@ -959,7 +959,7 @@ func buildHandoffState(root, nonce, dir string, capture capturedHandoff, now tim
 	state := HandoffState{
 		SchemaVersion: HandoffSchemaVersion, WrittenAt: now,
 		Seat: HandoffSeat{Machine: capture.authority.Machine, Runtime: capture.authority.Runtime,
-			Session: capture.authority.Session, NormalizedSession: goal.NormalizeSession(capture.authority.Session),
+			Session: capture.authority.Session, RuntimeSession: capture.authority.RuntimeSession, NormalizedSession: goal.NormalizeSession(capture.authority.Session),
 			MainID: capture.authority.MainId, Identity: capture.authority.Ref, Tag: capture.authority.Tag,
 			JobID: capture.authority.JobId},
 		HeldGoal: HandoffHeldGoal{ID: capture.goal.Id, State: capture.goalState, AcceptedRevision: capture.goal.Revision,
@@ -983,7 +983,7 @@ func buildHandoffState(root, nonce, dir string, capture capturedHandoff, now tim
 	}
 	statePath := filepath.Join(dir, "state.json")
 	binding := HandoffBinding{StatePath: statePath, StateDigest: testableDigest(stateData), Runtime: capture.authority.Runtime,
-		Session: goal.NormalizeSession(capture.authority.Session), MainId: capture.authority.MainId,
+		Session: goal.NormalizeSession(capture.authority.Session), RuntimeSession: capture.authority.RuntimeSession, MainId: capture.authority.MainId,
 		Predecessor: capture.authority.Ref, PredecessorTag: capture.authority.Tag,
 		PredecessorJob: capture.authority.JobId, RecordedAt: now}
 	if write {

@@ -357,7 +357,7 @@ func TestCleanEndAdmissionIsReadAgainUnderTheStartLock(t *testing.T) {
 }
 
 func TestCleanEndHandoffMustBelongToTheEndedProcess(t *testing.T) {
-	for _, kind := range []string{"current", "old session", "corrupt capture"} {
+	for _, kind := range []string{"current", "old session", "other runtime", "after end", "corrupt capture"} {
 		t.Run(kind, func(t *testing.T) {
 			b := newCleanEndBed(t)
 			installHandoffFixtureFiles(t, b.root)
@@ -374,7 +374,14 @@ func TestCleanEndHandoffMustBelongToTheEndedProcess(t *testing.T) {
 			b.finish(record)
 			state := b.launcher.states[record.LaunchID]
 			state.Child = &caller.Ref
-			if kind == "old session" {
+			if kind == "after end" {
+				state.FinishedAt = handoffCaptureNow.Add(-time.Second).Format(time.RFC3339Nano)
+			}
+			if kind == "old session" || kind == "other runtime" {
+				state.Session, state.Runtime = "another-session", "fake"
+				if kind == "other runtime" {
+					state.Session, state.Runtime = caller.Session, "different-exec"
+				}
 				other := caller.Ref
 				other.Pid++
 				state.Child = &other
@@ -534,5 +541,61 @@ func TestCleanEndFenceAndProviderHoldRemainReversible(t *testing.T) {
 				t.Fatalf("clean state lost across hold: %+v", ready.Decision)
 			}
 		})
+	}
+}
+
+func TestUpgradeRetainsTheOldReapersProgressJudgement(t *testing.T) {
+	t.Parallel()
+	b := newCleanEndBed(t)
+	approval := b.goals["held"].Approved.Opid
+	b.launcher.states = make(map[string]SeatLaunchState)
+	for i, outcome := range []string{SeatNoProgress, SeatNoProgress, SeatProgress, SeatNoProgress} {
+		at := b.now.Add(time.Duration(i-5) * time.Minute).Format(seatStartedAtLayout)
+		id := fmt.Sprintf("legacy-%d", i)
+		// These are the previous engine's bytes, without a goal-work snapshot or verdict.
+		data := fmt.Sprintf(`{"schema":1,"launchId":%q,"goal":"held","approvalOpid":%q,"startedAt":%q,"reapedAt":%q,"launchState":"completed","outcome":%q}`, id, approval, at, at, outcome)
+		writeTestFile(t, seatRecordPath(b.root, id), []byte(data))
+		b.end(id, "completed", "RESULT: DONE")
+	}
+	record := b.begin()
+	b.finish(record)
+	if r := b.decision(); r.Seat == nil || SeatNoProgressCount(b.records(), "held", approval) != 2 {
+		t.Fatalf("upgrade lost the legacy reset or strike: %+v", r.Decision)
+	}
+}
+
+// An active seat can cross the upgrade before its first reap. Its recorded
+// tip baseline remains usable under the old progress measure.
+func TestUpgradeReapsAnOldStartUnderItsOriginalMeasure(t *testing.T) {
+	t.Parallel()
+	b := newCleanEndBed(t)
+	r := b.begin()
+	r.WorkAtStart = nil
+	r.Tips = map[string]string{"held": "before"}
+	if err := writeSeatRecord(b.root, r); err != nil {
+		t.Fatal(err)
+	}
+	b.tips["held"] = "after"
+	b.finish(r)
+	got := b.decision()
+	last := b.records()[0]
+	if got.Seat == nil || last.Outcome != SeatProgress || last.GoalProgress != nil || SeatNoProgressCount(b.records(), r.Goal, r.ApprovalOpid) != 0 {
+		t.Fatal("legacy start lost its progress judgement on reap")
+	}
+}
+
+func TestUnreadableNewWorkBaselineStillCountsTheEnd(t *testing.T) {
+	t.Parallel()
+	b := newCleanEndBed(t)
+	b.tips["held"] = "original-tip"
+	b.unitErr = errors.New("unit store unavailable")
+	record := b.begin()
+	b.unitErr = nil
+	b.tips["held"] = "new-tip"
+	b.finish(record)
+	b.decision()
+	last := b.records()[0]
+	if last.Outcome != SeatProgress || last.GoalProgress == nil || *last.GoalProgress || SeatNoProgressCount(b.records(), record.Goal, record.ApprovalOpid) != 1 {
+		t.Fatalf("current-engine start with unreadable work borrowed the legacy measure: %+v", last)
 	}
 }

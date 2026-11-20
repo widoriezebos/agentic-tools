@@ -59,6 +59,7 @@ type SeatLaunchState struct {
 	Found                bool
 	Terminal             bool
 	State                string
+	Session              string
 	ResultPath           string
 	FinishedAt           string
 	Home, Runtime, Model string
@@ -359,7 +360,7 @@ func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.T
 				record.Outcome, record.Evidence = SeatProgress, evidence
 			}
 		}
-		if record.Kind != "steward" && record.Outcome != SeatProviderLimit {
+		if record.WorkAtStart != nil && record.Kind != "steward" && record.Outcome != SeatProviderLimit {
 			progress, evidence := seatGoalProgress(repoRoot, *record, dependencies)
 			record.GoalProgress, record.GoalEvidence = &progress, evidence
 		}
@@ -476,6 +477,32 @@ func stewardshipWork(root string, dependencies seatDependencies, now time.Time) 
 // seatDecision owns the start guards for both the tick and its health reading.
 func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
+	var ev Evidence
+	d, selection, handled := seatAdmission(repoRoot, cfg, work, shared, workers, providerCheck, dependencies, state, &ev)
+	if !handled {
+		return d, selection, false
+	}
+	if d.Action == ActRevive && selection != nil {
+		clean, explanation, err := cleanSeatEnd(repoRoot, state.Records, *selection, dependencies)
+		if err != nil {
+			return Decision{VerdictDegraded, ActNotify, "the session end cannot be read: " + err.Error()}, nil, true
+		}
+		if _, reason, err := abnormalRestartState(repoRoot, ev, cfg.now(), selection, clean); err != nil {
+			return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+		} else if reason != "" {
+			return Decision{d.Verdict, ActNotify, "not clean; waits for you: " + reason}, nil, true
+		}
+		if explanation != "" {
+			d.Reason = explanation + "; " + d.Reason
+		}
+	}
+	return d, selection, true
+}
+
+// seatAdmission applies the guards that a person's clearance of abnormal
+// history cannot lift. The end classification follows only for an admitted start.
+func seatAdmission(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
+	dependencies seatDependencies, state seatTickState, ev *Evidence) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned || work == WorkWaiting
 	stewardOnly := work != WorkClaimable && !owned
 	if work == WorkDegraded || stewardOnly && state.Steward == nil {
@@ -555,31 +582,17 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if closed {
 		return Decision{verdict, ActNone, reason}, nil, true
 	}
-	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	*ev, err = LoadEvidence(EvidencePath(repoRoot))
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
-	if _, err := settleEndedContinuation(repoRoot, &ev); err != nil {
+	if _, err := settleEndedContinuation(repoRoot, ev); err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
 	if mark := ev.StewardStopCleared; mark != nil && mark.Root == canonicalPath(repoRoot) {
 		world.StewardClearedAt = mark.At
 	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned, stewardOnly)
-	if d.Action == ActRevive && selection != nil {
-		clean, explanation, err := cleanSeatEnd(repoRoot, state.Records, *selection, dependencies)
-		if err != nil {
-			return Decision{VerdictDegraded, ActNotify, "the session end cannot be read: " + err.Error()}, nil, true
-		}
-		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection, clean); err != nil {
-			return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
-		} else if reason != "" {
-			return Decision{verdict, ActNotify, "not clean; waits for you: " + reason}, nil, true
-		}
-		if explanation != "" {
-			d.Reason = explanation + "; " + d.Reason
-		}
-	}
 	return d, selection, true
 }
 
@@ -659,9 +672,8 @@ func ReviveSeat(root string, cfg TickConfig, census WorkerCensus, after string, 
 	if !seatPerson(root, person) || cfg.Seat == nil {
 		return SeatRecord{}, errors.New("seat revival needs the person's enrolled terminal and a seat launcher")
 	}
-	d := seatDependenciesForConfig(cfg)
-	d.Now, d.ProviderHome, d.Person, d.After, d.RegistryPath, d.Census, d.WorkStateRoot = cfg.now, cfg.ProviderHome, person, after, registryPath, census, cfg.WorkStateRoot
-	d.Prober = cfg.Prober
+	d := seatDependenciesForConfig(cfg.withDefaults())
+	d.Person, d.After, d.RegistryPath, d.Census = person, after, registryPath, census
 	return startSeatWithDependencies(root, SeatSelection{}, d)
 }
 
@@ -835,7 +847,7 @@ func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string, dependenc
 	if err != nil {
 		return err
 	}
-	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount > 0, Continuation: ev.CurrentContinuation}
+	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount != 0, Continuation: ev.CurrentContinuation}
 	changed, err := settleEndedContinuation(repoRoot, &ev)
 	if err != nil {
 		return err
@@ -1096,7 +1108,12 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		}
 	}
 	if selection.Kind != "steward" {
-		record.WorkAtStart, _ = seatWorkSnapshot(repoRoot, selection.Goal, dependencies)
+		record.WorkAtStart, err = seatWorkSnapshot(repoRoot, selection.Goal, dependencies)
+		if err != nil {
+			// A current-engine start with unreadable work is distinct from a
+			// legacy start. Its end must still count without proven progress.
+			record.WorkAtStart = &SeatWorkSnapshot{}
+		}
 	}
 	if err := writeSeatRecord(repoRoot, record); err != nil {
 		return SeatRecord{}, err

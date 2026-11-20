@@ -319,11 +319,12 @@ func SeatNoProgressCount(records []SeatRecord, goalID, approvalOpid string) int 
 		if record.Goal != goalID || record.ApprovalOpid != approvalOpid {
 			continue
 		}
-		if record.Kind == "steward" {
+		// Old reapers and steward occurrences recorded their judgement in Outcome.
+		if record.GoalProgress == nil {
 			if record.Outcome == SeatProgress {
 				return count
 			}
-		} else if record.GoalProgress != nil && *record.GoalProgress {
+		} else if *record.GoalProgress {
 			return count
 		}
 		switch record.Outcome {

@@ -25,6 +25,7 @@ type HandoffBinding struct {
 	StateDigest    string       `json:"stateDigest"`
 	Runtime        string       `json:"runtime"`
 	Session        string       `json:"session"`
+	RuntimeSession string       `json:"runtimeSession,omitempty"`
 	MainId         string       `json:"mainId,omitempty"`
 	Predecessor    identity.Ref `json:"predecessor"`
 	PredecessorTag string       `json:"predecessorTag,omitempty"`

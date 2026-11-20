@@ -171,7 +171,9 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 	if record.State == launch.Starting && record.Child == nil {
 		state = "reserved"
 	}
-	return steward.SeatLaunchState{Child: record.Child, Found: true, Terminal: record.State.Terminal(), State: state,
+	var session string
+	_ = json.Unmarshal(record.AdapterData["sessionID"], &session)
+	return steward.SeatLaunchState{Child: record.Child, Session: session, Found: true, Terminal: record.State.Terminal(), State: state,
 		ResultPath: filepath.Join(dir, "result.json"), FinishedAt: record.FinishedAt, Runtime: record.Adapter, Model: launchModel(record)}, nil
 }
 
