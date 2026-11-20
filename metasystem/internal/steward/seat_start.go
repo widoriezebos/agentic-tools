@@ -741,7 +741,12 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 	}
 	return fmt.Sprintf("# Seat session\n\n"+
 		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork one unit through its completed outcome and collected, published read%s.\n\n"+
-		"The steward started you for goal %s: %s.\n\n",
+		"The steward started you for goal %s: %s.\n\n"+
+		"When you ask the person to accept a finding's risk or stop a run on this goal,\n"+
+		"declare the act beside its option. For example, for run r17 use\n"+
+		"`--option 'Stop: cancel the run' --option-act 'Stop: metasystem work stop run:r17'`.\n"+
+		"Completing the act in this checkout answers the question. Ask questions without an observable\n"+
+		"act as usual (docs/working-with-agents.md).\n\n",
 		selection.Goal, boundary, selection.Goal, why) + handoff + strings.Join(facts, "")
 }
 

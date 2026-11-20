@@ -89,6 +89,7 @@ func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
 				}
 			}
 			require(seatBrief(SeatSelection{Goal: "alpha"}, true))
+			require("--option 'Stop: cancel the run' --option-act 'Stop: metasystem work stop run:r17'")
 			for _, instruction := range []string{"stop advancing at that boundary", "--note <that note> --no-delegates", "repeat the same handoff command to confirm durable binding", "End your turn once the binding is durable", "remain alive, report the exact error"} {
 				require(instruction)
 			}
