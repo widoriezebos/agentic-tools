@@ -161,18 +161,16 @@ func NewWorldAtEndpoint(e Endpoint) bool {
 	return err == nil && exists
 }
 
-// ReadRecordFiles captures the current shared ledger and releases the capture
-// after reading one record family through the endpoint's repository.
+// ReadRecordFiles reads the locally accepted ledger. Synchronization owns
+// fetching remote changes; inspecting records never starts a network request.
 func ReadRecordFiles(e Endpoint, prefix string) (map[string][]byte, error) {
-	nonce, err := NewOperationULID()
-	if err != nil {
-		return nil, err
-	}
 	repository := e.repository()
-	tip, err := repository.Capture(nonce)
+	tip, present, err := repository.Accepted()
 	if err != nil {
 		return nil, err
 	}
-	defer repository.Release(nonce)
+	if !present {
+		return nil, fmt.Errorf("the goal ledger has no locally accepted state")
+	}
 	return repository.Files(tip, prefix)
 }

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -45,7 +46,8 @@ func (f PublicationCaptureFailure) Unwrap() error { return f.Cause }
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
-	CheckCandidate func(string) error
+	networkDeadline time.Time
+	CheckCandidate  func(string) error
 	// ProjectionDeadline supplies fresh-read deadlines; nil uses production timers.
 	ProjectionDeadline func(time.Duration) <-chan time.Time
 	// SplitConfirmed requests child approval after a committed split; delivery
@@ -68,6 +70,13 @@ type Endpoint struct {
 	// compare-and-swap goes through; nil is the plain lease push. Set only
 	// through WithCASPublisher.
 	casPublisher CASPublisher
+}
+
+// WithNetworkDeadline bounds fetches and pushes initiated by this endpoint.
+// A channel read uses one deadline for all answer publication attempts.
+func (e Endpoint) WithNetworkDeadline(deadline time.Time) Endpoint {
+	e.networkDeadline = deadline
+	return e
 }
 
 // CASPublisher publishes one ledger commit onto tip in place of the plain
@@ -197,6 +206,21 @@ func goalGitWithEnvironment(root string, environment, extraEnv []string, args ..
 func CaptureTip(e Endpoint, opid string) (string, error) {
 	if e.Repository != nil {
 		return e.Repository.Capture(opid)
+	}
+	if !e.networkDeadline.IsZero() && !e.LocalMode() {
+		remaining := time.Until(e.networkDeadline)
+		if remaining <= 0 {
+			return "", fmt.Errorf("the answer publication deadline expired")
+		}
+		capture, err := CaptureTipBounded(e, remaining)
+		if err != nil {
+			return "", err
+		}
+		defer CleanupRefs(e, capture.OperationID)
+		if _, err := goalGitWithEnvironment(e.Root, e.commandEnv, nil, "update-ref", fetchRefFor(opid), capture.Tip); err != nil {
+			return "", err
+		}
+		return capture.Tip, nil
 	}
 	if e.LocalMode() {
 		out, err := goalGit(e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
@@ -481,9 +505,18 @@ func PublishCAS(e Endpoint, tip, commit string) (CASOutcome, error) {
 		}
 		return CASLanded, nil
 	}
-	out, err := goalGit(e.Root, nil, "push", e.Remote,
-		"--force-with-lease="+e.Branch+":"+tip,
-		commit+":"+e.Branch)
+	var out string
+	var err error
+	args := []string{"push", e.Remote, "--force-with-lease=" + e.Branch + ":" + tip, commit + ":" + e.Branch}
+	if e.networkDeadline.IsZero() {
+		out, err = goalGit(e.Root, nil, args...)
+	} else {
+		cmd := commandWithEnvironment(e.commandEnv, "git", append([]string{"-C", e.Root}, args...)...)
+		var output bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &output, &output
+		err = boundedexec.Run(cmd, boundedexec.Bound{Limit: max(0, time.Until(e.networkDeadline)), TotalDeadline: e.networkDeadline}, "channel answer publication")
+		out = output.String()
+	}
 	if err != nil {
 		outcome := classifyPushFailure(out)
 		return outcome, err

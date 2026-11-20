@@ -121,6 +121,9 @@ func (q questionRef) publicName() string {
 
 // questionDetails keeps the evidence and proposed terms with the question's words.
 func questionDetails(page *textui.Page, c channel.Question) {
+	if c.ActCheck != "" {
+		page.Section("", "").Text(c.ActCheck)
+	}
 	section := page.Section("", "")
 	if c.Answer != nil && c.Answer.Act != nil {
 		a := c.Answer.Act
@@ -332,7 +335,6 @@ func (inv *intentInvocation) settleQuestionReplies() *intentResult {
 	root := inv.layout.InstallationRoot.Path()
 	if err := channel.ReconcileNamedActs(root, inv.owners.dependencies.endpoint); err != nil {
 		inv.replySettleErr = err
-		return nil
 	}
 	ctx, cancel, err := channelPollContext(root)
 	if err == nil {

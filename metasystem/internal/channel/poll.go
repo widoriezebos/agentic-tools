@@ -85,6 +85,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 	if err := os.MkdirAll(channelRoot(c.RepoRoot), 0o755); err != nil {
 		return result, err
 	}
+	_ = ReconcileNamedActs(c.RepoRoot, resolveEndpoint)
 	held, err := lock.File(filepath.Join(channelRoot(c.RepoRoot), "lock"), 0o644, lock.TryExclusive)
 	if err != nil {
 		if lock.Busy(err) {
@@ -97,9 +98,6 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		if c.answerCodeOff, err = AnswerCodeOff(c.RepoRoot); err != nil {
 			return result, err
 		}
-	}
-	if err := reconcileNamedActs(c.RepoRoot, resolveEndpoint); err != nil {
-		return result, err
 	}
 	questions, err := listQuestions(c.RepoRoot)
 	if err != nil {
@@ -133,7 +131,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 			break
 		}
 		q := &questions[i]
-		if unfinishedAnswer(*q) {
+		if unfinishedAnswer(*q) && (q.Answer == nil || q.Answer.Act == nil) {
 			if err = advanceAnswerWithEndpoint(ctx, c, q, resolveEndpoint); err != nil {
 				publicationErrors = errors.Join(publicationErrors, &ReplyPublicationError{Question: strings.Join(q.Facts, " "), Err: scrubErr(err, c)})
 				continue

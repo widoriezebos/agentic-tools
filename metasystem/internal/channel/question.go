@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,6 +82,7 @@ type Withdrawal struct {
 }
 
 type Question struct {
+	ActCheck     string    `json:"actCheck,omitempty"`
 	ActsBefore   []string  `json:"actsBefore,omitempty"`
 	ActsOpenedAt time.Time `json:"actsOpenedAt,omitzero"`
 	ActPerson    string    `json:"actPerson,omitempty"`
@@ -211,12 +211,9 @@ func listQuestions(repo string) ([]Question, error) {
 // and the turn-end scanner. One unreadable file never hides the other open
 // questions; its path is returned on the separate failure channel.
 func WalkOpenQuestions(repo string) ([]Question, []string) {
-	repairErr := ReconcileNamedActs(repo, nil)
+	_ = ReconcileNamedActs(repo, nil)
 	all, unreadable := WalkQuestions(repo)
 	var questions []Question
-	if repairErr != nil && !errors.Is(repairErr, ErrChannelBusy) {
-		unreadable = append(unreadable, repairErr.Error())
-	}
 	for _, question := range all {
 		if question.State == "open" {
 			questions = append(questions, question)
@@ -564,7 +561,7 @@ func renderPlain(q Question) string {
 	lines = append(lines, "If you do nothing: "+plainSentence(cmp.Or(plain.IfNothing, "this question stays open"), false))
 	for _, option := range q.Options {
 		if option.NamedAct != nil {
-			lines = append(lines, "- "+option.Label+": "+strings.Join(option.NamedAct.Command(), " "))
+			lines = append(lines, "- "+option.Label+": "+option.NamedAct.DisplayCommand())
 		}
 		lines = append(lines, "- "+option.Label+": "+plainSentence(option.Consequence, false))
 	}

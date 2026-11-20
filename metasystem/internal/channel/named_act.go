@@ -3,17 +3,19 @@ package channel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
 // NamedAct identifies the completed operation an option asks for. Reasons
@@ -31,6 +33,17 @@ func (a NamedAct) Command() []string {
 	}
 	return []string{"metasystem", "work", "stop", "run:" + a.Target}
 }
+func (a NamedAct) DisplayCommand() string {
+	words := a.Command()
+	if a.Verb == "goal accept-risk" {
+		words = append(words, "--reason", "TEXT")
+	}
+	for i := range words {
+		words[i] = shellquote.Word(words[i])
+	}
+	return strings.Join(words, " ")
+}
+
 func (a NamedAct) valid() bool {
 	return a.Goal != "" && a.Target != "" && ((a.Verb == "goal accept-risk" && a.Finding != "") || (a.Verb == "work stop" && a.Finding == ""))
 }
@@ -60,6 +73,53 @@ func RecordNamedAct(root string, ep goal.Endpoint, act NamedAct, person, machine
 	reply := proof.ChannelWordFor(root)
 	if !direct && !reply {
 		return evidence, nil
+	}
+	if act.Verb == "work stop" {
+		questions, unreadable := WalkQuestions(root)
+		if len(unreadable) > 0 {
+			return evidence, fmt.Errorf("the open questions could not be read")
+		}
+		var needed []Question
+		var pending *ActEvidence
+		for _, q := range questions {
+			if q.State != "open" || !q.RetiredAt.IsZero() {
+				continue
+			}
+			if q.Answer != nil {
+				if q.Answer.Act != nil && q.Answer.Act.Act == act {
+					pending = q.Answer.Act
+				}
+				continue
+			}
+			for _, o := range q.Options {
+				if o.NamedAct != nil && *o.NamedAct == act {
+					needed = append(needed, q)
+					break
+				}
+			}
+		}
+		if len(needed) == 0 {
+			if pending != nil {
+				return *pending, nil
+			}
+			return evidence, nil
+		}
+		acts, _ := readNamedActs(root, nil, false)
+		for _, a := range acts {
+			if a.Act != act {
+				continue
+			}
+			coversAll := true
+			for _, q := range needed {
+				if !namedActMatches(q, a) {
+					coversAll = false
+					break
+				}
+			}
+			if coversAll {
+				return a, nil
+			}
+		}
 	}
 	id, err := goal.NewOperationULID()
 	if err != nil {
@@ -93,6 +153,7 @@ func RecordNamedAct(root string, ep goal.Endpoint, act NamedAct, person, machine
 
 func readNamedActs(root string, resolve func(string) (goal.Endpoint, error), shared bool) ([]ActEvidence, error) {
 	files := map[string][]byte{}
+	var diagnostics error
 	paths, err := filepath.Glob(filepath.Join(channelRoot(root), "named-acts", "*.json"))
 	if err != nil {
 		return nil, err
@@ -100,31 +161,34 @@ func readNamedActs(root string, resolve func(string) (goal.Endpoint, error), sha
 	for _, path := range paths {
 		data, e := os.ReadFile(path)
 		if e != nil {
-			return nil, e
+			diagnostics = errors.Join(diagnostics, fmt.Errorf("act record %s could not be read", filepath.Base(path)))
+			continue
 		}
 		files[path] = data
 	}
 	if shared {
 		ep, e := resolve(root)
-		if e != nil {
-			return nil, e
+		if e == nil {
+			var rows map[string][]byte
+			rows, e = goal.ReadRecordFiles(ep, namedActPrefix)
+			for path, data := range rows {
+				files[path] = data
+			}
 		}
-		rows, e := goal.ReadRecordFiles(ep, namedActPrefix)
 		if e != nil {
-			return nil, e
-		}
-		for path, data := range rows {
-			files[path] = data
+			diagnostics = errors.Join(diagnostics, fmt.Errorf("the local goal ledger could not be read: %w", e))
 		}
 	}
 	byID := map[string]ActEvidence{}
-	for _, data := range files {
+	for path, data := range files {
 		var a ActEvidence
 		if err := json.Unmarshal(data, &a); err != nil {
-			return nil, err
+			diagnostics = errors.Join(diagnostics, fmt.Errorf("skipped unreadable act record %s", filepath.Base(path)))
+			continue
 		}
 		if a.ID == "" || !a.Act.valid() || a.At.IsZero() || a.Person == "" {
-			return nil, fmt.Errorf("a completed act record is incomplete")
+			diagnostics = errors.Join(diagnostics, fmt.Errorf("skipped incomplete or unsupported act record %s", filepath.Base(path)))
+			continue
 		}
 		// This checks retained evidence, never grants authority to a reader.
 		terminal := a.Proof.Helm == nil && a.Proof.RecordedEnrolled()
@@ -143,7 +207,7 @@ func readNamedActs(root string, resolve func(string) (goal.Endpoint, error), sha
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
-	return out, nil
+	return out, diagnostics
 }
 
 func hasNamedActs(q Question) bool {
@@ -155,7 +219,20 @@ func hasNamedActs(q Question) bool {
 	return false
 }
 
-// ReconcileNamedActs runs before callers decide whether a question is open.
+func namedActMatches(q Question, a ActEvidence) bool {
+	if (q.ActPerson != "" && !strings.EqualFold(q.ActPerson, a.Person)) || (!q.ActsOpenedAt.IsZero() && a.RecordedAt.Before(q.ActsOpenedAt)) || a.Act.Goal != q.Goal || a.At.Before(q.OpenedAt) || slices.Contains(q.ActsBefore, a.ID) {
+		return false
+	}
+	for _, o := range q.Options {
+		if o.NamedAct != nil && *o.NamedAct == a.Act {
+			return true
+		}
+	}
+	return false
+}
+
+// ReconcileNamedActs reads locally accepted evidence. Publication is bounded
+// and runs outside the channel lock, so other questions remain usable.
 func ReconcileNamedActs(root string, resolve func(string) (goal.Endpoint, error)) error {
 	if resolve == nil {
 		resolve = project.PublicationEndpoint
@@ -171,64 +248,118 @@ func ReconcileNamedActs(root string, resolve func(string) (goal.Endpoint, error)
 	if !needed {
 		return nil
 	}
-	return withPollLock(root, func() error { return reconcileNamedActs(root, resolve) })
-}
-func reconcileNamedActs(root string, resolve func(string) (goal.Endpoint, error)) error {
-	questions, _ := WalkQuestions(root)
-	needed, shared := false, false
-	for _, q := range questions {
-		if q.State == "open" && q.RetiredAt.IsZero() && hasNamedActs(q) {
-			needed = true
-			for _, o := range q.Options {
-				if o.NamedAct != nil && o.NamedAct.Verb == "goal accept-risk" {
-					shared = true
-				}
-			}
-		}
-	}
-	if !needed {
-		return nil
-	}
-	acts, err := readNamedActs(root, resolve, shared)
+	held, err := lock.File(filepath.Join(channelRoot(root), "named-acts.lock"), 0o644, lock.TryExclusive)
 	if err != nil {
+		if lock.Busy(err) {
+			return ErrChannelBusy
+		}
 		return err
 	}
-	for _, q := range questions {
-		if q.Answer != nil && q.Answer.Act != nil && q.Answer.Phase != "closed" {
-			if err := advanceAnswerWithEndpoint(context.Background(), PollConfig{RepoRoot: root, Now: q.Answer.At, Destination: "fleet"}, &q, resolve); err != nil {
-				return err
-			}
-		}
-		if q.State != "open" || q.Answer != nil || !q.RetiredAt.IsZero() {
+	defer held.Release()
+	deadline := time.Now().Add(5 * time.Second)
+	var failures error
+	for _, prior := range questions {
+		if prior.State != "open" || !prior.RetiredAt.IsZero() || !hasNamedActs(prior) {
 			continue
 		}
-		for _, a := range acts {
-			if (q.ActPerson != "" && !strings.EqualFold(q.ActPerson, a.Person)) || (!q.ActsOpenedAt.IsZero() && a.RecordedAt.Before(q.ActsOpenedAt)) || a.Act.Goal != q.Goal || a.At.Before(q.OpenedAt) || slices.Contains(q.ActsBefore, a.ID) {
-				continue
+		shared := false
+		for _, o := range prior.Options {
+			if o.NamedAct != nil && o.NamedAct.Verb == "goal accept-risk" {
+				shared = true
 			}
-			for _, o := range q.Options {
-				if o.NamedAct == nil || !reflect.DeepEqual(*o.NamedAct, a.Act) {
-					continue
+		}
+		acts, readErr := readNamedActs(root, resolve, shared)
+		var matched Question
+		err := withPollLock(root, func() error {
+			q, err := ReadQuestion(root, prior.ID)
+			if err != nil {
+				return err
+			}
+			if q.State != "open" || !q.RetiredAt.IsZero() || (q.Answer != nil && q.Answer.Act == nil) {
+				return nil
+			}
+			if q.Answer == nil {
+				for _, a := range acts {
+					if !namedActMatches(q, a) {
+						continue
+					}
+					for _, o := range q.Options {
+						if o.NamedAct == nil || *o.NamedAct != a.Act {
+							continue
+						}
+						id, err := goal.NewOperationULID()
+						if err != nil {
+							return err
+						}
+						q.Answer = &Answer{Machine: a.Machine, Lineage: "question-act", Provider: a.Source, Text: o.Label, UserID: a.Person, At: a.At, Step: 1, ULID: id, Opid: goal.Opid(id, a.Machine, "question-act"), Ref: MessageRef{ID: a.ID, ThreadID: q.ID}, Phase: "matched", Act: &a}
+						break
+					}
+					break
 				}
-				id, err := goal.NewOperationULID()
-				if err != nil {
-					return err
-				}
-				q.Answer = &Answer{Machine: a.Machine, Lineage: "question-act", Provider: a.Source, Text: o.Label, UserID: a.Person, At: a.At, Step: 1, ULID: id, Opid: goal.Opid(id, a.Machine, "question-act"), Ref: MessageRef{ID: a.ID, ThreadID: q.ID}, Phase: "matched", Act: &a}
+			}
+			diagnostic := ""
+			if readErr != nil {
+				diagnostic = "could not be checked now: " + readErr.Error()
+			}
+			changed := q.ActCheck != diagnostic || (q.Answer != nil && prior.Answer == nil)
+			q.ActCheck = diagnostic
+			if changed {
 				if err := writeJSON(questionPath(root, q.ID), q); err != nil {
 					return err
 				}
-				if err := advanceAnswerWithEndpoint(context.Background(), PollConfig{RepoRoot: root, Now: a.At, Destination: "fleet"}, &q, resolve); err != nil {
-					return err
-				}
-				break
 			}
 			if q.Answer != nil {
-				break
+				matched = q
+			}
+			return nil
+		})
+		if err != nil {
+			failures = errors.Join(failures, err)
+			continue
+		}
+		if matched.Answer == nil {
+			continue
+		}
+		a := matched.Answer
+		var publishErr error
+		if a.Phase == "matched" {
+			ep, e := resolve(root)
+			publishErr = e
+			if e == nil {
+				published, e := goal.Answer(goal.VerbRequest{Endpoint: ep.WithNetworkDeadline(deadline), Actor: goal.Actor{Machine: a.Machine, Lineage: a.Lineage}, Ulid: a.ULID, Now: a.At}, matched.Goal, matched.ID, a.Text, matched.Wants, goal.AnswerProof{Provider: a.Provider, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step, OperationID: a.Opid})
+				publishErr = e
+				if e == nil && published.Outcome != goal.OutcomeConfirmed {
+					publishErr = goal.Coded(published.Code, fmt.Errorf("goal answer was not confirmed: %s", published.Detail))
+				}
+			}
+			// The completed act remains an answer even after its goal ends.
+			if goal.RefusalCode(publishErr) == goal.AnswerGoalClosedCode {
+				publishErr = nil
 			}
 		}
+		err = withPollLock(root, func() error {
+			q, err := ReadQuestion(root, matched.ID)
+			if err != nil {
+				return err
+			}
+			if q.State != "open" || q.Answer == nil || q.Answer.Opid != a.Opid {
+				return nil
+			}
+			if publishErr != nil {
+				diagnostic := "could not be checked now: " + publishErr.Error()
+				if q.ActCheck == diagnostic {
+					return nil
+				}
+				q.ActCheck = diagnostic
+				return writeJSON(questionPath(root, q.ID), q)
+			}
+			q.ActCheck = ""
+			q.Answer.Phase = "recorded"
+			return advanceAnswerWithEndpoint(context.Background(), PollConfig{RepoRoot: root, Now: a.At, Destination: "fleet"}, &q, resolve)
+		})
+		failures = errors.Join(failures, publishErr, err)
 	}
-	return nil
+	return failures
 }
 
 func validateNamedActs(r AskRequest) error {
