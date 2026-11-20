@@ -246,5 +246,7 @@ func proveFleetDefaultProofSerialization(t *testing.T) {
 	if data, err := os.ReadFile(child); err != nil || string(data) != "ran\n" {
 		t.Fatalf("second proof did not resume: %q %v", data, err)
 	}
-	assertHostAdmissionClean(t, admission, 1)
+	// The first slot may close between the second launcher's marker scan
+	// and its slot probe. Both cleared markers can then remain until admission runs again.
+	assertHostAdmissionClean(t, admission, 0)
 }

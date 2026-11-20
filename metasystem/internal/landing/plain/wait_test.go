@@ -34,6 +34,31 @@ func TestWaitReturnsFinalRecordedResultAfterClassification(t *testing.T) {
 	}
 }
 
+// The worker can append its classification and exit during the liveness probe.
+func TestWaitReadsClassificationPublishedAtExit(t *testing.T) {
+	t.Parallel()
+	install := t.TempDir()
+	running := Running{Attempt: "worker"}
+	if err := os.MkdirAll(Dir(install), 0755); err != nil {
+		t.Fatal(err)
+	}
+	raw := Result{Attempt: running.Attempt, Result: Red, ClassificationPending: true}
+	if err := appendLine(resultsPath(install), raw); err != nil {
+		t.Fatal(err)
+	}
+	final := Result{Attempt: running.Attempt, Result: Red, Reason: "classified"}
+	seams := ProveSeams{Alive: func(Running) bool {
+		if err := appendLine(resultsPath(install), final); err != nil {
+			t.Fatal(err)
+		}
+		return false
+	}}
+	got, err := Wait(install, install, running, seams)
+	if err != nil || !reflect.DeepEqual(got, final) {
+		t.Fatalf("wait returned %+v, want final classification: %v", got, err)
+	}
+}
+
 func TestWaitLostDetachedProcessRecordsRed(t *testing.T) {
 	t.Parallel()
 	b := newRepeatBed(t)

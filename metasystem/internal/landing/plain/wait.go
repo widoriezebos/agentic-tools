@@ -21,12 +21,14 @@ func Wait(install, checkout string, running Running, seams ProveSeams) (Result, 
 		return false
 	}
 	for {
+		// An exited worker has published its last classification before this read.
+		alive := seams.alive(running)
 		results, err := readLines[Result](seams.resultsPath(install))
 		if err != nil {
 			return Result{}, err
 		}
 		for i := len(results) - 1; i >= 0; i-- {
-			if belongs(results[i]) && !seams.alive(running) {
+			if !alive && belongs(results[i]) {
 				return results[i], nil
 			}
 		}
