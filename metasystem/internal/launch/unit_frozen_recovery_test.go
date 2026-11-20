@@ -13,6 +13,53 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
+func TestFrozenReaderUnderSymlinkedRoot(t *testing.T) {
+	t.Parallel()
+	t.Run("nested unit", func(t *testing.T) {
+		f, repo := newGitUnitFixture(t)
+		alias := filepath.Join(t.TempDir(), "repo")
+		if err := os.Symlink(repo, alias); err != nil {
+			t.Fatal(err)
+		}
+		unit := filepath.Join(alias, "nested")
+		if err := os.Mkdir(unit, 0700); err != nil {
+			t.Fatal(err)
+		}
+		setUnitPlanWorktree(t, &f, unit)
+		var readDir string
+		f.starter.onStart = func(r Record) error {
+			if r.Kind == "read" {
+				readDir = r.WorkingDirectory
+				data, err := os.ReadFile(filepath.Join(readDir, "built"))
+				if err != nil || string(data) != "implemented\n" {
+					t.Fatalf("reader's frozen build = %q, err = %v", data, err)
+				}
+			}
+			return nil
+		}
+		result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+		if err != nil {
+			t.Fatal(err)
+		}
+		round := result.Record.Rounds[0]
+		if want := filepath.Join(round.ReadStore, "checkout", "nested"); readDir != want || round.Outcome != "green" {
+			t.Fatalf("reader ran in %q, want %q; outcome %q", readDir, want, round.Outcome)
+		}
+	})
+	t.Run("unit resolves outside", func(t *testing.T) {
+		root := t.TempDir()
+		unit := filepath.Join(root, "nested")
+		if err := os.Symlink(t.TempDir(), unit); err != nil {
+			t.Fatal(err)
+		}
+		runner := UnitRunner{Git: &resultGit{root: root}}
+		_, err := runner.frozenReadCheckout(&UnitRunRecord{}, &UnitRound{}, UnitPlan{Worktree: unit})
+		if err == nil || err.Error() != "cannot place the reader at the unit's repository path" {
+			t.Fatalf("unit outside the repository: %v", err)
+		}
+	})
+}
+
 func endFrozenTestLaunch(t *testing.T, f unitFixture, id string, state State, material int) {
 	t.Helper()
 	_, err := f.manager.Store.Update(id, func(r *Record) error {

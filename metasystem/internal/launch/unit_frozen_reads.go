@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func roundReadOwner(run string, n int) diskstore.Owner {
@@ -37,8 +38,8 @@ func (runner *UnitRunner) frozenReadCheckout(record *UnitRunRecord, round *UnitR
 		return "", err
 	}
 	root := strings.TrimSpace(string(source))
-	prefix, err := filepath.Rel(root, plan.Worktree)
-	if err != nil || prefix == ".." || strings.HasPrefix(prefix, ".."+string(os.PathSeparator)) {
+	prefix, err := filepath.Rel(realpath.Resolve(root), realpath.Resolve(plan.Worktree))
+	if err != nil || !filepath.IsLocal(prefix) {
 		return "", fmt.Errorf("cannot place the reader at the unit's repository path")
 	}
 	owner := roundReadOwner(record.ID, round.Number)
@@ -250,7 +251,12 @@ func (sequence readSequence) startReadyReads(first int) (bool, error) {
 func relocateReadPath(path, root, target string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil || !filepath.IsLocal(rel) {
-		return path
+		// Keep Git's spelling of entries within the tree. A plan may also
+		// reach that tree through a symlink, even for an output yet to exist.
+		rel, err = filepath.Rel(realpath.Resolve(root), realpath.Resolve(path))
+		if err != nil || !filepath.IsLocal(rel) {
+			return path
+		}
 	}
 	return filepath.Join(target, rel)
 }
