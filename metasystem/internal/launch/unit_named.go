@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -338,14 +339,22 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	bound.named = &namedBinding{unit: plan.Unit, goal: plan.Goal, worktree: worktree, digest: entry.Digest, run: entry.Run,
 		options: UnitOptions{BuildModel: record.BuildModel, BuildEffort: record.BuildEffort}}
 	result, err := bound.Advance(UnitRequest{Resume: entry.Run})
-	if !errors.Is(err, errWaitRunChanged) {
+	var change *changedRunDuringWait
+	if !errors.As(err, &change) {
 		return result, err
 	}
-	// Another command advanced the run during our wait. The tree and name
-	// are locked again. Report the reserved run without replaying a step.
-	current, readErr := runner.read(entry.Run)
-	if readErr != nil || current.ID != entry.Run || current.Worktree != record.Worktree ||
-		current.Goal != entry.Goal || current.Unit != entry.Unit || len(current.Rounds) == 0 {
+	// The locks and owner were verified after the wait. Only follow progress
+	// of this run's same round. A note or other edit still requires a retry.
+	var before, current UnitRunRecord
+	if json.Unmarshal(change.before, &before) != nil || json.Unmarshal(change.after, &current) != nil ||
+		before.ID != entry.Run || current.ID != entry.Run || current.Worktree != record.Worktree ||
+		current.Goal != entry.Goal || current.Unit != entry.Unit || len(current.Rounds) == 0 || len(before.Rounds) != len(current.Rounds) {
+		return result, err
+	}
+	last := len(current.Rounds) - 1
+	if before.State == current.State && slices.EqualFunc(before.Rounds[last].Steps, current.Rounds[last].Steps, func(a, b UnitStep) bool {
+		return a.Name == b.Name && a.State == b.State && a.LaunchID == b.LaunchID
+	}) {
 		return result, err
 	}
 	result = UnitResult{Record: current, Round: len(current.Rounds)}
