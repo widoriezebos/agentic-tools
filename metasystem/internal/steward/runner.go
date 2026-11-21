@@ -1371,8 +1371,6 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 			return outcome, err
 		}
 		outcome.Stage = StageStopped
-	} else if rec.Pid > 0 && identity.LiveRef(deps.prober, rec.processRef()) != identity.Dead {
-		return outcome, fmt.Errorf("cannot verify runner pid %d before arming", rec.Pid)
 	}
 	generation := prior.Generation + 1
 	now := time.Now

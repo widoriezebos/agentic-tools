@@ -176,6 +176,7 @@ func TestArmReplacementUsesSelectedProcessAndClock(t *testing.T) {
 		clock := &replacementClock{start}
 		b.deps.clock = clock
 		if unavailable {
+			delete(b.processes, b.old.Pid) // The process exited and left its announcement behind.
 			b.deps.prober = censusSeamProbe(func(int64) (identity.Exact, identity.Liveness, error) {
 				return identity.Exact{}, identity.Unknown, errors.New("process table unavailable")
 			})
@@ -194,11 +195,32 @@ func TestArmReplacementUsesSelectedProcessAndClock(t *testing.T) {
 		}
 		got, err := armWithRearmDeps(b.root, b.pinned.Install.InstallPath, true, false, true, "", humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), b.deps)
 		if unavailable {
-			if err == nil || !strings.Contains(err.Error(), "pid 41") || b.launches != 0 || len(signals) != 0 {
-				t.Fatalf("unknown runner: launches %d, signals %v, error %v", b.launches, signals, err)
+			if err != nil || got.RunnerPid != b.replacement.Pid || got.StoppedRunnerPid != 0 || b.launches != 1 || len(signals) != 0 {
+				t.Fatalf("stale announcement: runner %d, stopped %d, launches %d, signals %v, error %v", got.RunnerPid, got.StoppedRunnerPid, b.launches, signals, err)
 			}
 		} else if err != nil || got.RunnerPid != b.replacement.Pid || !reflect.DeepEqual(signals, []syscall.Signal{syscall.SIGTERM, syscall.SIGCONT, syscall.SIGKILL}) || clock.Now().Sub(start) != 2*time.Second {
 			t.Fatalf("arm: pid %d, signals %v, elapsed %v, error %v", got.RunnerPid, signals, clock.Now().Sub(start), err)
 		}
+	}
+}
+
+func TestArmRefusesWhenSelectedRunnerProbeFails(t *testing.T) {
+	b := newExecutionBed(t)
+	// The original probe selects the live runner. Its identity is unreadable from then on.
+	selected := false
+	b.deps.prober = censusSeamProbe(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		if selected {
+			return identity.Exact{}, identity.Unknown, errors.New("process table unavailable")
+		}
+		selected = true
+		return b.processes.Probe(pid)
+	})
+	b.deps.signal = func(pid int, sig syscall.Signal) error {
+		t.Fatalf("sent %v to pid %d after its probe failed", sig, pid)
+		return nil
+	}
+	got, err := armWithRearmDeps(b.root, b.pinned.Install.InstallPath, true, false, true, "", humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), b.deps)
+	if err == nil || !strings.Contains(err.Error(), "pid 41") || got.Stage != StageStopAttempted || got.StoppedRunnerPid != b.old.Pid || b.launches != 0 {
+		t.Fatalf("selected runner: stage %v, stopped %d, launches %d, error %v", got.Stage, got.StoppedRunnerPid, b.launches, err)
 	}
 }
