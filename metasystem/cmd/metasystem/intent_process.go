@@ -2261,7 +2261,8 @@ func processFence(scope processScope) (stopfence.Record, string) {
 // processes running now, and the exact start to run again.
 func (inv *intentInvocation) startRefusal(scope processScope, scale int, before stopfence.Record, refusal *processRefusal, report stoptransition.Report) intentResult {
 	if refusal.deferred != "" {
-		return intentResult{Outcome: intentPartial, code: 1, Summary: refusal.deferred, Targets: inv.checkoutTarget(scope), Details: report.Lines}
+		return intentResult{Outcome: intentPartial, code: 1, Summary: refusal.deferred, Targets: inv.checkoutTarget(scope), Details: report.Lines,
+			next: inv.publicArgv(append([]string{"system", "start", "--if-down"}, inv.forward("installation")...)...), nextReason: "if supervision is not running"}
 	}
 	after, fence := processFence(scope)
 	if after.Generation == before.Generation && after.State == before.State && after.Phase == before.Phase {

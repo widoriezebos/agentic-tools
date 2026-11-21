@@ -217,7 +217,7 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 					t.Fatalf("owner election survived withdrawal: %v", err)
 				}
 				if fault == "during-launch" {
-					if !strings.Contains(result.Deferred, fmt.Sprintf("started, then withdrawn: the install changed to %d", next.Generation)) || !strings.Contains(result.Deferred, "previous stop began") {
+					if !strings.Contains(result.Deferred, fmt.Sprintf("started, then withdrawn: the install changed to %d", next.Generation)) || !strings.Contains(result.Deferred, "previous owner stopped") {
 						t.Fatalf("effects missing: %+v", result)
 					}
 					record, found, err := state.Read(plain.Dir(root))
@@ -255,6 +255,9 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 					t.Fatalf("stale start: %s commands=%d", strings.Join(lines, "\n"), commands)
 				}
 				if fault == "after-stop" || fault == "preparing-command" {
+					if !strings.Contains(result.Deferred, "The previous owner stopped. No replacement started.") {
+						t.Fatalf("missing completed stop: %s", result.Deferred)
+					}
 					if !os.IsNotExist(ownerErr) {
 						t.Fatalf("expected stopped supervision: %+v %v", after, ownerErr)
 					}
@@ -262,6 +265,9 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 						t.Fatalf("left owner election: %v", err)
 					}
 				} else {
+					if !strings.Contains(result.Deferred, "This start left supervision untouched.") {
+						t.Fatalf("missing supervision outcome: %s", result.Deferred)
+					}
 					if ownerErr != nil || after != started.Owner {
 						t.Fatalf("new supervision changed: %+v %v", after, ownerErr)
 					}
@@ -277,6 +283,9 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 				if err != nil || !found || record.Generation == nil || record.Generation.Verdict != "deferred" || record.Generation.Reason != result.Deferred {
 					t.Fatalf("deferral missing: %+v %v", record.Generation, err)
 				}
+			}
+			if result.Deferred != "" && result.Remedy != "if supervision is not running, run: metasystem system start --if-down" {
+				t.Errorf("deferral remedy: %q", result.Remedy)
 			}
 		})
 	}

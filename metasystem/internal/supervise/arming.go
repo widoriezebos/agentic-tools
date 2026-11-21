@@ -1379,13 +1379,13 @@ func (e *EnrollmentChanged) Error() string {
 	if e.Withdrawn {
 		effects := fmt.Sprintf("Supervision started, then withdrawn: the install changed to %d during the start.", e.Generation)
 		if e.StopBegan {
-			effects += " The previous stop began before launch."
+			effects += " The previous owner stopped before launch."
 		}
 		return effects
 	}
-	effects := "Supervision was left untouched for the newer start."
+	effects := "This start left supervision untouched."
 	if e.StopBegan {
-		effects = "The stop began. Launch was left to the newer start."
+		effects = "The previous owner stopped. No replacement started."
 	}
 	return fmt.Sprintf("Start deferred. Enrollment changed to install %d. %s", e.Generation, effects)
 }

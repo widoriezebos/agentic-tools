@@ -797,7 +797,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, run *g
 	if err != nil {
 		var changed *supervise.EnrollmentChanged
 		if errors.As(err, &changed) {
-			deferred := failure(components, "supervision-owner", changed, "let the newer start finish")
+			deferred := failure(components, "supervision-owner", changed, "if supervision is not running, run: metasystem system start --if-down")
 			deferred.Components[len(deferred.Components)-1].Outcome = "deferred"
 			deferred.Outcome, deferred.Deferred = "start-partial", changed.Error()
 			return nil, result, &deferred

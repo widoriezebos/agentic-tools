@@ -83,6 +83,9 @@ func TestEachStartReportsTheChangedEnrollment(t *testing.T) {
 			if calls != 1 || caller != "helm" && code != 1 || !strings.Contains(out, "Enrollment changed to install 149") {
 				t.Fatalf("%s: calls=%d code=%d output=%s", caller, calls, code, out)
 			}
+			if !strings.Contains(out, "metasystem system start --if-down") || !strings.Contains(out, "if supervision is not running") {
+				t.Errorf("%s omitted the recovery command or its condition", caller)
+			}
 		})
 	}
 }
