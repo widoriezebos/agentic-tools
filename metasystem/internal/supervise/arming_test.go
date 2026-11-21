@@ -1178,7 +1178,6 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	}
 	now := time.Unix(1000, 0)
 	priorNow, priorSleep := armingNow, armingSleep
-	priorRelease := releaseLaunchedOwner
 	armingNow = func() time.Time { return now }
 	sleeps := 0
 	armingSleep = func(duration time.Duration) {
@@ -1193,10 +1192,8 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 		}
 		return identity.Exact{Pid: pid, StartedAt: time.Unix(900, 0)}, identity.Alive, nil
 	}
-	releaseLaunchedOwner = func(command *exec.Cmd) error { return command.Wait() }
 	t.Cleanup(func() {
 		armingNow, armingSleep = priorNow, priorSleep
-		releaseLaunchedOwner = priorRelease
 	})
 
 	clockOptions := armingOptions(clockRoot)
@@ -1207,6 +1204,9 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	}
 	owner, err := launchOwner(clockOptions, "owner-tag", false)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.command.Wait(); err != nil {
 		t.Fatal(err)
 	}
 	if owner.Pid < 1 || sleeps != 2 || probes != 3 || now.Sub(time.Unix(1000, 0)) != 40*time.Millisecond {

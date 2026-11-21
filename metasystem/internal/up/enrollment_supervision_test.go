@@ -1,17 +1,20 @@
 package up
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin/testdata/pinfixture"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -32,7 +35,7 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(registryHome, ".metasystem"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, fault := range []string{"newer", "ordinary-newer", "before-stop", "after-stop", "preparing-command", "after-launch-check", "path-only", "digest-only", "generation-only", "republished", "current"} {
+	for _, fault := range []string{"newer", "ordinary-newer", "before-stop", "after-stop", "preparing-command", "during-launch", "after-final-read", "unreadable-after-launch", "withdrawal-fails", "watcher-survives", "path-only", "digest-only", "generation-only", "republished", "current"} {
 		t.Run(fault, func(t *testing.T) {
 			options := seatUpOptions(t)
 			root := options.Root
@@ -90,7 +93,10 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 				e := enginepin.Read(root, exact.Ref(), pinfixture.Prober{41: exact})
 				return map[string]enginepin.Execution{"owner": e, "watcher": e, "reaper": e, "runner": e}
 			}
-			commands := 0
+			commands, postReads := 0, 0
+			var launched *exec.Cmd
+			var launchedSet []supervise.InventoryItem
+			var watcher supervise.InventoryItem
 			options.EnsureArmed = func(o supervise.EnsureOptions) (supervise.EnsureResult, error) {
 				switch fault {
 				case "before-stop", "after-stop":
@@ -107,19 +113,63 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 							return err
 						})
 					}
-				case "current", "preparing-command", "after-launch-check":
+				case "current", "preparing-command", "during-launch", "after-final-read", "unreadable-after-launch", "withdrawal-fails", "watcher-survives":
 				default:
 					mint()
 				}
-				if fault == "after-launch-check" {
-					read := o.ChangedEnrollment
-					o.ChangedEnrollment = func() (int, error) {
-						gen, err := read()
-						if o.TargetDigest == pin.InstallDigest && commands == 1 && gen == 0 && err == nil {
+				read := o.ChangedEnrollment
+				o.ChangedEnrollment = func() (int, error) {
+					gen, err := read()
+					if o.TargetDigest != pin.InstallDigest || launched == nil {
+						return gen, err
+					}
+					if launched.Process == nil {
+						if fault == "during-launch" || fault == "withdrawal-fails" || fault == "watcher-survives" {
 							mint()
 						}
 						return gen, err
 					}
+					postReads++
+					if _, err := os.Stat(filepath.Join(supervise.SupervisionDir(root), "cap-authority.lock.d")); err != nil {
+						t.Fatal(err)
+					}
+					inventory, inventoryErr := supervise.ReadInventory(root, nil)
+					if inventoryErr != nil || len(inventory) != 3 {
+						t.Fatalf("launched owner, watcher, reaper: %+v %v", inventory, inventoryErr)
+					}
+					launchedSet = inventory
+					switch fault {
+					case "after-final-read":
+						mint()
+					case "withdrawal-fails":
+						if err := launched.Process.Release(); err != nil {
+							t.Fatal(err)
+						}
+					case "watcher-survives":
+						for _, item := range inventory {
+							if item.Component == "repo-watcher" {
+								watcher = item
+							}
+						}
+						stateFile := filepath.Join(supervise.SupervisionDir(root), "state.json")
+						data, err := os.ReadFile(stateFile)
+						if err != nil || watcher.Tag == "" {
+							t.Fatalf("watcher record: %+v %v", watcher, err)
+						}
+						// Losing the watcher's recorded tag must prevent the sweep from signalling it.
+						bad := bytes.ReplaceAll(data, []byte(watcher.Tag), []byte("another-watcher"))
+						if err := os.WriteFile(stateFile, bad, 0600); err != nil {
+							t.Fatal(err)
+						}
+						t.Cleanup(func() {
+							if err := os.WriteFile(stateFile, data, 0600); err != nil {
+								t.Error(err)
+							}
+						})
+					case "unreadable-after-launch":
+						return 0, os.ErrPermission
+					}
+					return gen, err
 				}
 				o.Command = func(args ...string) (*exec.Cmd, error) {
 					commands++
@@ -131,20 +181,60 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 					} else {
 						livePath = pin.InstallPath
 					}
-					return arming.Command(args...)
+					var err error
+					launched, err = arming.Command(args...)
+					return launched, err
 				}
 				return supervise.EnsureArmed(o)
 			}
 			result := generationStart(options)
 			after, ownerErr := supervise.ReadArmingOwner(root)
 			switch fault {
-			case "after-launch-check":
-				if result.ExitCode() != 0 || commands != 1 {
+			case "during-launch", "unreadable-after-launch", "withdrawal-fails", "watcher-survives":
+				if result.ExitCode() != 1 || commands != 1 || postReads != 1 {
+					t.Fatalf("post-launch outcome: %+v commands=%d postReads=%d", result, commands, postReads)
+				}
+				if fault == "watcher-survives" {
+					detail := component(result, "repo-watcher").Detail
+					if result.Deferred != "" || ownerErr != nil || !strings.Contains(detail, fmt.Sprint(watcher.Identity.Pid)) || !strings.Contains(detail, "metasystem system restart") || identity.AliveRef(identity.KernelProber{}, watcher.Identity) != identity.Alive {
+						t.Fatalf("surviving watcher: %+v", result)
+					}
+					break
+				}
+				if fault == "withdrawal-fails" {
+					detail := component(result, "supervision-owner").Detail
+					if result.Deferred != "" || ownerErr != nil || !strings.Contains(detail, fmt.Sprint(after.Pid)) || !strings.Contains(detail, "metasystem system restart") || syscall.Kill(int(after.Pid), 0) != nil {
+						t.Fatalf("withdrawal failure must identify the surviving owner and remedy: %+v owner=%+v %v", result, after, ownerErr)
+					}
+					break
+				}
+				for _, item := range launchedSet {
+					if identity.AliveRef(identity.KernelProber{}, item.Identity) != identity.Dead {
+						t.Fatalf("%s survived withdrawal", item.Component)
+					}
+				}
+				if _, err := os.Stat(filepath.Join(supervise.SupervisionDir(root), "lock.d")); !os.IsNotExist(err) {
+					t.Fatalf("owner election survived withdrawal: %v", err)
+				}
+				if fault == "during-launch" {
+					if !strings.Contains(result.Deferred, fmt.Sprintf("started, then withdrawn: the install changed to %d", next.Generation)) || !strings.Contains(result.Deferred, "previous stop began") {
+						t.Fatalf("effects missing: %+v", result)
+					}
+					record, found, err := state.Read(plain.Dir(root))
+					if err != nil || !found || record.Generation == nil || record.Generation.Verdict != "deferred" || record.Generation.Reason != result.Deferred {
+						t.Fatalf("withdrawal record: %+v %v", record.Generation, err)
+					}
+				} else if result.Deferred != "" || !strings.Contains(component(result, "supervision-owner").Detail, "permission denied") {
+					t.Fatalf("read failure: %+v", result)
+				}
+			case "after-final-read":
+				if result.ExitCode() != 0 || commands != 1 || postReads != 1 {
 					t.Fatalf("first launch: %+v commands=%d", result, commands)
 				}
 				options.Binary = next.InstallPath
 				result = generationStart(options)
-				if result.ExitCode() != 0 || commands != 2 || livePath != next.InstallPath {
+				replacement, err := supervise.ReadArmingOwner(root)
+				if err != nil || replacement.Pid == after.Pid || component(result, "supervision-owner").Outcome != "replaced" || result.ExitCode() != 0 || commands != 2 || livePath != next.InstallPath {
 					t.Fatalf("new start: %+v commands=%d", result, commands)
 				}
 			case "current", "republished":
@@ -152,7 +242,7 @@ func TestStartChecksEnrollmentBeforeReplacingSupervision(t *testing.T) {
 				if fault == "current" {
 					want, count = "not-needed", 0
 				}
-				if result.ExitCode() != 0 || component(result, "supervision-owner").Outcome != want || commands != count || ownerErr != nil || (after.Pid == started.Owner.Pid) != (count == 0) {
+				if result.ExitCode() != 0 || component(result, "supervision-owner").Outcome != want || commands != count || postReads != count || ownerErr != nil || (after.Pid == started.Owner.Pid) != (count == 0) {
 					t.Fatalf("stable: %+v commands=%d owner=%+v %v", result, commands, after, ownerErr)
 				}
 			default:

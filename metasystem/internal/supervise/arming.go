@@ -1119,26 +1119,31 @@ var releaseLaunchedOwner = func(command *exec.Cmd) error {
 	return command.Process.Release()
 }
 
-func launchOwner(options EnsureOptions, tag string, stopBegan bool) (ArmingOwner, error) {
+type launchedOwner struct {
+	ArmingOwner
+	command *exec.Cmd
+}
+
+func launchOwner(options EnsureOptions, tag string, stopBegan bool) (*launchedOwner, error) {
 	supervisionDir := SupervisionDir(options.Root)
 	logFile, err := os.OpenFile(filepath.Join(supervisionDir, "owner.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	defer logFile.Close()
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	defer devNull.Close()
 	gateFile, err := os.CreateTemp(supervisionDir, ".owner-gate-*")
 	if err != nil {
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	gate := gateFile.Name()
 	gateFile.Close()
 	if err := os.Remove(gate); err != nil {
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	argv := []string{"supervise", "owner", "--repo", options.Root, "--metasystem-root", options.MetasystemRoot, "--scope", options.Scope,
 		"--gate", gate, "--tag", tag, "--interval", strconv.Itoa(options.IntervalSec),
@@ -1150,7 +1155,7 @@ func launchOwner(options EnsureOptions, tag string, stopBegan bool) (ArmingOwner
 		"METASYSTEM_GO_COMPONENT_SLOW_STOP",
 	} {
 		if os.Getenv(variable) != "" && !fixtureauth.FixtureModeRoot(options.MetasystemRoot) {
-			return ArmingOwner{}, fmt.Errorf("supervision fixture seam %s is fixture-only", variable)
+			return nil, fmt.Errorf("supervision fixture seam %s is fixture-only", variable)
 		}
 	}
 	if os.Getenv("METASYSTEM_GO_OWNER_IGNORE_TERM") != "" {
@@ -1160,7 +1165,7 @@ func launchOwner(options EnsureOptions, tag string, stopBegan bool) (ArmingOwner
 	if options.Command != nil {
 		cmd, err = options.Command(argv...)
 		if err != nil {
-			return ArmingOwner{}, err
+			return nil, err
 		}
 	} else {
 		cmd = exec.Command(options.Binary, argv...)
@@ -1169,10 +1174,10 @@ func launchOwner(options EnsureOptions, tag string, stopBegan bool) (ArmingOwner
 	cmd.Env = withoutExecutionID(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := options.checkEnrollment(stopBegan); err != nil {
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	pid := int64(cmd.Process.Pid)
 	probe := options.ownerProbe
@@ -1188,27 +1193,88 @@ func launchOwner(options EnsureOptions, tag string, stopBegan bool) (ArmingOwner
 			break
 		}
 		if state == identity.Dead {
-			return ArmingOwner{}, fmt.Errorf("owner process died before publishing its identity")
+			return nil, fmt.Errorf("owner process died before publishing its identity")
 		}
 		armingSleep(20 * time.Millisecond)
 	}
 	if exact.Pid == 0 {
 		_ = cmd.Process.Kill()
-		return ArmingOwner{}, fmt.Errorf("owner process identity was not readable before the start deadline")
+		return nil, fmt.Errorf("owner process identity was not readable before the start deadline")
 	}
 	owner := ArmingOwner{
 		Pid: pid, PidStartedAt: exact.StartedAt.Unix(), PidStartTicks: exact.StartTicks, BootID: exact.BootID, InstanceTag: tag,
 		AcquiredAt: time.Now().UTC().Format(time.RFC3339), FenceGeneration: options.FenceGeneration}
 	if err := WriteArmingOwner(options.Root, owner); err != nil {
 		_ = cmd.Process.Kill()
-		return ArmingOwner{}, err
+		return nil, err
 	}
 	if err := os.WriteFile(gate, []byte("start\n"), 0o600); err != nil {
 		_ = cmd.Process.Kill()
-		return ArmingOwner{}, err
+		return nil, err
 	}
-	_ = releaseLaunchedOwner(cmd)
-	return owner, nil
+	return &launchedOwner{owner, cmd}, nil
+}
+
+// The child handle stays in custody until enrollment has been checked after
+// readiness. Join the owner before sweeping the components it could create.
+func (o *launchedOwner) stop(options EnsureOptions) error {
+	child := o.command.Process
+	exited := make(chan error, 1)
+	go func() {
+		_, err := child.Wait()
+		exited <- err
+	}()
+	_, ceiling := publishedOwnerState(options.Root, o.ArmingOwner)
+	for _, step := range []struct {
+		signal syscall.Signal
+		wait   time.Duration
+	}{
+		{syscall.SIGTERM, scaledWait(ceiling, options.WaitScaleMilli)},
+		{syscall.SIGKILL, scaledDuration(componentPostKillProofInterval, options.WaitScaleMilli)},
+	} {
+		if err := child.Signal(step.signal); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return err
+		}
+		select {
+		case err := <-exited:
+			return err
+		case <-time.After(step.wait):
+		}
+	}
+	return fmt.Errorf("owner process %d did not exit after KILL", o.Pid)
+}
+
+func (o *launchedOwner) withdraw(options EnsureOptions) error {
+	if err := o.stop(options); err != nil {
+		return err
+	}
+	outcomes, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, o.InstanceTag, options.WaitScaleMilli, false)
+	for _, outcome := range outcomes {
+		if outcome.Result == ShutdownNotStopped {
+			err = errors.Join(err, fmt.Errorf("%s pid %d: %s", outcome.Component, outcome.Identity.Pid, outcome.Reason))
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return releaseDeadOwnerLock(options.Root, o.ArmingOwner)
+}
+
+func (o *launchedOwner) finish(options EnsureOptions, stopBegan bool) error {
+	err := options.checkEnrollment(stopBegan)
+	if err == nil {
+		_ = releaseLaunchedOwner(o.command)
+		return nil
+	}
+	if stopErr := o.withdraw(options); stopErr != nil {
+		return fmt.Errorf("could not finish withdrawing supervision for owner pid %d: %w. Run metasystem system restart", o.Pid, stopErr)
+	}
+	var changed *EnrollmentChanged
+	if errors.As(err, &changed) {
+		changed.Withdrawn = true
+		return changed
+	}
+	return fmt.Errorf("supervision started, then withdrawn because the install could not be read: %w", err)
 }
 
 func newOwnerTag(prefix string) string {
@@ -1306,9 +1372,17 @@ func appendShutdownEscalated(root string, owner ArmingOwner, outcomes []Componen
 type EnrollmentChanged struct {
 	Generation int
 	StopBegan  bool
+	Withdrawn  bool
 }
 
 func (e *EnrollmentChanged) Error() string {
+	if e.Withdrawn {
+		effects := fmt.Sprintf("Supervision started, then withdrawn: the install changed to %d during the start.", e.Generation)
+		if e.StopBegan {
+			effects += " The previous stop began before launch."
+		}
+		return effects
+	}
 	effects := "Supervision was left untouched for the newer start."
 	if e.StopBegan {
 		effects = "The stop began. Launch was left to the newer start."
@@ -1379,9 +1453,12 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 				_ = os.Remove(ownerLockDir(options.Root))
 				return EnsureResult{}, err
 			}
-			inspection := waitUntilArmed(options, owner)
+			inspection := waitUntilArmed(options, owner.ArmingOwner)
 			generation, _ := ReadPublishedGeneration(options.Root)
-			return EnsureResult{Action: action, Owner: owner, Generation: generation.Generation, Inspection: inspection}, nil
+			if err := owner.finish(options, stopBegan); err != nil {
+				return EnsureResult{}, err
+			}
+			return EnsureResult{Action: action, Owner: owner.ArmingOwner, Generation: generation.Generation, Inspection: inspection}, nil
 		} else if !os.IsExist(err) {
 			return EnsureResult{}, err
 		}
