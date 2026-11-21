@@ -83,7 +83,7 @@ func TestComputeSignalsFromFixtureRecords(t *testing.T) {
 		t.Fatalf("zero-denominator ratio must stay undefined: %+v", brief.ProcessVsProduct.Windows[1].Ratio)
 	}
 	register := brief.AcceptedRiskRegister
-	if register.Source != acceptedRiskRegisterSource || !strings.Contains(register.CountingRule, "Each nonblank line must be exactly one JSON object") {
+	if register.Source != AcceptedRiskRegisterPath || !strings.Contains(register.CountingRule, "Each nonblank line must be exactly one JSON object") {
 		t.Fatalf("register source and rule not carried: %+v", register)
 	}
 	if len(register.Classes) != 2 {
@@ -539,7 +539,7 @@ func TestBuildReadsAcceptedRiskRegisterAndNamesMalformedGaps(t *testing.T) {
 		registerLine(t, duplicate),
 		registerLine(t, duplicate),
 	}
-	writeFixture(t, filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)), []byte(strings.Join(lines, "\n")+"\n"))
+	writeFixture(t, filepath.Join(root, filepath.FromSlash(AcceptedRiskRegisterPath)), []byte(strings.Join(lines, "\n")+"\n"))
 
 	brief := Build(Options{Root: root, sources: emptyFixtureSources(t, root), Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
@@ -774,7 +774,7 @@ func TestHCL07AcceptedRiskLineComplete(t *testing.T) {
 	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)))
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(AcceptedRiskRegisterPath)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -789,7 +789,7 @@ func TestHCL07AcceptedRiskLineComplete(t *testing.T) {
 	if line.ID != "ar-human-carried-"+finding || line.Class != "carried-red" || line.AcceptanceReason != input.Why || len(line.SpecimenFacts) != 8 || len(line.ReviewLinks) != 2 {
 		t.Fatalf("carried accepted-risk line changed: %+v", line)
 	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource+".lock"))); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(AcceptedRiskRegisterPath+".lock"))); !os.IsNotExist(err) {
 		t.Fatalf("accepted-risk register lock survived release: %v", err)
 	}
 	for _, fact := range line.SpecimenFacts {
@@ -1115,7 +1115,7 @@ func TestCarriedAcceptedRiskValidatorsReadTheSpecimen(t *testing.T) {
 	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)))
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(AcceptedRiskRegisterPath)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1186,30 +1186,30 @@ func TestRegistersReadLongLinesWithoutDuplicating(t *testing.T) {
 		ReviewLinks: []acceptedRiskRegisterReviewLink{{Kind: "goal", Target: "counselor", Detail: "sitting intake"}},
 	}
 	valid.SpecimenFacts[0].Fact = strings.Repeat("x", 6*1024*1024)
-	if err := appendRegisterLine(root, acceptedRiskRegisterSource, valid.ID, valid); err != nil {
+	if err := appendRegisterLine(root, AcceptedRiskRegisterPath, valid.ID, valid); err != nil {
 		t.Fatal(err)
 	}
 	normal := valid
 	normal.ID = "normal"
 	normal.SpecimenFacts = nil
 	normal.SpecimenFacts = []acceptedRiskRegisterSpecimenFact{{Fact: "normal", Citations: valid.SpecimenFacts[0].Citations}}
-	if err := appendRegisterLine(root, acceptedRiskRegisterSource, normal.ID, normal); err != nil {
+	if err := appendRegisterLine(root, AcceptedRiskRegisterPath, normal.ID, normal); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(filepath.Join(root, acceptedRiskRegisterSource))
+	before, err := os.ReadFile(filepath.Join(root, AcceptedRiskRegisterPath))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range []acceptedRiskRegisterLine{valid, normal} {
-		if err := appendRegisterLine(root, acceptedRiskRegisterSource, row.ID, row); err != nil {
+		if err := appendRegisterLine(root, AcceptedRiskRegisterPath, row.ID, row); err != nil {
 			t.Fatal(err)
 		}
 	}
-	after, err := os.ReadFile(filepath.Join(root, acceptedRiskRegisterSource))
+	after, err := os.ReadFile(filepath.Join(root, AcceptedRiskRegisterPath))
 	if err != nil || string(before) != string(after) {
 		t.Fatalf("duplicate append changed the register: %v", err)
 	}
-	entries, limitations := loadAcceptedRiskRegisterFile(root, acceptedRiskRegisterSource)
+	entries, limitations := loadAcceptedRiskRegisterFile(root, AcceptedRiskRegisterPath)
 	if len(entries) != 2 || len(limitations) != 0 {
 		t.Fatalf("entries %d, limitations %+v", len(entries), limitations)
 	}

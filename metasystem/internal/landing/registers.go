@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
@@ -33,7 +34,7 @@ var appendOnlyRegisters = []string{
 // ledgerPaths below, and not append-only registers of the landing rules: an
 // uncarried change to them keeps the held-goal rule at the carriage gate.
 var counselorRegisters = []string{
-	"records/counselor/accepted-risk-register.jsonl",
+	counselor.AcceptedRiskRegisterPath,
 	"records/counselor/carried-landings.jsonl",
 }
 

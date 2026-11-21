@@ -38,7 +38,20 @@ func followGit(t *testing.T, root string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+const (
+	followRiskPath  = "records/counselor/accepted-risk-register.jsonl"
+	followRiskFirst = "{\"id\":\"first\"}\n"
+	followRiskBase  = followRiskFirst + "{\"id\":\"base\"}\n"
+	followRiskLocal = "{\"id\":\"local-one\"}\n{\"id\":\"local-two\"}\n"
+	followRiskMain  = "{\"id\":\"main\"}\n"
+)
+
 func newDeployedGitBed(t *testing.T, nested bool) *deployedGitBed {
+	t.Helper()
+	return newDeployedGitBedWithRisk(t, nested, followRiskBase)
+}
+
+func newDeployedGitBedWithRisk(t *testing.T, nested bool, deployedRisk string) *deployedGitBed {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -55,6 +68,9 @@ func newDeployedGitBed(t *testing.T, nested bool) *deployedGitBed {
 	}
 	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, "content.txt"), []byte("old\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, "local.txt"), []byte("local base\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, "src/product.go"), []byte("package product\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, followRiskPath), []byte(followRiskBase), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, "records/counselor/carried-landings.jsonl"), []byte("base\n"), 0o644)
 	for _, register := range landing.AppendOnlyRegisters() {
 		writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, register), []byte("base\n"), 0o644)
 	}
@@ -68,6 +84,7 @@ func newDeployedGitBed(t *testing.T, nested bool) *deployedGitBed {
 		b.root = filepath.Join(b.root, "metasystem")
 	}
 	followGit(t, b.root, "config", "metasystem.steward.landing-ref", boundaryLandingRef)
+	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, followRiskPath), []byte(deployedRisk), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(b.writer, prefix, "content.txt"), []byte("deployed\n"), 0o644)
 	followGit(t, b.writer, "add", ".")
 	followGit(t, b.writer, "commit", "-m", "deployed")
@@ -179,6 +196,7 @@ func boolCount(b bool) int {
 // the deployed commit must win over a later remote tip without losing records.
 func TestDeployedFollowForwardGitAdapter(t *testing.T) {
 	t.Parallel()
+	t.Run("accepted risk", testDeployedFollowRisk)
 	for _, row := range []string{"behind", "past", "registers-only", "tracked-change", "diverged", "nested-registers"} {
 		t.Run(row, func(t *testing.T) {
 			t.Parallel()
@@ -238,6 +256,112 @@ func TestDeployedFollowForwardGitAdapter(t *testing.T) {
 						t.Fatalf("register %s=%s err=%v", register, data, err)
 					}
 				}
+			}
+		})
+	}
+}
+
+func testDeployedFollowRisk(t *testing.T) {
+	const dirtyRisk = "the checkout has tracked changes:  M metasystem/" + followRiskPath
+	const recovery = "metasystem/fast-forward-recovery.txt"
+	const receipts = "memory/receipts.log"
+	const otherRegister = "records/counselor/carried-landings.jsonl"
+	local := followRiskBase + followRiskLocal
+	for _, tc := range []struct {
+		name, deployed, working, extraPath, refusal string
+		alreadyAt, leftover, staged, mode           bool
+	}{
+		{name: "clean deployment rewrote register", deployed: followRiskMain},
+		{name: "two local lines", working: local},
+		{name: "main and staged and unstaged local lines", deployed: followRiskBase + followRiskMain, working: local, staged: true},
+		{name: "changed base", working: followRiskMain, refusal: dirtyRisk},
+		{name: "removed base", working: followRiskFirst, refusal: dirtyRisk},
+		{name: "partial line", working: followRiskBase + "unfinished", refusal: dirtyRisk},
+		{name: "mode with append", working: local, mode: true, refusal: dirtyRisk},
+		{name: "dirty code", working: local, extraPath: "src/product.go", refusal: "the checkout has tracked changes:  M metasystem/src/product.go"},
+		{name: "two registers", working: local, extraPath: receipts},
+		{name: "other counselor register", working: local, extraPath: otherRegister, refusal: "the checkout has tracked changes:  M metasystem/" + otherRegister},
+		{name: "recovery before movement", leftover: true, refusal: "fast-forward recovery file already exists at "},
+		{name: "recovery after movement", alreadyAt: true, leftover: true, refusal: "fast-forward recovery file already exists at "},
+		{name: "rewrite after movement", alreadyAt: true, working: followRiskMain, refusal: dirtyRisk},
+		{name: "append after movement", alreadyAt: true, working: local},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			deployed := tc.deployed
+			if deployed == "" {
+				deployed = followRiskBase
+			}
+			b := newDeployedGitBedWithRisk(t, true, deployed)
+			f := b.follow(t)
+			if err := f.Landed(b.commit); err != nil {
+				t.Fatal(err)
+			}
+			if tc.alreadyAt {
+				followGit(t, b.root, "merge", "--ff-only", b.commit)
+			}
+			path := filepath.Join(b.root, followRiskPath)
+			if tc.staged {
+				writeTestingFixtureFile(t, path, []byte(followRiskBase+strings.SplitAfter(followRiskLocal, "\n")[0]), 0644)
+				followGit(t, b.root, "add", "--", followRiskPath)
+			}
+			if tc.working != "" {
+				writeTestingFixtureFile(t, path, []byte(tc.working), 0644)
+			}
+			if tc.mode {
+				if err := os.Chmod(path, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.extraPath != "" {
+				writeTestingFixtureFile(t, filepath.Join(b.root, tc.extraPath), []byte("base\nextra\n"), 0644)
+			}
+			sentinel := followGit(t, b.root, "rev-parse", "--path-format=absolute", "--git-path", recovery)
+			if tc.leftover {
+				writeTestingFixtureFile(t, sentinel, []byte("reconcile this suffix\n"), 0644)
+			}
+			before := followGit(t, b.root, "rev-parse", "HEAD")
+			f.EnrolledDigest = func() (string, error) { return "old", nil }
+			installs, starts := 0, 0
+			f.Install = func(steward.DeployedEngine) error { installs++; return nil }
+			f.Start = func() error { starts++; return nil }
+			followed, refused, err := FollowDeployedEngineAtBoundary(b.root, f)
+			wantFollow := tc.refusal == ""
+			if err != nil || followed != wantFollow || installs != boolCount(wantFollow) || starts != boolCount(wantFollow) {
+				t.Fatalf("followed=%v refusal=%+v err=%v installs=%d starts=%d", followed, refused, err, installs, starts)
+			}
+			wantHead, wantBytes := b.commit, deployed
+			if !wantFollow {
+				reason := tc.refusal
+				if tc.leftover {
+					reason += sentinel
+				}
+				if refused == nil || refused.Reason != reason {
+					t.Fatalf("refusal=%+v want %q", refused, reason)
+				}
+				wantHead, wantBytes = before, followRiskBase
+				if tc.working != "" {
+					wantBytes = tc.working
+				}
+			} else if tc.working != "" {
+				wantBytes += followRiskLocal
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != wantBytes || followGit(t, b.root, "rev-parse", "HEAD") != wantHead {
+				t.Fatalf("risk=%q want %q, head wanted %s, err=%v", got, wantBytes, wantHead, err)
+			}
+			if wantFollow && !tc.alreadyAt && followGit(t, b.root, "diff", "--cached", "--name-only") != "" {
+				t.Fatal("follow staged local rows")
+			}
+			if tc.extraPath != "" {
+				got, err := os.ReadFile(filepath.Join(b.root, tc.extraPath))
+				if err != nil || string(got) != "base\nextra\n" {
+					t.Fatalf("second file=%q err=%v", got, err)
+				}
+			}
+			data, err := os.ReadFile(sentinel)
+			if tc.leftover && (err != nil || string(data) != "reconcile this suffix\n") || !tc.leftover && !os.IsNotExist(err) {
+				t.Fatalf("recovery=%q err=%v", data, err)
 			}
 		})
 	}

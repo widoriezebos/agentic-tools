@@ -41,6 +41,17 @@ func declareGoalDirectory(c *observationCase, ids ...string) {
 }
 
 func TestObserveRecordSemantics(t *testing.T) {
+	t.Run("accepted risk append requires a held goal", func(t *testing.T) {
+		const path = "records/counselor/accepted-risk-register.jsonl"
+		const before = "{\"id\":\"base\"}\n"
+		f := newRepositoryObservationFixture(t)
+		f.base(path, before)
+		c := registerComparison(f, observeTreeB, registerChange{path, observationText(before), observationText(before + "{\"id\":\"local-one\"}\n{\"id\":\"local-two\"}\n")})
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage"})
+		if got.Code != "record-not-owned" || got.Verdict != "would-refuse" {
+			t.Fatalf("ownerless risk append: %+v", got)
+		}
+	})
 	t.Run("existing record appends only under a held goal", func(t *testing.T) {
 		f := newRepositoryObservationFixture(t)
 		f.base("plans/goals/fx.md", string(observationHeldGoal("fx", "m9", "L1")))

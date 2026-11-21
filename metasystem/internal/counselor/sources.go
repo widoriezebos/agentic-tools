@@ -89,7 +89,7 @@ type acceptedRiskRegisterReviewLink struct {
 func loadAcceptedRiskRegister(root string) ([]RegisterEntry, []Limitation) {
 	var entries []RegisterEntry
 	var limitations []Limitation
-	for _, source := range []string{acceptedRiskRegisterSource, "records/counselor/misclassification-register.jsonl"} {
+	for _, source := range []string{AcceptedRiskRegisterPath, "records/counselor/misclassification-register.jsonl"} {
 		loaded, limited := loadAcceptedRiskRegisterFile(root, source)
 		entries = append(entries, loaded...)
 		limitations = append(limitations, limited...)
@@ -107,7 +107,7 @@ func loadAcceptedRiskRegisterFile(root, source string) ([]RegisterEntry, []Limit
 		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The register is absent at "+source+".", "Create the append-only register at "+source+" with one validated JSON object per line.")}
 	}
 	if err != nil {
-		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register could not be read, so accepted risks and near misses are absent.", "Restore readable durable register bytes at "+acceptedRiskRegisterSource+".")}
+		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register could not be read, so accepted risks and near misses are absent.", "Restore readable durable register bytes at "+AcceptedRiskRegisterPath+".")}
 	}
 	defer file.Close()
 

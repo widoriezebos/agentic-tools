@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
@@ -27,19 +28,25 @@ type registerSnapshot struct {
 const fastForwardRecoveryName = "metasystem/fast-forward-recovery.txt"
 
 func FastForwardPreservingRegisters(ctx context.Context, root, tip string) error {
-	return fastForwardPreservingRegistersWith(ctx, root, tip, gittree.Workspace{Dir: root}, fastForwardGit)
+	workspace := gittree.Workspace{Dir: root}
+	return fastForwardPreservingRegistersWith(ctx, root, tip, workspace, fastForwardGit, workspace.GitPath, appendOnlyRegisters, "")
 }
 
-func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, workspace gittree.Workspace, rawGit func(context.Context, string, ...string) ([]byte, error)) error {
-	top, err := workspace.TopLevel()
-	if err != nil {
-		return err
+// ForwardEngineCheckout also carries the accepted-risk register when the follow
+// observed it dirty. An empty tip checks a checkout already at the deployment.
+func ForwardEngineCheckout(ctx context.Context, root, tip, riskEntry string, gitPath func(string) (string, error)) error {
+	registers := AppendOnlyRegisters()
+	if tip == "" {
+		registers = nil
 	}
-	prefix, err := workspace.Prefix()
-	if err != nil {
-		return err
+	if riskEntry != "" {
+		registers = append(registers, counselor.AcceptedRiskRegisterPath)
 	}
-	recoveryPath, err := workspace.GitPath(fastForwardRecoveryName)
+	return fastForwardPreservingRegistersWith(ctx, root, tip, gittree.Workspace{Dir: root}, fastForwardGit, gitPath, registers, riskEntry)
+}
+
+func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, workspace gittree.Workspace, rawGit func(context.Context, string, ...string) ([]byte, error), gitPath func(string) (string, error), registers []string, riskEntry string) error {
+	recoveryPath, err := gitPath(fastForwardRecoveryName)
 	if err != nil {
 		return err
 	}
@@ -47,6 +54,17 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 		return fmt.Errorf("fast-forward recovery file already exists at %s", recoveryPath)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect fast-forward recovery file %s: %w", recoveryPath, err)
+	}
+	if len(registers) == 0 {
+		return nil
+	}
+	top, err := workspace.TopLevel()
+	if err != nil {
+		return err
+	}
+	prefix, err := workspace.Prefix()
+	if err != nil {
+		return err
 	}
 	head, unborn, err := workspace.HeadCommit()
 	if err != nil || unborn {
@@ -63,13 +81,17 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 	}
 	var dirty []registerSnapshot
 	var restorePaths []string
-	for _, register := range appendOnlyRegisters {
+	destination := tip
+	if destination == "" && riskEntry != "" {
+		destination = head
+	}
+	for _, register := range registers {
 		path := prefix + register
 		before, beforeOK, err := topWorkspace.FileAt(head, path)
 		if err != nil {
 			return err
 		}
-		landed, landedOK, err := topWorkspace.FileAt(tip, path)
+		landed, landedOK, err := topWorkspace.FileAt(destination, path)
 		if err != nil {
 			return err
 		}
@@ -86,6 +108,9 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 		_, landedShape := appendDelta(before, beforeOK, landed, landedOK)
 		stagedSuffix, stagedShape := appendDelta(before, beforeOK, staged, stagedOK)
 		workingSuffix, workingShape := appendDelta(staged, stagedOK, working, workingOK)
+		if register == counselor.AcceptedRiskRegisterPath && (!stagedShape || !workingShape || len(stagedSuffix)+len(workingSuffix) == 0) {
+			return fmt.Errorf("the checkout has tracked changes: %s", riskEntry)
+		}
 		if !landedShape || !stagedShape || !workingShape {
 			return fmt.Errorf("%s: the append-only record %s was rewritten, not only appended to", engineRequiredCode, register)
 		}
@@ -94,6 +119,9 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 			dirty = append(dirty, registerSnapshot{path, fullPath, working, suffix})
 			restorePaths = append(restorePaths, path)
 		}
+	}
+	if tip == "" && riskEntry != "" {
+		return nil
 	}
 	if len(dirty) != 0 {
 		if _, err := writeFastForwardRecovery(recoveryPath, recoveryText(dirty), ""); err != nil {

@@ -11,7 +11,7 @@ import (
 const (
 	windowRule                       = "Each observation is a completed half-open Coordinated Universal Time calendar week that carries retained evidence, plus the most recently completed week; the active week is excluded."
 	classificationRule               = "Goal events are deduplicated by operation identifier. Exact open, edit, claim, and set-budget events plus non-carrier record-only landings are process activities; exact done events plus product landings are product outcomes. A Git landing whose Goal-Transaction trailer matches a counted goal operation is that operation's carrier, is shown separately, and is not counted again. Every other landing is record-only when it changes at least one path and every changed path is under memory/, plans/, or records/. A landing with any other changed path is product, and a landing with no numstat path is unclassified."
-	acceptedRiskRegisterSource       = "records/counselor/accepted-risk-register.jsonl"
+	AcceptedRiskRegisterPath         = "records/counselor/accepted-risk-register.jsonl"
 	acceptedRiskRegisterCountingRule = "Blank lines are ignored. Each nonblank line must be exactly one JSON object with only accepted register fields; parse failures, unknown fields, and extra JSON payloads are malformed lines and are excluded. A parsed entry is otherwise valid only when it has schemaVersion 1, a non-empty identifier, an RFC3339 recordedAt timestamp, kind accepted-risk or near-miss, a non-empty class, title, acceptance status, acceptance reason, at least one specimen fact with text and a durable citation whose kind is commit, goal, ruling, job, or record and whose target is non-empty, and at least one review link with one of those kinds and a non-empty target. Entries that fail those required fields are excluded. Duplicate identifiers are checked only after a line passes JSON and required-field validation; every otherwise-valid line with a duplicated identifier is excluded. Each remaining entry counts once, grouped by exact class text after trimming whitespace, with kind accepted-risk incrementing accepted-risk count and kind near-miss incrementing near-miss count."
 )
 
@@ -43,7 +43,7 @@ func Compute(records RecordSet, now time.Time) Brief {
 			Limitations:        append([]Limitation(nil), records.ActivityLimitations...),
 		},
 		AcceptedRiskRegister: AcceptedRiskRegister{
-			Source:       acceptedRiskRegisterSource,
+			Source:       AcceptedRiskRegisterPath,
 			CountingRule: acceptedRiskRegisterCountingRule,
 			Entries:      sortedRegisterEntries(records.RegisterEntries),
 			Limitations:  append([]Limitation(nil), records.RegisterLimitations...),

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
@@ -143,6 +145,8 @@ func (b *centralFollowBed) centralGit(t *testing.T) func(context.Context, string
 			t.Errorf("Git root=%s", root)
 		}
 		switch strings.Join(args, " ") {
+		case "rev-parse --path-format=absolute --git-path metasystem/fast-forward-recovery.txt":
+			return []byte(filepath.Join(b.root, ".git", "metasystem", "fast-forward-recovery.txt")), nil
 		case "config --get metasystem.steward.rearm-resolve-seconds":
 			return []byte("20"), nil
 		case "config --local --no-includes --get metasystem.steward.landing-ref":
@@ -512,6 +516,19 @@ func TestCentralFollowClearsStaleBuildGitAdapter(t *testing.T) {
 	}
 	b := newCentralFollowBed(t)
 	git := func(ctx context.Context, root string, args ...string) ([]byte, error) {
+		if args[0] == "status" {
+			lock, err := os.Open(filepath.Join(root, "records/counselor/accepted-risk-register.jsonl.lock"))
+			if err != nil {
+				return nil, err
+			}
+			defer lock.Close()
+			if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != unix.EWOULDBLOCK {
+				if err == nil {
+					_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+				}
+				return nil, fmt.Errorf("checkout status ran without the counselor writer lock: %v", err)
+			}
+		}
 		command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
 		command.Env = append(gittree.ScrubbedEnviron(), "GIT_AUTHOR_DATE=2026-11-11T11:00:00Z", "GIT_COMMITTER_DATE=2026-11-11T11:00:00Z")
 		return command.Output()
@@ -531,6 +548,10 @@ func TestCentralFollowClearsStaleBuildGitAdapter(t *testing.T) {
 	injectedRunnerFile(t, filepath.Join(b.root, "cmd", "metasystem", "main.go"), []byte("package main\n"))
 	injectedRunnerFile(t, filepath.Join(b.root, "internal", "changed.go"), []byte("old\n"))
 	runGit(b.root, "add", ".")
+	const riskPath = "records/counselor/accepted-risk-register.jsonl"
+	riskFile := filepath.Join(b.root, riskPath)
+	injectedRunnerFile(t, riskFile, []byte("{\"id\":\"base\"}\n"))
+	runGit(b.root, "add", riskPath)
 	runGit(b.root, "commit", "-m", "old engine")
 	old := runGit(b.root, "rev-parse", "HEAD")
 	if err := testexec.WriteFile(b.binary, []byte(enginebuild.StampRecord(old)), 0755); err != nil {
@@ -544,6 +565,8 @@ func TestCentralFollowClearsStaleBuildGitAdapter(t *testing.T) {
 	runGit(b.root, "add", ".")
 	runGit(b.root, "commit", "-m", "landed engine")
 	b.commit = runGit(b.root, "rev-parse", "HEAD")
+	const localRisk = "{\"id\":\"base\"}\n{\"id\":\"local\"}\n"
+	injectedRunnerFile(t, riskFile, []byte(localRisk))
 	runGit(b.root, "push", "origin", "HEAD:main")
 	runGit(b.root, "fetch", "origin", "main")
 	runGit(b.root, "config", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
@@ -598,6 +621,9 @@ func TestCentralFollowClearsStaleBuildGitAdapter(t *testing.T) {
 	if data, _ := os.ReadFile(b.binary); !bytes.Equal(data, b.data) || starts != 1 {
 		log, _ := os.ReadFile(filepath.Join(b.root, "artifacts", "agents", "steward", "runner.log"))
 		t.Fatalf("ended launch: starts=%d bin=%q log=%s", starts, data, log)
+	}
+	if risk, err := os.ReadFile(riskFile); err != nil || string(risk) != localRisk || runGit(b.root, "diff", "--name-only", "HEAD", "--", riskPath) != riskPath {
+		t.Fatalf("follow lost the local accepted risk: %q, %v", risk, err)
 	}
 	if result := admission(); result != nil {
 		t.Fatalf("deployed admission=%+v", result)

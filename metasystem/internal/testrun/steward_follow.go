@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -108,6 +109,55 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 		return landedRearmGitStep(ctx, clock, seconds, "engine-follow", root, args...)
 	}
 	ancestor := func(a, b string) (bool, error) { return landedRearmAncestry(ctx, clock, seconds, root, a, b) }
+	forward := func(commit string) error {
+		prefix, err := read("rev-parse", "--show-prefix")
+		if err != nil {
+			return err
+		}
+		status, err := landedRearmGitOutputStep(ctx, clock, seconds, "follow-checkout-status", root, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+		if err != nil {
+			return err
+		}
+		riskEntry := ""
+		for _, entry := range strings.Split(status, "\x00") {
+			if len(entry) >= 4 && entry[3:] == prefix+counselor.AcceptedRiskRegisterPath {
+				switch entry[:2] {
+				case " M", "M ", "MM":
+					riskEntry = entry
+					continue
+				}
+			}
+			if entry != "" && (len(entry) < 4 || !slices.ContainsFunc(landing.AppendOnlyRegisters(), func(register string) bool { return entry[3:] == prefix+register })) {
+				return fmt.Errorf("the checkout has tracked changes: %s", entry)
+			}
+		}
+		if riskEntry != "" {
+			// Porcelain v1 reports a mode change and a content edit with the same M.
+			for _, args := range [][]string{{"diff", "--summary"}, {"diff", "--cached", "--summary"}} {
+				summary, err := read(append(args, "--", counselor.AcceptedRiskRegisterPath)...)
+				if err != nil {
+					return err
+				}
+				if summary != "" {
+					return fmt.Errorf("the checkout has tracked changes: %s", riskEntry)
+				}
+			}
+		}
+		contains, err := ancestor(commit, "HEAD")
+		if err != nil {
+			return err
+		}
+		if contains {
+			commit = ""
+		} else if behind, err := ancestor("HEAD", commit); err != nil {
+			return err
+		} else if !behind {
+			return fmt.Errorf("HEAD has commits the deployed commit lacks")
+		}
+		return landing.ForwardEngineCheckout(ctx, root, commit, riskEntry, func(name string) (string, error) {
+			return read("rev-parse", "--path-format=absolute", "--git-path", name)
+		})
+	}
 	return DeployedFollow{
 		Now: now, Deployed: deployed, Install: install,
 		EnrolledDigest: func() (string, error) {
@@ -154,29 +204,7 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 		LaneProofRunning: func() (bool, error) { return EngineLaneProofRunning(root, ops.Prober) },
 		Lock:             func() (func(), error) { return landedRearmMutationLock(root) },
 		Forward: func(commit string) error {
-			prefix, err := read("rev-parse", "--show-prefix")
-			if err != nil {
-				return err
-			}
-			status, err := landedRearmGitOutputStep(ctx, clock, seconds, "follow-checkout-status", root, "status", "--porcelain=v1", "-z", "--untracked-files=no")
-			if err != nil {
-				return err
-			}
-			for _, entry := range strings.Split(status, "\x00") {
-				if entry != "" && (len(entry) < 4 || !slices.ContainsFunc(landing.AppendOnlyRegisters(), func(register string) bool { return entry[3:] == prefix+register })) {
-					return fmt.Errorf("the checkout has tracked changes: %s", entry)
-				}
-			}
-			if contains, err := ancestor(commit, "HEAD"); err != nil || contains {
-				return err
-			}
-			if behind, err := ancestor("HEAD", commit); err != nil || !behind {
-				if err != nil {
-					return err
-				}
-				return fmt.Errorf("HEAD has commits the deployed commit lacks")
-			}
-			return landedRearmFastForward(ctx, root, commit)
+			return counselor.WithAcceptedRiskRegisterLock(root, func() error { return forward(commit) })
 		},
 		Start: stewardBoundaryDependencies(ctx, root, "", nil, steward.RearmOperations{Clock: landedRearmClock}).start,
 	}

@@ -45,8 +45,6 @@ func newFFFixture(t *testing.T) *ffFixture {
 	writeAdvanceFile(t, f.root, ffDigest, "digest=seed\ndigest=working\n")
 	writeAdvanceFile(t, f.root, "product.txt", "local product\n")
 	writeAdvanceFile(t, f.root, "untracked.txt", "keep me\n")
-	f.add(false, []string{"rev-parse", "--show-toplevel"}, f.root+"\n", nil, nil)
-	f.add(false, []string{"rev-parse", "--show-prefix"}, "", nil, nil)
 	f.add(false, []string{"rev-parse", "--git-path", fastForwardRecoveryName}, filepath.Join(f.root, ".git", fastForwardRecoveryName)+"\n", nil, nil)
 	return f
 }
@@ -56,6 +54,8 @@ func (f *ffFixture) add(bridge bool, args []string, out string, err error, effec
 }
 
 func (f *ffFixture) planHead() {
+	f.add(false, []string{"rev-parse", "--show-toplevel"}, f.root+"\n", nil, nil)
+	f.add(false, []string{"rev-parse", "--show-prefix"}, "", nil, nil)
 	f.add(false, []string{"rev-parse", "--verify", "--quiet", "HEAD^{commit}"}, ffHead+"\n", nil, nil)
 	f.add(false, []string{"rev-parse", "--git-path", "index"}, filepath.Join(f.root, ".git/index")+"\n", nil, nil)
 }
@@ -151,7 +151,8 @@ func (f *ffFixture) git(ctx context.Context, root string, args ...string) ([]byt
 
 func (f *ffFixture) run() error {
 	f.t.Helper()
-	err := fastForwardPreservingRegistersWith(context.Background(), f.root, ffTip, gittree.Workspace{Dir: f.root, RawSource: f.raw}, f.git)
+	workspace := gittree.Workspace{Dir: f.root, RawSource: f.raw}
+	err := fastForwardPreservingRegistersWith(context.Background(), f.root, ffTip, workspace, f.git, workspace.GitPath, appendOnlyRegisters, "")
 	if f.next != len(f.steps) {
 		f.t.Fatalf("raw operations consumed %d of %d", f.next, len(f.steps))
 	}

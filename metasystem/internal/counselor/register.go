@@ -139,7 +139,7 @@ func AppendCarriedAcceptedRisk(root string, in CarriedAcceptedRiskAppend) error 
 	if err != nil {
 		return err
 	}
-	return appendRegisterLine(root, acceptedRiskRegisterSource, line.ID, line)
+	return appendRegisterLine(root, AcceptedRiskRegisterPath, line.ID, line)
 }
 
 func ValidateCarriedAcceptedRisk(root string, in CarriedAcceptedRiskAppend) error {
@@ -235,7 +235,7 @@ func AppendAcceptedRisk(root string, in AcceptedRiskAppend) error {
 		return fmt.Errorf("accepted-risk register entry requires an evidence line")
 	}
 	line := acceptedRiskRegisterLine{SchemaVersion: 1, ID: "ar-" + in.RootJob + "-" + in.FindingID, RecordedAt: in.RecordedAt.UTC().Format(time.RFC3339), Kind: "accepted-risk", Class: in.Class, Title: title, AcceptanceStatus: "accepted", AcceptanceReason: in.Why, SpecimenFacts: facts, ReviewLinks: []acceptedRiskRegisterReviewLink{{Kind: "goal", Target: "plans/goals/" + in.Goal + ".md", Detail: "opid=" + in.OpID}}}
-	return appendRegisterLine(root, acceptedRiskRegisterSource, line.ID, line)
+	return appendRegisterLine(root, AcceptedRiskRegisterPath, line.ID, line)
 }
 
 func AppendMisclassification(root string, in MisclassificationAppend) error {
@@ -245,8 +245,12 @@ func AppendMisclassification(root string, in MisclassificationAppend) error {
 	return appendRegisterLine(root, "records/counselor/misclassification-register.jsonl", line.ID, line)
 }
 
-func appendRegisterLine(root, relative, id string, value any) (returnErr error) {
-	path := filepath.Join(root, filepath.FromSlash(relative))
+// WithAcceptedRiskRegisterLock serializes an engine follow with accepted-risk writers.
+func WithAcceptedRiskRegisterLock(root string, follow func() error) error {
+	return withRegisterLock(filepath.Join(root, AcceptedRiskRegisterPath), follow)
+}
+
+func withRegisterLock(path string, action func() error) (returnErr error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -260,6 +264,15 @@ func appendRegisterLine(root, relative, id string, value any) (returnErr error) 
 			returnErr = err
 		}
 	}()
+	return action()
+}
+
+func appendRegisterLine(root, relative, id string, value any) error {
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	return withRegisterLock(path, func() error { return appendRegisterLineLocked(path, id, value) })
+}
+
+func appendRegisterLineLocked(path, id string, value any) error {
 	if file, err := os.Open(path); err == nil {
 		reader := bufio.NewReader(file)
 		var readErr error
