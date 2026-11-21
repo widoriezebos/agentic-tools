@@ -105,7 +105,7 @@ func (o helmOwners) withDefaults() helmOwners {
 		o.read = helmReturnRead
 	}
 	if o.recover == nil {
-		o.recover = helmRecover
+		o.recover = defaultProcessIntentOwners().helmRecover
 	}
 	if o.fence == nil {
 		o.fence = ledgerfence.Ensure

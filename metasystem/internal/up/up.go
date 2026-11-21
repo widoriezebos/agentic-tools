@@ -49,6 +49,7 @@ type Options struct {
 	NoRuntimeSession      bool
 	StartSource           string
 	MaxCap                int64
+	FollowRestart         bool
 	RecoverOnly           bool
 	IfDown                bool
 	WaitScaleMilli        int
@@ -117,6 +118,7 @@ type ComponentOutcome struct {
 
 // Result carries every component line and the one aggregate outcome.
 type Result struct {
+	Deferred          string
 	Adoption          *Adoption
 	Components        []ComponentOutcome
 	RawLines          []string
@@ -147,7 +149,7 @@ func (r Result) Data() Data {
 
 // ExitCode is zero for armed, advisor, and successful recovery outcomes.
 func (r Result) ExitCode() int {
-	if r.Outcome == "failed" || r.Outcome == "recovery-partial" || r.Outcome == "ENROLLMENT_DRIFT" {
+	if r.Outcome == "start-partial" || r.Outcome == "failed" || r.Outcome == "recovery-partial" || r.Outcome == "ENROLLMENT_DRIFT" {
 		return 1
 	}
 	return 0
@@ -193,6 +195,9 @@ func (r Result) Lines() []string {
 		lines = append(lines, "session preparation partial: adoption pending; "+r.Adoption.Cause+"; remedy="+quoteField(r.Adoption.Remedy))
 	}
 	aggregate := "up outcome=" + r.Outcome
+	if r.Deferred != "" {
+		aggregate += " deferred=" + quoteField(r.Deferred)
+	}
 	if r.Authority != "" {
 		aggregate += " authority=" + r.Authority
 	}
@@ -659,7 +664,8 @@ func (run *generationRun) finish(options Options, result Result) Result {
 			payload.Verdict = "mismatch"
 		}
 	}
-	if run.attempt != "" {
+	if run.attempt != "" || result.Deferred != "" {
+		payload.Reason = result.Deferred
 		payload.Verdict = "deferred"
 	}
 	err := run.registrationErr
@@ -770,6 +776,17 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, run *g
 	armingOptions.TargetDigest = enrolled.Install.InstallDigest
 	armingOptions.Executions = options.Executions
 	armingOptions.ProofGate = supervisorProofGate(options)
+	armingOptions.ChangedEnrollment = func() (int, error) {
+		pin := enrolled.Install
+		current, err := steward.VerifyIdentity(steward.RepoIdentityPath(pin.RepoIdentity), pin.RepoIdentity)
+		if err != nil {
+			return 0, err
+		}
+		if current.Generation != pin.Generation || current.InstallPath != pin.InstallPath || current.InstallDigest != pin.InstallDigest {
+			return current.Generation, nil
+		}
+		return 0, nil
+	}
 	ensureArmed := supervise.EnsureArmed
 	if options.EnsureArmed != nil {
 		ensureArmed = options.EnsureArmed
@@ -778,6 +795,19 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, run *g
 	result, err := ensureArmed(armingOptions)
 	run.attempt = result.Attempt
 	if err != nil {
+		var changed *supervise.EnrollmentChanged
+		if errors.As(err, &changed) {
+			deferred := failure(components, "supervision-owner", changed, "let the newer start finish")
+			deferred.Components[len(deferred.Components)-1].Outcome = "deferred"
+			deferred.Outcome, deferred.Deferred = "start-partial", changed.Error()
+			return nil, result, &deferred
+		}
+		if options.FollowRestart && errors.Is(err, supervise.ErrCapAuthorityBusy) {
+			reason := "the restart did not take supervision. " + err.Error()
+			if logErr := steward.NoteFollowFailure(options.Root, enrolled.Install.LandedCommit, reason, "metasystem system start --if-down", time.Now()); logErr != nil {
+				err = fmt.Errorf("%w. Could not record the follow: %v", err, logErr)
+			}
+		}
 		if errors.Is(err, steward.ErrEnrollmentDrift) {
 			drift := enrollmentDrift(components, fmt.Errorf("supervision-owner launch: %w", err), installationRoot(options), options.Root)
 			return nil, supervise.EnsureResult{}, &drift

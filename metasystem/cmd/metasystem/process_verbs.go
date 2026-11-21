@@ -164,6 +164,7 @@ func processVerbRetryCommand(scope processScope, verb string) string {
 // processRefusal is one process verb's refusal as its legacy call prints it:
 // the sentence, the second line naming what to run, and the exit code.
 type processRefusal struct {
+	deferred                         string
 	verb, checkout, sentence, second string
 	code                             int
 	// plain is printed alone by refusals that predate the two-line form.
@@ -202,6 +203,7 @@ type processOwners struct {
 // found everything already running (the steward's same live runner kept and
 // no helper started), with that runner's pid.
 type processArmResult struct {
+	deferred  string
 	lines     []string
 	unchanged bool
 	runnerPid int64
@@ -311,7 +313,7 @@ func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewB
 	}
 	report, err := transition.Arm()
 	if err != nil {
-		return report, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), second: armRefusalSecondLine(scope, err), code: 1}
+		return report, &processRefusal{deferred: steps.deferred, verb: "arm", checkout: scope.Checkout, sentence: err.Error(), second: armRefusalSecondLine(scope, err), code: 1}
 	}
 	report.Lines = append([]string{evidence.Line()}, report.Lines...)
 	// The start is a repeat only when the fence was already open and the arm
@@ -406,7 +408,7 @@ func (effects processArmEffects) steps(scope processScope, scale int, authority 
 				detail = component.Detail
 			}
 		}
-		return processArmResult{lines: lines}, fmt.Errorf("up ended with outcome %s: %s: %s", upResult.Outcome, upResult.Failed, detail)
+		return processArmResult{lines: lines, deferred: upResult.Deferred}, fmt.Errorf("up ended with outcome %s: %s: %s", upResult.Outcome, upResult.Failed, detail)
 	}
 	return processArmResult{lines: lines, unchanged: stewardKept && upResult.Outcome == "recovery-not-needed", runnerPid: afterPid}, nil
 }

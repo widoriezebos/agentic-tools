@@ -98,6 +98,9 @@ func upEnvelope(result up.Result) verbresult.Result {
 		step = result.Outcome
 	}
 	envelope.Summary = "starting supervision stopped at " + step
+	if result.Deferred != "" {
+		envelope.Summary = result.Deferred
+	}
 	if result.Remedy != "" {
 		envelope.Details = []string{result.Remedy}
 	}
@@ -319,6 +322,10 @@ func runUpWithInputs(args []string, repositoryTop func(string) (string, error), 
 	return runUpWithProcessOwners(args, owners, stdout, stderr)
 }
 
+func (owners processIntentOwners) recoverSupervision(scope processScope, stdout, stderr io.Writer) int {
+	return runUpWithProcessOwners([]string{"--metasystem-root", scope.Installation.Path(), "--repo", scope.Checkout, "--recover-only", "--if-down"}, owners, stdout, stderr)
+}
+
 func runUpWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
 	owners := defaultProcessIntentOwners()
 	owners.process.repositoryTop = repositoryTop
@@ -390,11 +397,15 @@ func runUpWithProcessOwners(args []string, owners processIntentOwners, stdout, s
 	if scale == 0 {
 		return refuse(2, fmt.Sprintf("the test time scale %s is not a whole number above zero", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"))
 	}
+	followRestart := os.Getenv(steward.FollowRestartEnv) == "1"
+	if followRestart {
+		_ = os.Unsetenv(steward.FollowRestartEnv)
+	}
 	options := up.Options{
 		Root: scope, MetasystemRoot: root, Scope: scope, Binary: binary, Session: *session, Pid: *pid,
 		StartTime: *start, Tag: *tag, Runtime: *runtimeName, OwnerLineage: *ownerLineage,
 		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
-		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
+		FollowRestart: followRestart, MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid:             int64(os.Getppid()),
 		RestampStopCapability: owners.adoptionReads.RestampFresh, AdoptionRemedy: "metasystem internal up",
 	}

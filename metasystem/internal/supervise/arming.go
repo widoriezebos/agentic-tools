@@ -64,6 +64,8 @@ type EnsureOptions struct {
 	WaitScaleMilli  int
 	OwnerTagPrefix  string
 	FenceGeneration int64
+	// ChangedEnrollment returns the current generation when the pinned identity moved.
+	ChangedEnrollment func() (int, error)
 	// ownerProbe reads the launched owner's identity; nil reads the kernel.
 	ownerProbe func(int64) (identity.Exact, identity.Liveness, error)
 }
@@ -292,6 +294,8 @@ func scaledWait(baseSeconds int, scaleMilli int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
+var ErrCapAuthorityBusy = errors.New("repository cap-authority lock remained busy")
+
 func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) {
 	directory := filepath.Join(SupervisionDir(root), "cap-authority.lock.d")
 	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
@@ -312,9 +316,9 @@ func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) 
 		}
 		if !armingNow().Before(deadline) {
 			if holder.Pid == 0 {
-				return nil, errors.New("repository cap-authority lock remained busy. Holder unreadable. Please wait and retry")
+				return nil, fmt.Errorf("%w. Holder unreadable. Please wait and retry", ErrCapAuthorityBusy)
 			}
-			return nil, fmt.Errorf("repository cap-authority lock remained busy. Please wait for process %d (%s) and retry", holder.Pid, capLockOperation(holder))
+			return nil, fmt.Errorf("%w. Please wait for process %d (%s) and retry", ErrCapAuthorityBusy, holder.Pid, capLockOperation(holder))
 		}
 		armingSleep(50 * time.Millisecond)
 	}
@@ -1115,7 +1119,7 @@ var releaseLaunchedOwner = func(command *exec.Cmd) error {
 	return command.Process.Release()
 }
 
-func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
+func launchOwner(options EnsureOptions, tag string, stopBegan bool) (ArmingOwner, error) {
 	supervisionDir := SupervisionDir(options.Root)
 	logFile, err := os.OpenFile(filepath.Join(supervisionDir, "owner.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -1164,6 +1168,9 @@ func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = devNull, logFile, logFile
 	cmd.Env = withoutExecutionID(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := options.checkEnrollment(stopBegan); err != nil {
+		return ArmingOwner{}, err
+	}
 	if err := cmd.Start(); err != nil {
 		return ArmingOwner{}, err
 	}
@@ -1295,6 +1302,34 @@ func appendShutdownEscalated(root string, owner ArmingOwner, outcomes []Componen
 	return nil
 }
 
+// EnrollmentChanged reports which enrollment superseded this start.
+type EnrollmentChanged struct {
+	Generation int
+	StopBegan  bool
+}
+
+func (e *EnrollmentChanged) Error() string {
+	effects := "Supervision was left untouched for the newer start."
+	if e.StopBegan {
+		effects = "The stop began. Launch was left to the newer start."
+	}
+	return fmt.Sprintf("Start deferred. Enrollment changed to install %d. %s", e.Generation, effects)
+}
+
+func (o EnsureOptions) checkEnrollment(stopBegan bool) error {
+	if o.ChangedEnrollment == nil {
+		return nil
+	}
+	current, err := o.ChangedEnrollment()
+	if err != nil {
+		return err
+	}
+	if current != 0 {
+		return &EnrollmentChanged{Generation: current, StopBegan: stopBegan}
+	}
+	return nil
+}
+
 // EnsureArmed establishes exactly one current supervision owner and waits
 // until its watcher, reaper, and first generation-bound census all verify.
 // A dead owner is taken over only after exact death; a live older generation
@@ -1323,6 +1358,11 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		}
 	}()
 
+	stopBegan := false
+
+	if err := options.checkEnrollment(stopBegan); err != nil {
+		return EnsureResult{}, err
+	}
 	action := "started"
 	for attempts := 0; attempts < 4; attempts++ {
 		if err := os.Mkdir(ownerLockDir(options.Root), 0o755); err == nil {
@@ -1330,7 +1370,11 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 				_ = os.Remove(ownerLockDir(options.Root))
 				return EnsureResult{}, err
 			}
-			owner, err := launchOwner(options, newOwnerTag(options.OwnerTagPrefix))
+			if err := options.checkEnrollment(stopBegan); err != nil {
+				_ = os.Remove(ownerLockDir(options.Root))
+				return EnsureResult{}, err
+			}
+			owner, err := launchOwner(options, newOwnerTag(options.OwnerTagPrefix), stopBegan)
 			if err != nil {
 				_ = os.Remove(ownerLockDir(options.Root))
 				return EnsureResult{}, err
@@ -1360,6 +1404,10 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 			if err := requireCeilingClear(options.Root, options.MetasystemRoot, options.WatcherCap); err != nil {
 				return EnsureResult{}, err
 			}
+			if err := options.checkEnrollment(stopBegan); err != nil {
+				return EnsureResult{}, err
+			}
+			stopBegan = true
 			if _, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
 				return EnsureResult{}, fmt.Errorf("dead-owner takeover refused: %w", err)
 			}
@@ -1402,7 +1450,14 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		}
 		released := false
 		stop := func() error {
+			if err := options.checkEnrollment(stopBegan); err != nil {
+				return err
+			}
+			stopBegan = true
 			if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "an engine-generation replacement at session start"); err != nil {
+				return err
+			}
+			if err := options.checkEnrollment(stopBegan); err != nil {
 				return err
 			}
 			if _, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {

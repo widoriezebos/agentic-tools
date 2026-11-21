@@ -130,6 +130,7 @@ type GenerationRole struct {
 	Cause      string `json:"cause"`
 }
 type Generation struct {
+	Reason  string           `json:"reason,omitempty"`
 	Target  string           `json:"target"`
 	Verdict string           `json:"verdict"`
 	Attempt string           `json:"attempt,omitempty"`

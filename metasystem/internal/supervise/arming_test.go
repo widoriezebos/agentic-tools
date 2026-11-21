@@ -1159,16 +1159,16 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	}
 	options := armingOptions(root)
 	options.Command = func(...string) (*exec.Cmd, error) { return nil, os.ErrInvalid }
-	if _, err := launchOwner(options, "owner-tag"); !errors.Is(err, os.ErrInvalid) {
+	if _, err := launchOwner(options, "owner-tag", false); !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("command construction failure lost its cause: %v", err)
 	}
 	options.Command = func(...string) (*exec.Cmd, error) { return exec.Command(filepath.Join(root, "missing-binary")), nil }
-	if _, err := launchOwner(options, "owner-tag"); err == nil {
+	if _, err := launchOwner(options, "owner-tag", false); err == nil {
 		t.Fatal("a missing owner binary was reported as launched")
 	}
 	options.Command = nil
 	options.Binary = filepath.Join(root, "also-missing")
-	if _, err := launchOwner(options, "owner-tag"); err == nil {
+	if _, err := launchOwner(options, "owner-tag", false); err == nil {
 		t.Fatal("a missing configured owner binary was reported as launched")
 	}
 
@@ -1205,7 +1205,7 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	clockOptions.Command = func(...string) (*exec.Cmd, error) {
 		return exec.Command("sh", "-c", "exit 0"), nil
 	}
-	owner, err := launchOwner(clockOptions, "owner-tag")
+	owner, err := launchOwner(clockOptions, "owner-tag", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1227,7 +1227,7 @@ func TestLaunchOwnerRefusesFixtureSignalSeamsOutsideFixtureMode(t *testing.T) {
 	} {
 		t.Run(variable, func(t *testing.T) {
 			t.Setenv(variable, "1")
-			if _, err := launchOwner(armingOptions(root), "owner-tag"); err == nil || !strings.Contains(err.Error(), "fixture-only") {
+			if _, err := launchOwner(armingOptions(root), "owner-tag", false); err == nil || !strings.Contains(err.Error(), "fixture-only") {
 				t.Fatalf("production root accepted %s: %v", variable, err)
 			}
 		})
@@ -1253,7 +1253,7 @@ func TestLaunchOwnerReportsEarlyExitAndPublicationFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		options := armingOptions(root)
-		if _, err := launchOwner(options, "owner-tag"); err == nil {
+		if _, err := launchOwner(options, "owner-tag", false); err == nil {
 			t.Fatal("owner publication through a directory succeeded")
 		}
 	})
@@ -1286,7 +1286,7 @@ func TestLaunchOwnerReportsEarlyExitAndPublicationFailures(t *testing.T) {
 			holder = newOwnedHeldProcess(t, false, args...)
 			return holder.command, nil
 		}
-		_, err := launchOwner(options, "owner-tag")
+		_, err := launchOwner(options, "owner-tag", false)
 		if mkdirErr != nil {
 			t.Fatal(mkdirErr)
 		}

@@ -672,7 +672,7 @@ func runIntentSystemStart(inv *intentInvocation) int {
 		if problem != nil {
 			return inv.render(*problem)
 		}
-		return runUpWith([]string{"--metasystem-root", scope.Installation.Path(), "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop, inv.stdout, inv.stderr)
+		return inv.owners.processes.recoverSupervision(scope, inv.stdout, inv.stderr)
 	}
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
@@ -711,6 +711,9 @@ func runIntentSessionStart(inv *intentInvocation) int {
 	}
 	if result.ExitCode() != 0 {
 		outcome = intentRefused
+	}
+	if result.Deferred != "" {
+		outcome = intentPartial
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
 		Summary: sessionPreparationSummary(result), text: result.Lines(), Decision: remedy,
@@ -756,6 +759,9 @@ func (inv *intentInvocation) prepareClaimSession(lineage string) (up.Result, *in
 }
 
 func sessionPreparationSummary(result up.Result) string {
+	if result.Deferred != "" {
+		return result.Deferred
+	}
 	if result.Adoption != nil && result.Adoption.Status == "pending" {
 		return "session preparation is partial: adoption pending; " + result.Adoption.Cause
 	}
@@ -2254,6 +2260,9 @@ func processFence(scope processScope) (stopfence.Record, string) {
 // the fence moved changed nothing; one after it names the fence and the
 // processes running now, and the exact start to run again.
 func (inv *intentInvocation) startRefusal(scope processScope, scale int, before stopfence.Record, refusal *processRefusal, report stoptransition.Report) intentResult {
+	if refusal.deferred != "" {
+		return intentResult{Outcome: intentPartial, code: 1, Summary: refusal.deferred, Targets: inv.checkoutTarget(scope), Details: report.Lines}
+	}
 	after, fence := processFence(scope)
 	if after.Generation == before.Generation && after.State == before.State && after.Phase == before.Phase {
 		return processRefusalResult(inv.checkoutTarget(scope), refusal, report)

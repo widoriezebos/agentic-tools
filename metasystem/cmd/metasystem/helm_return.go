@@ -451,9 +451,9 @@ func helmAsk(stdin io.Reader, stdout io.Writer) func(string) (string, bool) {
 
 // helmRecover is the recover path system start --if-down takes; its own
 // report is kept to one line.
-func helmRecover(scope processScope) string {
+func (owners processIntentOwners) helmRecover(scope processScope) string {
 	var report bytes.Buffer
-	if runUpWith([]string{"--metasystem-root", scope.Installation.Path(), "--repo", scope.Checkout, "--recover-only", "--if-down"}, stateroot.RepositoryTop, &report, &report) == 0 {
+	if owners.recoverSupervision(scope, &report, &report) == 0 {
 		return "supervision: recovered"
 	}
 	line := "supervision re-arms at the next turn end (the Stop hook arms it)"

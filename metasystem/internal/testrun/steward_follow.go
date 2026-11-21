@@ -206,7 +206,7 @@ func DeployedFollowDependencies(ctx context.Context, root string, now func() tim
 		Forward: func(commit string) error {
 			return counselor.WithAcceptedRiskRegisterLock(root, func() error { return forward(commit) })
 		},
-		Start: stewardBoundaryDependencies(ctx, root, "", nil, steward.RearmOperations{Clock: landedRearmClock}).start,
+		Start: stewardBoundaryDependencies(ctx, root, "", nil, steward.RearmOperations{Clock: landedRearmClock}, steward.FollowRestartEnv+"=1").start,
 	}
 }
 

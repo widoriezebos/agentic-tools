@@ -29,6 +29,9 @@ func OpenJob(root string) (job string, open bool) {
 	return "", false
 }
 
+// FollowRestartEnv marks the detached follow child. Older engines accept the same up arguments.
+const FollowRestartEnv = "METASYSTEM_FOLLOW_RESTART"
+
 // NoteFollowFailure retains one line for each deployed commit and refusal reason.
 func NoteFollowFailure(root, commit, reason, command string, now time.Time) error {
 	message := "engine follow: " + strings.ReplaceAll(reason, "\n", "; ") + "; to follow by hand: " + command

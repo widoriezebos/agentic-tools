@@ -55,7 +55,7 @@ func RearmStewardAtBoundary(projectRoot string, boundary, laneProofRunning func(
 	return rearmStewardWithDependencies(projectRoot, deps)
 }
 
-func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string, boundary func() (bool, error), ops steward.RearmOperations) stewardRearmDependencies {
+func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string, boundary func() (bool, error), ops steward.RearmOperations, startEnv ...string) stewardRearmDependencies {
 	installation := projectRoot
 	if ops.Git != nil {
 		ctx = context.WithValue(ctx, landedRearmGitOutputContextKey{}, ops.Git)
@@ -103,6 +103,9 @@ func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string
 			}
 			defer log.Close()
 			command := exec.Command(filepath.Join(installation, "bin", "metasystem"), "up", "--repo", projectRoot)
+			if len(startEnv) != 0 {
+				command.Env = append(os.Environ(), startEnv...)
+			}
 			command.Dir, command.Stdout, command.Stderr = installation, log, log
 			command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			if err := command.Start(); err != nil {
