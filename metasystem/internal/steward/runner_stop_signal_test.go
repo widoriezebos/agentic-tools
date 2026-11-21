@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -325,9 +326,9 @@ func TestAStoppingRunnerStartsNoFurtherBreachStop(t *testing.T) {
 }
 
 // A hand-built rearmResolverDeps leaves signal nil; the replacement stop
-// resolves that to syscall.Kill at the point of use instead of panicking.
-// The runner is a child already exited and reaped, so the real Kill
-// answers ESRCH and no live process is touched.
+// verifies the process before using the kernel signal sender.
+// The runner is a child already exited and reaped, so the probe
+// observes its exit and no live process is touched.
 func TestStopRunnerForReplacementNilSignalUsesKill(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -338,7 +339,7 @@ func TestStopRunnerForReplacementNilSignalUsesKill(t *testing.T) {
 	if err := child.Run(); err != nil {
 		t.Fatalf("run exited child: %v", err)
 	}
-	if err := stopRunnerForReplacement(root, RunnerRecord{Pid: int64(child.Process.Pid)}, nil); err != nil {
+	if err := stopRunnerForReplacement(root, RunnerRecord{Pid: int64(child.Process.Pid)}, rearmResolverDeps{prober: identity.KernelProber{}}); err != nil {
 		t.Fatalf("stop with nil signal: %v", err)
 	}
 }

@@ -49,7 +49,7 @@ type rearmResolverDeps struct {
 	archivedEngineDigest func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error)
 	notifyAvailable      func(string) bool
 	runnerExcluded       func(string, bool) (string, bool)
-	// signal stops a runner the arm replaces (syscall.Kill in production).
+	// signal stops a runner the arm replaces (nil uses the selected process handle).
 	signal func(int, syscall.Signal) error
 	clock  RearmClock
 	launch func(string, *EnrolledBinary, string) (RunnerRecord, error)
@@ -76,7 +76,6 @@ func defaultRearmResolverDeps() rearmResolverDeps {
 		archivedEngineDigest: archivedEngineDigestAtCommitWithClock,
 		notifyAvailable:      func(root string) bool { _, ok := NotifyCommand(root); return ok },
 		runnerExcluded:       runnerExclusion,
-		signal:               syscall.Kill,
 		clock:                SystemRearmClock(),
 		launch: func(root string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
 			return launchRunner(root, binary, lineage)

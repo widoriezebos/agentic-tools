@@ -59,6 +59,10 @@ type RunnerRecord struct {
 	FenceGeneration int64  `json:"fenceGeneration"`
 }
 
+func (r RunnerRecord) processRef() identity.Ref {
+	return identity.Ref{Pid: r.Pid, StartedAtSec: r.PidStartedAt, StartTicks: r.StartTicks, BootID: r.BootID}
+}
+
 // StoppedError is the process-creation refusal returned while the checkout's
 // fence is closed. Callers render its two lines without adding a family prefix.
 type StoppedError struct {
@@ -1363,10 +1367,12 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		}
 		outcome.StoppedRunnerPid = rec.Pid
 		outcome.Stage = StageStopAttempted
-		if err := stopRunnerForReplacement(top, rec, deps.signal); err != nil {
+		if err := stopRunnerForReplacement(top, rec, deps); err != nil {
 			return outcome, err
 		}
 		outcome.Stage = StageStopped
+	} else if rec.Pid > 0 && identity.LiveRef(deps.prober, rec.processRef()) != identity.Dead {
+		return outcome, fmt.Errorf("cannot verify runner pid %d before arming", rec.Pid)
 	}
 	generation := prior.Generation + 1
 	now := time.Now
@@ -1454,13 +1460,23 @@ func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string, clock
 		return RunnerRecord{}, err
 	}
 	// The runner is detached on purpose: it must outlive this launch.
+	// Read the child's start identity before Wait can reap it and free its PID.
+	prober := identity.KernelProber{}
+	child, state, _ := prober.ReadStart(int64(cmd.Process.Pid))
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
+	if state != identity.Alive {
+		return RunnerRecord{}, fmt.Errorf("cannot verify launched runner pid %d; see %s", cmd.Process.Pid, runnerLogPath(repoRoot))
+	}
 	sleep := runnerSleep
 	if len(clocks) > 0 {
 		sleep = clocks[0]
 	}
-	return AwaitRunnerStart(repoRoot, func() (RunnerRecord, bool) { return liveRunner(repoRoot) }, waited, sleep)
+	return AwaitRunnerStart(repoRoot, func() (RunnerRecord, bool) {
+		var rec RunnerRecord
+		confirmed := readJSON(runnerRecordPath(repoRoot), &rec) == nil && identity.SameIdentity(child, rec.processRef()) && identity.LiveRef(prober, child.Ref()) == identity.Alive
+		return rec, confirmed
+	}, waited, sleep)
 }
 
 // AwaitRunnerStart completes when the runner publishes its live process
@@ -1496,40 +1512,66 @@ var runnerSleep = time.Sleep
 const runnerReplacementKillWait = 2 * time.Second
 
 // stopRunnerForReplacement stops a runner the caller replaces; signal is
-// the per-call sender; nil resolves to syscall.Kill.
-func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error) error {
-	return stopRunnerForReplacementWithClock(repoRoot, runner, signal, runnerNow, runnerSleep, identity.KernelProber{})
+// supplied by the caller when it owns process delivery.
+func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, deps rearmResolverDeps) error {
+	if deps.clock == nil {
+		deps.clock = SystemRearmClock()
+	}
+	return stopRunnerForReplacementWithClock(repoRoot, runner, deps.signal, deps.clock.Now, func(d time.Duration) { <-deps.clock.After(d) }, deps.prober)
 }
 
 func stopRunnerForReplacementWithClock(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error, now func() time.Time, sleep func(time.Duration), prober identity.Prober) error {
 	if signal == nil {
-		signal = syscall.Kill
+		// FindProcess always succeeds on Unix and binds Signal to a pidfd when available.
+		process, _ := os.FindProcess(int(runner.Pid))
+		defer process.Release()
+		signal = func(_ int, sig syscall.Signal) error { return process.Signal(sig) }
 	}
 	if err := runnerStopWriter(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
 		return fmt.Errorf("write restart marker before stopping runner pid %d: %w", runner.Pid, err)
 	}
-	if err := signal(int(runner.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
-		return fmt.Errorf("stop runner pid %d for replacement: %w", runner.Pid, err)
+	step := func(sig syscall.Signal) (bool, error) {
+		var current RunnerRecord
+		err := readJSON(runnerRecordPath(repoRoot), &current)
+		matches := err == nil && sameRunner(runner, current)
+		state := identity.LiveRef(prober, runner.processRef())
+		if state == identity.Dead && (matches || errors.Is(err, os.ErrNotExist)) {
+			return false, nil
+		}
+		if !matches || state != identity.Alive {
+			return false, fmt.Errorf("cannot verify runner pid %d against its announcement during replacement", runner.Pid)
+		}
+		if sig == 0 {
+			return true, nil
+		}
+		err = signal(int(runner.Pid), sig)
+		if err == nil || errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone) {
+			return err == nil, nil
+		}
+		return false, fmt.Errorf("stop runner pid %d for replacement (%s): %w", runner.Pid, sig, err)
+	}
+	if alive, err := step(syscall.SIGTERM); !alive {
+		return err
 	}
 	// A stalled runner may itself be stopped, so let it receive the termination
 	// signal before deciding whether a hard stop is necessary.
-	_ = signal(int(runner.Pid), syscall.SIGCONT)
+	if alive, err := step(syscall.SIGCONT); !alive {
+		return err
+	}
 	deadline := now().Add(runnerReplacementKillWait)
 	for now().Before(deadline) {
-		if _, alive := liveRunnerWithProber(repoRoot, prober); !alive {
-			return nil
+		if alive, err := step(0); !alive {
+			return err
 		}
 		sleep(50 * time.Millisecond)
 	}
-	if current, alive := liveRunnerWithProber(repoRoot, prober); alive && current.Pid == runner.Pid {
-		if err := signal(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-			return fmt.Errorf("kill stalled runner pid %d for replacement: %w", runner.Pid, err)
-		}
+	if alive, err := step(syscall.SIGKILL); !alive {
+		return err
 	}
 	deadline = now().Add(runnerReplacementKillWait)
 	for now().Before(deadline) {
-		if _, alive := liveRunnerWithProber(repoRoot, prober); !alive {
-			return nil
+		if alive, err := step(0); !alive {
+			return err
 		}
 		sleep(50 * time.Millisecond)
 	}
