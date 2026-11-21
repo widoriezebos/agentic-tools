@@ -3155,7 +3155,7 @@ func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bo
 		}
 		result := &intentResult{Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("only you set %s, at your enrolled terminal, and %s; nothing was done", act, reason),
-			next:    remedy.Argv, nextReason: remedy.Then}
+			next:    remedy.Argv, nextReason: remedy.Then, TerminalCheck: remedy.Check}
 		if len(result.next) == 0 {
 			result.next, result.nextReason = inv.typedArgv(), "in the terminal you enrolled, never under the helm or a grant"
 		}

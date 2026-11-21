@@ -3306,13 +3306,10 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	}
 	enrollment, err := enroll(*root, int64(os.Getppid()), nil, *by, time.Now().UTC())
 	if err != nil {
-		if outcome, agent := humanauthority.OutcomeOf(err); outcome != "" && humanauthority.TerminalCheck() != "" {
+		if outcome, _ := humanauthority.OutcomeOf(err); outcome != "" && humanauthority.TerminalCheck() != "" {
 			reason, remedy := humanauthority.LoginRefusal(err)
-			if agent != "" {
-				reason += " (" + agent + ")"
-			}
 			values.refusalCode = outcome
-			return refuseHumanVerb(values, 1, reason, humanVerbRemedy{command: shellCommand([]string{"metasystem", "system", "enroll", "--name", *by}), words: remedy})
+			return refuseHumanVerb(values, 1, reason, humanVerbRemedy{command: shellCommand([]string{"metasystem", "system", "enroll", "--name", *by}), words: remedy, check: humanauthority.TerminalCheck()})
 		}
 		remedy := "run enrollment from a shell whose ancestry to its session leader is owned by you"
 		if humanauthority.TerminalCheck() != "" {
@@ -3673,6 +3670,13 @@ func (e personActError) Unwrap() error { return e.cause }
 
 func personActErrorFor(root string, cause error, person string) error {
 	remedy := humanauthority.RemedyFor(root, cause, person, nil)
+	if remedy.Check != "" {
+		why := remedy.Reason + ", so nothing was done. " + remedy.Check
+		if len(remedy.Argv) > 0 {
+			return personActError{reason: why + "\nrun: " + shellCommand(remedy.Argv) + "  (" + remedy.Then + ")", cause: cause}
+		}
+		return personActError{reason: why + "\n" + remedy.Then, cause: cause}
+	}
 	switch {
 	case len(remedy.Argv) > 0:
 		return personActError{reason: fmt.Sprintf("%s, so nothing was done\nrun: %s  (%s)", remedy.Reason, shellCommand(remedy.Argv), remedy.Then), cause: cause}

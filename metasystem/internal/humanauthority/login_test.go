@@ -120,6 +120,17 @@ func TestLoginTerminalProof(t *testing.T) {
 			if (err == nil) != good || p.Outcome != tc.want || p.ContinuationOutcome != tc.later || p.TerminalValidFor(root) != good || p.ValidFor(root) {
 				t.Fatalf("outcome %s, continuation %s, valid %v, error %v", p.Outcome, p.ContinuationOutcome, p.TerminalValidFor(root), err)
 			}
+			if tc.name == "tmux" || tc.name == "pane shell job requested externally" {
+				var rules []string
+				for _, node := range p.Nodes {
+					if node.ExecutableWithheld != "" {
+						rules = append(rules, node.ExecutableWithheld)
+					}
+				}
+				if !reflect.DeepEqual(rules, []string{"pid-one"}) {
+					t.Fatalf("pane login rules: %v", rules)
+				}
+			}
 			if tc.name != "ssh" {
 				return
 			}
@@ -258,5 +269,32 @@ func TestLoginEnrolledWalkKeepsExecutableRequirement(t *testing.T) {
 	p, err = Prove(root, 50, r, now)
 	if err == nil || p.Outcome != OutcomeUnreadable {
 		t.Fatal("the enrolled walk admitted a hidden program", err)
+	}
+}
+
+func TestInspectableLoginKeepsBaselineRecord(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := enrolledReader()
+	enrolled, err := Enroll(root, 20, reader, "Wido", time.Unix(1000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"schema":1,"enrolledAt":"1970-01-01T00:16:40Z","generation":1,"human":"Wido","terminalId":"tty-1","terminalRef":{"pid":20,"pidStartedAt":200},"sessionLeaderRef":{"pid":10,"pidStartedAt":100}}`
+	got, err := json.Marshal(enrolled)
+	if err != nil || string(got) != want {
+		t.Fatalf("record differs from main: %s (%v)", got, err)
+	}
+	raw, err := os.ReadFile(enrollmentPath(root))
+	var baseline bytes.Buffer
+	if indentErr := json.Indent(&baseline, []byte(want), "", "  "); indentErr != nil {
+		t.Fatal(indentErr)
+	}
+	baseline.WriteByte('\n')
+	if err != nil || !bytes.Equal(raw, baseline.Bytes()) {
+		t.Fatal("persisted enrollment:", err)
 	}
 }

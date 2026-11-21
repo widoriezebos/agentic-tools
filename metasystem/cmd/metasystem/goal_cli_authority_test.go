@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -371,7 +372,10 @@ func gcliAuthorityStoppingJournals(t *testing.T, root, verb string) []string {
 // refused TERMINAL_NOT_ENROLLED.
 func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 	t.Parallel()
-	const agentRefusal = `AGENT_IN_AUTHORITY_CHAIN: [[:alnum:]_-]+|started by an agent \([[:alnum:]_-]+\)`
+	agentRefusal := `AGENT_IN_AUTHORITY_CHAIN: [[:alnum:]_-]+|started by an agent \([[:alnum:]_-]+\)`
+	if runtime.GOOS == "linux" {
+		agentRefusal = `AGENT_IN_AUTHORITY_CHAIN: fake|an agent started this shell \(fake\)`
+	}
 	agentRefused := func(t *testing.T, label string, code int, stdout, stderr string) {
 		t.Helper()
 		if code == 0 {
@@ -398,7 +402,11 @@ func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 		bed.lineage = ""
 		headless := newGcliAuthorityCaller(t, bed, gcliAuthorityHeadless)
 		code, stdout, stderr := headless.release("--id", "ship-widget", "--by", "Wido")
-		if code == 0 || !strings.Contains(stderr, "does not descend from the terminal enrolled on this machine") {
+		reason := "does not descend from the terminal enrolled on this machine"
+		if runtime.GOOS == "linux" {
+			reason = "the terminal's session could not be reached; use an interactive login with a terminal"
+		}
+		if code == 0 || !strings.Contains(stderr, reason) {
 			t.Fatalf("headless human-word caller did not receive the terminal-not-reached refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 		}
 	})

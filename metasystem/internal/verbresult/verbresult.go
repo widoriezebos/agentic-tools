@@ -48,6 +48,7 @@ type Next struct {
 // reads beyond the outcome (a plan, a refusal's state).
 type Result struct {
 	SchemaVersion int             `json:"schemaVersion"`
+	TerminalCheck string          `json:"terminalCheck,omitempty"`
 	Verb          string          `json:"verb"`
 	Targets       []Target        `json:"targets"`
 	Outcome       string          `json:"outcome"`

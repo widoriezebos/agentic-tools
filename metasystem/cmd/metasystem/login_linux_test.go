@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -130,7 +131,10 @@ func TestLoginPublicEnrollmentRetry(t *testing.T) {
 		return humanauthority.Enroll(path, pid, table, by, now)
 	}
 	o.dependencies.proveHuman = func(path string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Prove(path, pid, table, now)
+		if path != root {
+			t.Fatalf("proof checkout %q, want %q", path, root)
+		}
+		return humanauthority.Prove(root, pid, table, now)
 	}
 	clock := o.commandNow
 	o.commandNow = func(string) (time.Time, error) { return time.Time{}, errors.New("fixture clock unavailable") }
@@ -242,5 +246,23 @@ func TestLoginHelmTakeSurvivesEnrollmentFailure(t *testing.T) {
 	}
 	if _, err := humanauthority.ReadEnrollment(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("return created an enrollment", err)
+	}
+}
+
+func TestLoginHeadlessLandingNamesEnrollment(t *testing.T) {
+	t.Parallel()
+	b := newPersonRefusalBed(t)
+	helmMust(t, os.Remove(filepath.Join(b.install, "artifacts", "agents", "authority", "human-terminal.json")))
+	b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Prove(root, 99, person(), at)
+	}
+	code, out := b.run(t, b.root, "resume", "--json")
+	var result intentResult
+	helmMust(t, json.Unmarshal([]byte(out), &result))
+	if code != 1 || result.Outcome != intentRefused || result.TerminalCheck != loginGuardrail ||
+		!strings.Contains(result.Summary, "the terminal's session could not be reached") || result.Next == nil ||
+		len(result.Next.Argv) != 5 || !reflect.DeepEqual(result.Next.Argv[:4], []string{"metasystem", "system", "enroll", "--name"}) ||
+		result.Next.Reason != "use an interactive login with a terminal, then repeat this command" {
+		t.Fatalf("headless landing: %d %s", code, out)
 	}
 }

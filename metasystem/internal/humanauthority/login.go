@@ -94,9 +94,12 @@ func failedLogin(err error) bool {
 
 // LoginRefusal names the observation that failed and where to retry the login.
 func LoginRefusal(err error) (reason, remedy string) {
-	outcome, _ := OutcomeOf(err)
+	outcome, agent := OutcomeOf(err)
 	switch outcome {
 	case OutcomeAgent:
+		if agent != "" {
+			return "an agent started this shell (" + agent + ")", "use your own login shell"
+		}
 		return "an agent started this shell", "use your own login shell"
 	case OutcomeTerminalMissing:
 		return "the terminal's session could not be reached", "use an interactive login with a terminal"

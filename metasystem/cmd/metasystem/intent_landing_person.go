@@ -8,8 +8,8 @@ import (
 // landingPersonCheck carries the caller's authority refusal into the landing act.
 func (inv *intentInvocation) landingPersonCheck(act, target string) (lanePersonObservation, *intentResult) {
 	observed, problem := inv.lanePerson(act, target)
-	if problem == nil {
-		return observed, nil
+	if problem == nil || problem.TerminalCheck != "" {
+		return observed, problem
 	}
 	parts := strings.SplitN(problem.Summary, "; ", 3)
 	reason := problem.Summary

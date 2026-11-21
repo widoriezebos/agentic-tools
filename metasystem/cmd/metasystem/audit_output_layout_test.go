@@ -333,7 +333,7 @@ func (s *layoutStream) TextEnv() textui.Env {
 func layoutGolden(name string) string {
 	if runtime.GOOS == "linux" {
 		switch name {
-		case "system-status.txt", "system-status.json", "system-enroll.txt", "system-enroll-again.txt", "system-enroll-refusal.txt", "system-enroll-refusal.json":
+		case "system-status.txt", "system-status.json", "system-enroll.txt", "system-enroll-again.txt":
 			return filepath.Join("testdata", "layout", "linux", name)
 		}
 	}

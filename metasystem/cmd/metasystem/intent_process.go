@@ -1568,9 +1568,6 @@ func runIntentEnroll(inv *intentInvocation) int {
 	case report.refusal != nil:
 		result := ownerResult(report, code, intentResult{})
 		result.Targets = targets
-		if len(result.next) != 0 && humanauthority.TerminalCheck() != "" {
-			result.nextReason = report.refusal.remedy.words
-		}
 		return inv.render(result)
 	case code == 0 && report.result != nil && report.result.Unchanged:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: report.result.Detail,

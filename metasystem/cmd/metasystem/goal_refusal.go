@@ -59,6 +59,7 @@ func (values *humanVerbValues) errStream() io.Writer {
 type humanVerbRemedy struct {
 	command string
 	words   string
+	check   string
 }
 
 func humanProofRemedy(values *humanVerbValues, fixture bool, temporaryWord, reviewBy string, cause error) humanVerbRemedy {
@@ -82,6 +83,9 @@ func personRemedy(values *humanVerbValues, cause error) humanVerbRemedy {
 		// A cause the remedy cannot read is still this shell not proven to
 		// be the person: enrolling it is what resolves that.
 		remedy = humanauthority.RemedyFor(values.root, humanauthority.Refused(humanauthority.OutcomeTerminalMissing, cause), values.by, retry)
+	}
+	if remedy.Check != "" {
+		return humanVerbRemedy{command: shellCommand(remedy.Argv), words: remedy.Then, check: remedy.Check}
 	}
 	if len(remedy.Argv) > 0 {
 		return humanVerbRemedy{command: shellCommand(remedy.Argv)}
@@ -186,7 +190,10 @@ func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy 
 	}
 	stderr := values.errStream()
 	fmt.Fprintf(stderr, "goal %s: %s\n", values.verb, sentence)
-	if remedy.command != "" {
+	if remedy.check != "" {
+		fmt.Fprintln(stderr, remedy.check)
+		fmt.Fprintf(stderr, "run: %s  (%s)\n", remedy.command, remedy.words)
+	} else if remedy.command != "" {
 		fmt.Fprintln(stderr, "run:", remedy.command)
 	} else {
 		fmt.Fprintln(stderr, "no command completes this:", strings.TrimSpace(remedy.words))

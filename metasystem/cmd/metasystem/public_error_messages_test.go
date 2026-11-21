@@ -112,7 +112,7 @@ func TestHelmTakeRefusalSaysWhyInPlainTerms(t *testing.T) {
 		code, out := bed.run("helm", "take", "--reason", "by hand")
 		reason, where := test.reason, "in a terminal you opened yourself"
 		if runtime.GOOS == "linux" {
-			where = "use your own login shell"
+			reason, where = "an agent started this shell (codex)", "use your own login shell"
 			if test.invoker == 99 {
 				reason, where = "the terminal's session could not be reached", "use an interactive login with a terminal"
 			}

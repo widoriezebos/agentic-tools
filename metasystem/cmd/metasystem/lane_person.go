@@ -46,7 +46,7 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 	}
 	refused := func(reason string, cause error) (lanePersonObservation, *intentResult) {
 		remedy := humanauthority.RemedyFor(observed.Root, cause, inv.personName(""), inv.typedArgv())
-		result := &intentResult{Outcome: intentRefused, code: 1, Summary: "only the person at the calling checkout's enrolled terminal may " + act + "; " + reason + "; nothing was recorded", next: remedy.Argv, nextReason: remedy.Then}
+		result := &intentResult{Outcome: intentRefused, code: 1, Summary: "only the person at the calling checkout's enrolled terminal may " + act + "; " + reason + "; nothing was recorded", next: remedy.Argv, nextReason: remedy.Then, TerminalCheck: remedy.Check}
 		if len(result.next) == 0 {
 			result.next, result.nextReason = inv.typedArgv(), "run at that enrolled terminal, without a helm or grant"
 		}
@@ -67,7 +67,8 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 		// The terminal's own refusal names this terminal and the enroll command; a
 		// later, more specific reason (an unnamed enrollment, a --by mismatch) stays.
 		reason := humanauthority.PlainReason(err)
-		if remedy := humanauthority.RemedyFor(observed.Root, err, inv.personName(""), inv.typedArgv()); remedy.Kind == humanauthority.RemedyNotEnrolled || remedy.Kind == humanauthority.RemedyOtherTerminal {
+		remedy := humanauthority.RemedyFor(observed.Root, err, inv.personName(""), inv.typedArgv())
+		if remedy.Check == "" && (remedy.Kind == humanauthority.RemedyNotEnrolled || remedy.Kind == humanauthority.RemedyOtherTerminal) {
 			reason = "this terminal is not enrolled for the landing install; type: " + strings.Join(remedy.Argv, " ")
 		}
 		return refused(reason, err)

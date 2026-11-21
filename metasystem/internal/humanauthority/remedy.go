@@ -18,6 +18,8 @@ type Remedy struct {
 	Argv []string
 	// Then is what goes with the command: "then repeat this command".
 	Then string
+	// Check is a separate sentence describing the failed Linux login check.
+	Check string
 }
 
 // The causes a Remedy names.
@@ -37,7 +39,10 @@ func RemedyFor(root string, err error, person string, retry []string) Remedy {
 	remedy := personActRemedy(root, err, person, retry)
 	if failedLogin(err) {
 		reason, where := LoginRefusal(err)
-		remedy.Reason, remedy.Argv, remedy.Then = reason, retry, where+". "+guardrail
+		remedy.Reason, remedy.Then, remedy.Check = reason, where, guardrail
+		if remedy.Kind == RemedyNotEnrolled || remedy.Kind == RemedyOtherTerminal {
+			remedy.Then += ", then repeat this command"
+		}
 	}
 	return remedy
 }

@@ -897,14 +897,14 @@ func (inv *intentInvocation) render(result intentResult) int {
 	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "work wait" || inv.command.name == "goal budget" || inv.command.name == "machine revive" || inv.command.name == "goal approve") && inv.input.has("answer") {
 		result = inv.answerProgress(result)
 	}
-	if check := humanauthority.TerminalCheck(); check != "" && (inv.command.name == "system enroll" || inv.command.name == "system status" && !inv.input.switched("steward")) {
+	if check := humanauthority.TerminalCheck(); check != "" && (inv.command.name == "system enroll" && result.Data != nil || inv.command.name == "system status" && !inv.input.switched("steward")) {
 		result.TerminalCheck = check
 		if inv.stateRoot != "" {
 			data, _ := result.Data.(map[string]any)
 			enrollment, ok := data["enrollment"].(humanauthority.Enrollment)
 			if inv.command.name == "system status" {
 				var err error
-				enrollment, err = humanauthority.ReadEnrollment(inv.stateRoot)
+				enrollment, err = humanauthority.ReadEnrollment(checkoutAuthorityRoot(inv.layout))
 				ok = err == nil
 				if ok && data != nil {
 					data["terminalEnrollment"] = enrollment
@@ -1280,7 +1280,7 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	switch {
 	case report.refusal != nil:
 		result := intentResult{Outcome: intentRefused, Summary: report.refusal.sentence, text: lines, code: report.refusal.code,
-			next: shellWords(report.refusal.remedy.command), Decision: strings.TrimSpace(report.refusal.remedy.words)}
+			TerminalCheck: report.refusal.remedy.check, next: shellWords(report.refusal.remedy.command), Decision: strings.TrimSpace(report.refusal.remedy.words)}
 		if report.result != nil {
 			result.Details = refusalCodeDetails(report.refusal.refusalCode, report.result.Code)
 		} else {
@@ -1290,6 +1290,9 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 			result.Outcome, result.code = intentUnchanged, 0
 		}
 		if len(result.next) > 0 {
+			if result.TerminalCheck != "" {
+				result.nextReason = result.Decision
+			}
 			result.Decision = ""
 		}
 		if report.result != nil {

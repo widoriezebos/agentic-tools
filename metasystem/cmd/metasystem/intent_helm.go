@@ -782,6 +782,9 @@ func (inv *intentInvocation) helmActorAt(act string) (*helmActor, *intentResult)
 	if record.Enrollment != "proven" && (readErr == nil || os.IsNotExist(readErr)) {
 		if enrolled, enrollErr := humanauthority.Enroll(root, pid, owners.reader, record.By, now); enrollErr != nil {
 			enrollmentLine = "this terminal is not enrolled (" + humanauthority.PlainReason(enrollErr) + "): " + humanauthority.PersonActRemedy("")
+			if check := humanauthority.TerminalCheck(); check != "" {
+				enrollmentLine += ". " + check
+			}
 		} else {
 			record.Enrollment, record.EnrolledAs, enrolledNow = "proven", enrolled.Human, !enrolled.Repeat
 			if enrolledNow {

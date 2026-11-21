@@ -49,7 +49,7 @@ func (inv *intentInvocation) personName(typed string) string {
 func (inv *intentInvocation) personRefusal(target string, err error, typed string) *intentResult {
 	remedy := humanauthority.RemedyFor(inv.stateRoot, err, inv.personName(typed), inv.typedArgv())
 	return &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
-		Summary: remedy.Reason + ", so nothing was done", next: remedy.Argv, nextReason: remedy.Then,
+		Summary: remedy.Reason + ", so nothing was done", next: remedy.Argv, nextReason: remedy.Then, TerminalCheck: remedy.Check,
 		Details: []string{"refused because: " + refusalCause(err)}}
 }
 

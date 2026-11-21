@@ -73,7 +73,13 @@ func Plain(err error) error {
 
 type plainWords struct{ err error }
 
-func (p *plainWords) Error() string { return PlainReason(p.err) }
+func (p *plainWords) Error() string {
+	if failedLogin(p.err) {
+		reason, where := LoginRefusal(p.err)
+		return reason + "; " + where + ".\n" + guardrail
+	}
+	return PlainReason(p.err)
+}
 func (p *plainWords) Unwrap() error { return p.err }
 
 // ErrEnrollmentUnnamed refuses a person's act when the enrolled terminal

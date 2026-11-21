@@ -58,14 +58,15 @@ type ProcessRef struct {
 
 // Enrollment is the local terminal root every later proof must reach.
 type Enrollment struct {
-	Schema        int            `json:"schema"`
-	EnrolledAt    time.Time      `json:"enrolledAt"`
-	Generation    uint64         `json:"generation"`
-	Human         string         `json:"human,omitempty"`
-	TerminalID    string         `json:"terminalId"`
-	TerminalRef   ProcessRef     `json:"terminalRef"`
-	SessionLeader ProcessRef     `json:"sessionLeaderRef"`
-	Login         *LoginEvidence `json:"login,omitempty"`
+	Schema        int        `json:"schema"`
+	EnrolledAt    time.Time  `json:"enrolledAt"`
+	Generation    uint64     `json:"generation"`
+	Human         string     `json:"human,omitempty"`
+	TerminalID    string     `json:"terminalId"`
+	TerminalRef   ProcessRef `json:"terminalRef"`
+	SessionLeader ProcessRef `json:"sessionLeaderRef"`
+	// Login records the Linux admission rules this generation needed.
+	Login *LoginEvidence `json:"login,omitempty"`
 	// Repeat marks an Enroll whose enrollment already held (R-129-ui): the
 	// same person at the same terminal and session, so the recorded
 	// enrollment was returned and nothing was written. Never persisted.
@@ -75,17 +76,19 @@ type Enrollment struct {
 // Node is one stable process observation. Argument bytes are represented only
 // by digests so authority records do not retain command-line contents.
 type Node struct {
-	Ref                ProcessRef `json:"ref"`
-	ParentRef          ProcessRef `json:"parentRef"`
-	ExecutableDigest   string     `json:"executableDigest"`
-	ExecutableWithheld string     `json:"executableWithheld,omitempty"`
-	KernelName         string     `json:"kernelName,omitempty"`
-	ArgumentDigest     string     `json:"argumentDigest"`
-	OwnerUID           uint32     `json:"ownerUid"`
-	OwnerKnown         bool       `json:"ownerKnown"`
-	ArgvWithheld       bool       `json:"argvWithheld,omitempty"`
-	AgentRuntime       *string    `json:"agentRuntime,omitempty"`
-	TerminalMatch      bool       `json:"terminalMatch"`
+	Ref              ProcessRef `json:"ref"`
+	ParentRef        ProcessRef `json:"parentRef"`
+	ExecutableDigest string     `json:"executableDigest"`
+	ArgumentDigest   string     `json:"argumentDigest"`
+	OwnerUID         uint32     `json:"ownerUid"`
+	OwnerKnown       bool       `json:"ownerKnown"`
+	ArgvWithheld     bool       `json:"argvWithheld,omitempty"`
+	AgentRuntime     *string    `json:"agentRuntime,omitempty"`
+	TerminalMatch    bool       `json:"terminalMatch"`
+
+	// A withheld Linux image records the rule and its observed SSH name.
+	ExecutableWithheld string `json:"executableWithheld,omitempty"`
+	KernelName         string `json:"kernelName,omitempty"`
 }
 
 // Proof is the complete Ruling-C decision record for one invocation.
@@ -456,17 +459,19 @@ func ProveOrTemporaryGoalAuthority(root string, invokerPID int64, reader Reader,
 
 // Snapshot is one process read used by the stable ancestry walk.
 type Snapshot struct {
-	Exact            identity.Exact
-	Executable       string
-	ExecutableKnown  bool
+	Exact           identity.Exact
+	Executable      string
+	ExecutableKnown bool
+	OwnerUID        uint32
+	OwnerKnown      bool
+	ParentPID       int64
+	ParentKnown     bool
+	TerminalID      string
+	TerminalKnown   bool
+
+	// Linux distinguishes a withheld executable from other read failures.
 	ExecutableDenied bool
 	KernelName       string
-	OwnerUID         uint32
-	OwnerKnown       bool
-	ParentPID        int64
-	ParentKnown      bool
-	TerminalID       string
-	TerminalKnown    bool
 }
 
 // Reader supplies process facts. Tests inject a fully deterministic tree.
@@ -485,12 +490,12 @@ func (KernelReader) Read(pid int64) (Snapshot, error) {
 	}
 	parent, parentOK := identity.ParentPid(pid)
 	terminal, terminalOK := identity.ControllingTerminalIdentity(pid)
-	executable, executableOK, denied, name := observeExecutable(pid)
 	owner, ownerOK := identity.ProcessOwner(pid)
-	return Snapshot{Exact: exact, Executable: executable, ExecutableKnown: executableOK,
-		ExecutableDenied: denied, KernelName: name, OwnerUID: owner, OwnerKnown: ownerOK,
+	snapshot := Snapshot{Exact: exact, OwnerUID: owner, OwnerKnown: ownerOK,
 		ParentPID: parent, ParentKnown: parentOK,
-		TerminalID: terminal, TerminalKnown: terminalOK}, nil
+		TerminalID: terminal, TerminalKnown: terminalOK}
+	snapshot.Executable, snapshot.ExecutableKnown, snapshot.ExecutableDenied, snapshot.KernelName = observeExecutable(pid)
+	return snapshot, nil
 }
 
 func (KernelReader) SessionLeader(pid int64) (int64, error) {
@@ -919,13 +924,10 @@ func Enroll(root string, invokerPID int64, reader Reader, human string, now time
 	}
 	enrollment := Enrollment{Schema: 1, EnrolledAt: now.UTC(), Generation: generation, Human: human,
 		TerminalID: proof.observedTerminalID, TerminalRef: proof.InvokerRef, SessionLeader: proof.TerminalRef}
-	if linuxLogin {
-		enrollment.Login = &LoginEvidence{}
-		for _, node := range proof.Nodes {
-			if node.ExecutableWithheld != "" {
-				enrollment.Login.Nodes = proof.Nodes
-				break
-			}
+	for _, node := range proof.Nodes {
+		if node.ExecutableWithheld != "" {
+			enrollment.Login = &LoginEvidence{Nodes: proof.Nodes}
+			break
 		}
 	}
 	encoded, err := json.MarshalIndent(enrollment, "", "  ")
@@ -1187,7 +1189,7 @@ func PlainReason(err error) string {
 	}
 	if failedLogin(err) {
 		reason, _ := LoginRefusal(err)
-		return reason + ".\n" + guardrail
+		return reason
 	}
 	outcome, runtime := OutcomeOf(err)
 	if outcome == OutcomeAgent && runtime != "" {

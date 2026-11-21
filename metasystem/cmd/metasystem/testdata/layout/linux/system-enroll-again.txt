@@ -1,4 +1,4 @@
 ✓ This terminal is already enrolled for Wido, and the fleet knows it
 
-Every program in the terminal's process chain was readable. This check catches known agents in the
-  terminal's process chain, but it cannot tell who sent the command.
+Enrollment method unrecorded. This check catches known agents in the terminal's process chain, but
+  it cannot tell who sent the command.

@@ -117,6 +117,9 @@ func sessionStopRefusal(stateRoot, by string, err error) string {
 	}
 	remedy := humanauthority.RemedyFor(stateRoot, err, by, []string{"metasystem", "session", "stop", "--by", person})
 	reason := "only a person can stop a session quietly: " + remedy.Reason + ", so nothing was done"
+	if remedy.Check != "" {
+		reason += ".\n" + remedy.Check
+	}
 	if len(remedy.Argv) == 0 {
 		return reason
 	}
