@@ -928,11 +928,23 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 	for index, result := range results {
 		switch result.Outcome {
 		case intentConfirmed:
-			runs[resultData(t, result)["run"].(string)] = true
-		case intentInProgress:
-			if codes[index] != 3 || !strings.Contains(resultWords(result), "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
-				t.Fatalf("busy caller: code=%d %+v", codes[index], result)
+			data := resultData(t, result)
+			if codes[index] != 0 || data["state"] != "awaiting-judgement" || data["outcome"] != "green" {
+				t.Fatalf("completed caller: code=%d %+v", codes[index], result)
 			}
+			runs[data["run"].(string)] = true
+		case intentInProgress:
+			if codes[index] != 3 || result.Next == nil {
+				t.Fatalf("in-progress caller: code=%d %+v", codes[index], result)
+			}
+			if strings.Contains(resultWords(result), "UNIT_RUN_BUSY") && slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
+				continue
+			}
+			data := resultData(t, result)
+			if data["state"] != "running" || data["unit"] != "u1" || data["goal"] != bed.id || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", bed.id, "--work", "u1"}) {
+				t.Fatalf("waiting caller: %+v", result)
+			}
+			runs[data["run"].(string)] = true
 		default:
 			t.Fatalf("concurrent build %d: code=%d %+v", index, codes[index], result)
 		}
@@ -942,11 +954,67 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 		t.Fatalf("repeat: code=%d %+v", code, repeat)
 	}
 	runs[resultData(t, repeat)["run"].(string)] = true
-	if len(runs) != 1 || len(bed.runDirectories()) != 1 {
-		t.Fatalf("runs=%v directories=%v", runs, bed.runDirectories())
+	if dirs := bed.runDirectories(); len(runs) != 1 || len(dirs) != 1 || !runs[dirs[0]] {
+		t.Fatalf("runs=%v directories=%v", runs, dirs)
 	}
 	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof", "read"}) {
 		t.Fatalf("launches=%v, want one build, proof and read", launched)
+	}
+	t.Run("peer advances during wait", testBuildFollowsProgressDuringWait)
+}
+
+// The first caller is still waiting for its build supervisor when the second
+// caller enters. Both commands use the real named reservation and run locks.
+func testBuildFollowsProgressDuringWait(t *testing.T) {
+	for _, holdProof := range []bool{false, true} {
+		t.Run(fmt.Sprintf("holdProof=%t", holdProof), func(t *testing.T) {
+			bed := newWorkBed(t)
+			if holdProof {
+				bed.starter.hold = "proof"
+			}
+			brief := bed.brief("brief.md", "Build the unit.\n")
+			args := append([]string{"work", "build", bed.id, "u1", "--brief", brief, "--lines", "20"}, workCheck...)
+			var results [2]intentResult
+			var codes [2]int
+			bed.manager.Supervisor = supervisorStart(func(id, dir string) (identity.Ref, error) {
+				ref, err := bed.starter.StartSupervisor(id, dir)
+				if err == nil && slices.Equal(bed.starter.launched(), []string{"build"}) {
+					changed := slices.Clone(args)
+					changed[5] = bed.brief("different.md", "Build something else.\n")
+					code, refused, _ := bed.work(changed...)
+					if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_NAMED_INPUT_CHANGED") {
+						t.Fatalf("different request during build: code=%d details=%v", code, refused.Details)
+					}
+					codes[1], results[1], _ = bed.work(args...)
+				}
+				return ref, err
+			})
+			codes[0], results[0], _ = bed.work(args...)
+			wantCode, wantState, wantOutcome := 0, "awaiting-judgement", intentConfirmed
+			wantLaunches := []string{"build", "proof"}
+			if holdProof {
+				wantCode, wantState, wantOutcome = 3, "running", intentInProgress
+			}
+			runs := bed.runDirectories()
+			if len(runs) != 1 || !slices.Equal(bed.starter.launched(), wantLaunches) {
+				t.Fatalf("runs=%v launches=%v", runs, bed.starter.launched())
+			}
+			for i, got := range results {
+				gotCode := codes[i]
+				data := resultData(t, got)
+				if gotCode != wantCode || got.Outcome != wantOutcome || data["state"] != wantState || data["run"] != runs[0] || data["round"] != float64(1) {
+					t.Fatalf("caller %d: code=%d outcome=%s run=%v state=%v round=%v details=%v", i, gotCode, got.Outcome, data["run"], data["state"], data["round"], got.Details)
+				}
+				if holdProof {
+					steps := data["steps"].([]any)
+					if len(steps) != 2 || steps[1].(map[string]any)["state"] != "running" || got.Next == nil || !slices.Equal(got.Next.Argv, []string{"metasystem", "work", "wait", bed.id, "--work", "u1"}) {
+						t.Fatalf("caller %d: steps=%v next=%+v", i, steps, got.Next)
+					}
+				} else if data["outcome"] != "green" {
+					t.Fatalf("caller %d: outcome=%v", i, data["outcome"])
+				}
+			}
+		})
 	}
 }
 

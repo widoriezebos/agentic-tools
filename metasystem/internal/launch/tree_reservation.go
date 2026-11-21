@@ -471,6 +471,8 @@ func treeCall[T any](runner *UnitRunner, worktree string, act func(*UnitRunner) 
 	return result, err
 }
 
+var errWaitRunChanged = errors.New("the run changed during the wait; repeat the command to follow its current state")
+
 // CommandWait releases command locks while another actor works, then validates
 // the retained run before this command may write again.
 func (runner *UnitRunner) CommandWait(act func() error) error {
@@ -519,7 +521,7 @@ func (runner *UnitRunner) CommandWait(act func() error) error {
 			return coded("UNIT_WAIT_RETRY", "", fmt.Errorf("the run cannot be reread after the wait; repeat the same command: %w", err))
 		}
 		if !bytes.Equal(data, current) {
-			return coded("UNIT_WAIT_RETRY", "", errors.New("the run changed during the wait; repeat the command to follow its current state"))
+			return coded("UNIT_WAIT_RETRY", "", errWaitRunChanged)
 		}
 	}
 	return waitErr

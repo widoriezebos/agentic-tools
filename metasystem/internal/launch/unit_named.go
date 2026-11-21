@@ -337,7 +337,29 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	bound := *runner
 	bound.named = &namedBinding{unit: plan.Unit, goal: plan.Goal, worktree: worktree, digest: entry.Digest, run: entry.Run,
 		options: UnitOptions{BuildModel: record.BuildModel, BuildEffort: record.BuildEffort}}
-	return bound.Advance(UnitRequest{Resume: entry.Run})
+	result, err := bound.Advance(UnitRequest{Resume: entry.Run})
+	if !errors.Is(err, errWaitRunChanged) {
+		return result, err
+	}
+	// Another command advanced the run during our wait. The tree and name
+	// are locked again. Report the reserved run without replaying a step.
+	current, readErr := runner.read(entry.Run)
+	if readErr != nil || current.ID != entry.Run || current.Worktree != record.Worktree ||
+		current.Goal != entry.Goal || current.Unit != entry.Unit || len(current.Rounds) == 0 {
+		return result, err
+	}
+	result = UnitResult{Record: current, Round: len(current.Rounds)}
+	switch current.State {
+	case "running":
+		result.Capped = true
+	case "awaiting-judgement":
+		if freshReadUnsettled(current) {
+			return result, err
+		}
+	default:
+		return result, err
+	}
+	return result, nil
 }
 
 // apply puts the unit's own build model and effort over the configured

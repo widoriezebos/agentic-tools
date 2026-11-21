@@ -129,9 +129,6 @@ func TestNamedUnitConcurrentRepeatLaunchesOnce(t *testing.T) {
 	run := ""
 	for index, err := range errs {
 		if err != nil {
-			if IsCode(err, "UNIT_WAIT_RETRY") && err.Error() == "the run changed during the wait; repeat the command to follow its current state" {
-				continue
-			}
 			if !IsCode(err, "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "repeat the same command when it finishes") {
 				t.Fatalf("err=%v", err)
 			}
