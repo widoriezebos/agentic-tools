@@ -1558,11 +1558,19 @@ func runIntentEnroll(inv *intentInvocation) int {
 	targets := []intentTarget{{Kind: "terminal", ID: name}}
 	switch {
 	case report.refusal != nil && report.value != nil:
-		return inv.render(intentResult{Outcome: intentPartial, code: max(report.refusal.code, 1), Targets: targets, Summary: report.refusal.sentence,
-			Decision: strings.TrimSpace(report.refusal.remedy.words), Data: map[string]any{"enrollment": report.value, "fleetPublished": false}})
+		result := intentResult{Outcome: intentPartial, code: max(report.refusal.code, 1), Targets: targets, Summary: report.refusal.sentence,
+			Decision: strings.TrimSpace(report.refusal.remedy.words), Data: map[string]any{"enrollment": report.value, "fleetPublished": false}}
+		if humanauthority.TerminalCheck() != "" {
+			result.Decision = ""
+			result.next, result.nextReason = inv.typedArgv(), "after fixing the publication error, in this same login shell"
+		}
+		return inv.render(result)
 	case report.refusal != nil:
 		result := ownerResult(report, code, intentResult{})
 		result.Targets = targets
+		if len(result.next) != 0 && humanauthority.TerminalCheck() != "" {
+			result.nextReason = report.refusal.remedy.words
+		}
 		return inv.render(result)
 	case code == 0 && report.result != nil && report.result.Unchanged:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: report.result.Detail,

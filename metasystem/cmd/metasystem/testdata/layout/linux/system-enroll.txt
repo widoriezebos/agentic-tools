@@ -1,0 +1,4 @@
+✓ This terminal is enrolled for Wido, and every machine of the fleet is told
+
+Every program in the terminal's process chain was readable. This check catches known agents in the
+  terminal's process chain, but it cannot tell who sent the command.

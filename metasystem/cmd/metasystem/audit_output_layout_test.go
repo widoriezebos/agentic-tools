@@ -330,7 +330,15 @@ func (s *layoutStream) TextEnv() textui.Env {
 	return s.env(s)
 }
 
-func layoutGolden(name string) string { return filepath.Join("testdata", "layout", name) }
+func layoutGolden(name string) string {
+	if runtime.GOOS == "linux" {
+		switch name {
+		case "system-status.txt", "system-status.json", "system-enroll.txt", "system-enroll-again.txt", "system-enroll-refusal.txt", "system-enroll-refusal.json":
+			return filepath.Join("testdata", "layout", "linux", name)
+		}
+	}
+	return filepath.Join("testdata", "layout", name)
+}
 
 // TestAuditOutputLayoutJSONUnchanged: every golden verb's --json is byte for
 // byte what main printed before its text was converted.

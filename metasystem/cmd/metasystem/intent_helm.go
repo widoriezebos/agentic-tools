@@ -733,20 +733,16 @@ func (inv *intentInvocation) helmActorAt(act string) (*helmActor, *intentResult)
 		err = fmt.Errorf("terminal human authority was not proven")
 	}
 	if err != nil {
-		return nil, &intentResult{Outcome: intentRefused, code: 3,
-			Summary: actorProofReason(err) + func() string {
-				if act == "take" {
-					return ", so the helm wasn't taken"
-				}
-				return ", so the helm wasn't returned"
-			}(),
-			next: inv.typedArgv(), nextReason: func() string {
-				if act == "return" {
-					return "at the person's enrolled terminal"
-				}
-				return "in a terminal you opened yourself"
-			}(),
-			Details: []string{"refused because: " + err.Error()}}
+		past, remedy := "taken", "in a terminal you opened yourself"
+		if act == "return" {
+			past, remedy = "returned", "at the person's enrolled terminal"
+		}
+		reason, check := actorProofReason(err), humanauthority.TerminalCheck()
+		if check != "" {
+			reason, remedy = humanauthority.LoginRefusal(err)
+		}
+		return nil, &intentResult{Outcome: intentRefused, code: 3, Summary: reason + ", so the helm wasn't " + past,
+			next: inv.typedArgv(), nextReason: remedy, TerminalCheck: check, Details: []string{"refused because: " + err.Error()}}
 	}
 	if act == "return" {
 		return &helmActor{proof: proof, root: root}, nil

@@ -1,0 +1,66 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "terminalCheck": "Enrollment method unrecorded. This check catches known agents in the terminal's process chain, but it cannot tell who sent the command.",
+  "verb": "system status",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "status of /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "board": {
+      "readable": true,
+      "bridge": "live",
+      "seats": [
+        {
+          "machine": "landing",
+          "installation": "",
+          "goals": []
+        },
+        {
+          "machine": "m1e",
+          "installation": "",
+          "goals": [
+            {
+              "goal": "switch-on-trial",
+              "lastProgressAt": "2026-09-30T08:57:00Z",
+              "unknown": "not claimed"
+            }
+          ]
+        },
+        {
+          "machine": "ui",
+          "installation": "",
+          "goals": []
+        }
+      ]
+    },
+    "exitCode": 0,
+    "lines": [
+      "checkout /Users/wido/GitHub/agentic-tools-m1e",
+      "nothing is running"
+    ],
+    "terminalEnrollment": {
+      "schema": 1,
+      "enrolledAt": "2026-09-01T09:00:00Z",
+      "generation": 1,
+      "human": "Wido",
+      "terminalId": "fixture-terminal",
+      "terminalRef": {
+        "pid": 20,
+        "pidStartedAt": 200
+      },
+      "sessionLeaderRef": {
+        "pid": 10,
+        "pidStartedAt": 100
+      }
+    }
+  }
+}
+
+--

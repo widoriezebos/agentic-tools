@@ -68,7 +68,7 @@ func TestHelmTakeLeavesAnEnrolledTerminalAsItIs(t *testing.T) {
 	before, _ := b.enrollment()
 	code, out := b.run("helm", "take", "--reason", "by hand", "--by", "Ann")
 	after, _ := b.enrollment()
-	if code != 0 || after != before || strings.Contains(out, "enrolled now") {
+	if code != 0 || !reflect.DeepEqual(after, before) || strings.Contains(out, "enrolled now") {
 		t.Fatalf("take at the enrolled terminal = %d, enrollment %+v -> %+v:\n%s", code, before, after, out)
 	}
 }

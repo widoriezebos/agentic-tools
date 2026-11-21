@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -217,7 +218,7 @@ func designCheckLayoutBed(t *testing.T) layoutBed {
 func enrollLayoutBed(again bool) func(t *testing.T) layoutBed {
 	return func(t *testing.T) layoutBed {
 		b, owners := processLayoutOwners(t)
-		reader := goalSyncTerminalReader(t, b.root(), "tty-layout")
+		reader := goalSyncEnrollmentReader{exact: identity.Exact{Pid: 40, StartedAt: layoutNow}, terminalID: "tty-layout"}
 		b.facts.reader = &reader
 		owners = b.owners()
 		owners.helm.machine = func(string) (string, error) { return "m1e", nil }

@@ -3306,7 +3306,19 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	}
 	enrollment, err := enroll(*root, int64(os.Getppid()), nil, *by, time.Now().UTC())
 	if err != nil {
-		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "run enrollment from a shell whose ancestry to its session leader is owned by you"})
+		if outcome, agent := humanauthority.OutcomeOf(err); outcome != "" && humanauthority.TerminalCheck() != "" {
+			reason, remedy := humanauthority.LoginRefusal(err)
+			if agent != "" {
+				reason += " (" + agent + ")"
+			}
+			values.refusalCode = outcome
+			return refuseHumanVerb(values, 1, reason, humanVerbRemedy{command: shellCommand([]string{"metasystem", "system", "enroll", "--name", *by}), words: remedy})
+		}
+		remedy := "run enrollment from a shell whose ancestry to its session leader is owned by you"
+		if humanauthority.TerminalCheck() != "" {
+			remedy = "check the local enrollment with metasystem system status"
+		}
+		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: remedy})
 	}
 	if dependencies.report != nil {
 		// The local enrollment is committed; what follows publishes it.
@@ -3339,7 +3351,11 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	// Another machine may already own the immutable fleet cutoff. That leaves
 	// this machine's completed local enrollment valid and needs no root rewrite.
 	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
-		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: "the local enrollment stands; repair fleet synchronization without re-enrolling"})
+		remedy := "the local enrollment stands; repair fleet synchronization without re-enrolling"
+		if humanauthority.TerminalCheck() != "" {
+			remedy = "repair fleet synchronization and repeat enrollment in this same shell"
+		}
+		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: remedy})
 	}
 	// A fresh local enrollment is a change even when the fleet cutoff it
 	// would publish already stands; only a repeated enrollment is unchanged.

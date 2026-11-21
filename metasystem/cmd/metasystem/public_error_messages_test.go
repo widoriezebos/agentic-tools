@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -109,7 +110,14 @@ func TestHelmTakeRefusalSaysWhyInPlainTerms(t *testing.T) {
 	} {
 		bed := newHelmBed(t, test.invoker, true)
 		code, out := bed.run("helm", "take", "--reason", "by hand")
-		want := "✗ " + test.reason + ", so the helm wasn't taken\n  → metasystem helm take --reason 'by hand'  in a terminal you opened yourself\n"
+		reason, where := test.reason, "in a terminal you opened yourself"
+		if runtime.GOOS == "linux" {
+			where = "use your own login shell"
+			if test.invoker == 99 {
+				reason, where = "the terminal's session could not be reached", "use an interactive login with a terminal"
+			}
+		}
+		want := "✗ " + reason + ", so the helm wasn't taken\n  → metasystem helm take --reason 'by hand'  " + where + "\n"
 		if code != 3 || !strings.Contains(out, want) || strings.Contains(out, "helm take refused") {
 			t.Errorf("invoker %d: exit %d, output:\n%s\nwant %q", test.invoker, code, out, want)
 		}

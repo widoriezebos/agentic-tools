@@ -855,6 +855,7 @@ type intentNext struct {
 type intentResult struct {
 	published     bool           // The requested setting is visible even when durability is uncertain.
 	SchemaVersion int            `json:"schemaVersion"`
+	TerminalCheck string         `json:"terminalCheck,omitempty"`
 	Verb          string         `json:"verb"`
 	Targets       []intentTarget `json:"targets"`
 	Outcome       string         `json:"outcome"`
@@ -895,6 +896,27 @@ type intentResult struct {
 func (inv *intentInvocation) render(result intentResult) int {
 	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "work wait" || inv.command.name == "goal budget" || inv.command.name == "machine revive" || inv.command.name == "goal approve") && inv.input.has("answer") {
 		result = inv.answerProgress(result)
+	}
+	if check := humanauthority.TerminalCheck(); check != "" && (inv.command.name == "system enroll" || inv.command.name == "system status" && !inv.input.switched("steward")) {
+		result.TerminalCheck = check
+		if inv.stateRoot != "" {
+			data, _ := result.Data.(map[string]any)
+			enrollment, ok := data["enrollment"].(humanauthority.Enrollment)
+			if inv.command.name == "system status" {
+				var err error
+				enrollment, err = humanauthority.ReadEnrollment(inv.stateRoot)
+				ok = err == nil
+				if ok && data != nil {
+					data["terminalEnrollment"] = enrollment
+				}
+			}
+			if ok {
+				result.TerminalCheck = enrollment.Method() + " " + check
+				if enrollment.Login != nil {
+					result.Details = append(result.Details, "If an older engine cannot read this enrollment, return to the revision that understands this enrollment.")
+				}
+			}
+		}
 	}
 	if inv.replySettleErr != nil {
 		result.Details = append(result.Details, inv.replySettleErr.Error())
@@ -956,7 +978,7 @@ func (inv *intentInvocation) render(result intentResult) int {
 	env := inv.textEnv(stream)
 	viewed := result.view != nil && (succeeded || result.viewsRefusal)
 	page := textui.NewLegacy(env)
-	if viewed || inv.command.laidOut {
+	if viewed || inv.command.laidOut || result.TerminalCheck != "" {
 		page = textui.New(env)
 	}
 	if result.attention != nil {
@@ -973,6 +995,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 		inv.legacyConfirmed(page, result)
 	default:
 		inv.legacyRefused(page, result)
+	}
+	if result.TerminalCheck != "" {
+		page.Section("", "").Text(result.TerminalCheck)
 	}
 	if inv.replySettleErr != nil {
 		page.Section("", "").Fixed("Replies could not be checked just now: " + replySettleCause(inv.replySettleErr) + "; questions are as last known.")

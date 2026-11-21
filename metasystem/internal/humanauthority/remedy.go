@@ -34,6 +34,15 @@ const (
 // when nobody is known. retry is the act as the person typed it. The cause
 // is err's type (OutcomeOf, ErrEnrollmentUnnamed), never its words.
 func RemedyFor(root string, err error, person string, retry []string) Remedy {
+	remedy := personActRemedy(root, err, person, retry)
+	if failedLogin(err) {
+		reason, where := LoginRefusal(err)
+		remedy.Reason, remedy.Argv, remedy.Then = reason, retry, where+". "+guardrail
+	}
+	return remedy
+}
+
+func personActRemedy(root string, err error, person string, retry []string) Remedy {
 	outcome, runtime := OutcomeOf(err)
 	enrolledAs := ""
 	if enrollment, readErr := ReadEnrollment(root); readErr == nil {

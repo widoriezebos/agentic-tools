@@ -58,13 +58,14 @@ type ProcessRef struct {
 
 // Enrollment is the local terminal root every later proof must reach.
 type Enrollment struct {
-	Schema        int        `json:"schema"`
-	EnrolledAt    time.Time  `json:"enrolledAt"`
-	Generation    uint64     `json:"generation"`
-	Human         string     `json:"human,omitempty"`
-	TerminalID    string     `json:"terminalId"`
-	TerminalRef   ProcessRef `json:"terminalRef"`
-	SessionLeader ProcessRef `json:"sessionLeaderRef"`
+	Schema        int            `json:"schema"`
+	EnrolledAt    time.Time      `json:"enrolledAt"`
+	Generation    uint64         `json:"generation"`
+	Human         string         `json:"human,omitempty"`
+	TerminalID    string         `json:"terminalId"`
+	TerminalRef   ProcessRef     `json:"terminalRef"`
+	SessionLeader ProcessRef     `json:"sessionLeaderRef"`
+	Login         *LoginEvidence `json:"login,omitempty"`
 	// Repeat marks an Enroll whose enrollment already held (R-129-ui): the
 	// same person at the same terminal and session, so the recorded
 	// enrollment was returned and nothing was written. Never persisted.
@@ -74,15 +75,17 @@ type Enrollment struct {
 // Node is one stable process observation. Argument bytes are represented only
 // by digests so authority records do not retain command-line contents.
 type Node struct {
-	Ref              ProcessRef `json:"ref"`
-	ParentRef        ProcessRef `json:"parentRef"`
-	ExecutableDigest string     `json:"executableDigest"`
-	ArgumentDigest   string     `json:"argumentDigest"`
-	OwnerUID         uint32     `json:"ownerUid"`
-	OwnerKnown       bool       `json:"ownerKnown"`
-	ArgvWithheld     bool       `json:"argvWithheld,omitempty"`
-	AgentRuntime     *string    `json:"agentRuntime,omitempty"`
-	TerminalMatch    bool       `json:"terminalMatch"`
+	Ref                ProcessRef `json:"ref"`
+	ParentRef          ProcessRef `json:"parentRef"`
+	ExecutableDigest   string     `json:"executableDigest"`
+	ExecutableWithheld string     `json:"executableWithheld,omitempty"`
+	KernelName         string     `json:"kernelName,omitempty"`
+	ArgumentDigest     string     `json:"argumentDigest"`
+	OwnerUID           uint32     `json:"ownerUid"`
+	OwnerKnown         bool       `json:"ownerKnown"`
+	ArgvWithheld       bool       `json:"argvWithheld,omitempty"`
+	AgentRuntime       *string    `json:"agentRuntime,omitempty"`
+	TerminalMatch      bool       `json:"terminalMatch"`
 }
 
 // Proof is the complete Ruling-C decision record for one invocation.
@@ -144,11 +147,22 @@ func (p Proof) Valid() bool {
 		return false
 	}
 	terminalSeen := false
+	branch := loginBranch{account: p.Nodes[0].OwnerUID}
 	for index, node := range p.Nodes {
 		last := index == len(p.Nodes)-1
 		if node.AgentRuntime != nil || node.Ref.PID < 1 ||
-			node.ExecutableDigest == "" || node.ArgumentDigest == "" || !node.OwnerKnown {
+			node.ArgumentDigest == "" || !node.OwnerKnown {
 			return false
+		}
+		hidden := node.ExecutableWithheld != ""
+		if hidden == (node.ExecutableDigest != "") || hidden && (grade != GradeTerminal || !terminalSeen || !linuxLogin || node.ArgvWithheld) {
+			return false
+		}
+		if grade == GradeTerminal && terminalSeen && linuxLogin {
+			rule, missing := branch.observe(node, hidden, last)
+			if missing != "" || rule != node.ExecutableWithheld {
+				return false
+			}
 		}
 		if last {
 			if grade == GradeTerminal && node.ParentRef != (ProcessRef{}) {
@@ -442,15 +456,17 @@ func ProveOrTemporaryGoalAuthority(root string, invokerPID int64, reader Reader,
 
 // Snapshot is one process read used by the stable ancestry walk.
 type Snapshot struct {
-	Exact           identity.Exact
-	Executable      string
-	ExecutableKnown bool
-	OwnerUID        uint32
-	OwnerKnown      bool
-	ParentPID       int64
-	ParentKnown     bool
-	TerminalID      string
-	TerminalKnown   bool
+	Exact            identity.Exact
+	Executable       string
+	ExecutableKnown  bool
+	ExecutableDenied bool
+	KernelName       string
+	OwnerUID         uint32
+	OwnerKnown       bool
+	ParentPID        int64
+	ParentKnown      bool
+	TerminalID       string
+	TerminalKnown    bool
 }
 
 // Reader supplies process facts. Tests inject a fully deterministic tree.
@@ -469,10 +485,10 @@ func (KernelReader) Read(pid int64) (Snapshot, error) {
 	}
 	parent, parentOK := identity.ParentPid(pid)
 	terminal, terminalOK := identity.ControllingTerminalIdentity(pid)
-	executable, executableOK := identity.ExecutablePath(pid)
+	executable, executableOK, denied, name := observeExecutable(pid)
 	owner, ownerOK := identity.ProcessOwner(pid)
 	return Snapshot{Exact: exact, Executable: executable, ExecutableKnown: executableOK,
-		OwnerUID: owner, OwnerKnown: ownerOK,
+		ExecutableDenied: denied, KernelName: name, OwnerUID: owner, OwnerKnown: ownerOK,
 		ParentPID: parent, ParentKnown: parentOK,
 		TerminalID: terminal, TerminalKnown: terminalOK}, nil
 }
@@ -490,6 +506,9 @@ func sameRef(left, right ProcessRef) bool {
 	if left.PID != right.PID {
 		return false
 	}
+	if linuxLogin && left.BootID != "" && right.BootID != "" && left.BootID != right.BootID {
+		return false
+	}
 	if left.StartTicks > 0 && left.BootID != "" && right.StartTicks > 0 && right.BootID != "" {
 		return left.StartTicks == right.StartTicks && left.BootID == right.BootID
 	}
@@ -505,7 +524,11 @@ const (
 
 // enrollmentAncestryWorkaround is that second line as the refusal ends.
 func enrollmentAncestryWorkaround() string {
-	return "\nrun: " + enrollmentAncestryCommand + "  (" + enrollmentAncestryWhere + ")"
+	where := enrollmentAncestryWhere
+	if linuxLogin {
+		where = "in your own interactive login shell"
+	}
+	return "\nrun: " + enrollmentAncestryCommand + "  (" + where + ")"
 }
 
 type processReadRefusal struct {
@@ -547,11 +570,16 @@ func (refusal *processReadRefusal) Error() string {
 }
 
 func stableRead(reader Reader, pid int64) (Snapshot, *processReadRefusal) {
+	return stableProcess(reader, pid, false)
+}
+
+func stableProcess(reader Reader, pid int64, aboveLeader bool) (Snapshot, *processReadRefusal) {
 	first, err := reader.Read(pid)
 	if err != nil {
 		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, Snapshot{}, "the process could not be read")
 	}
-	if !first.ExecutableKnown {
+	allowDenied := aboveLeader && linuxLogin
+	if !first.ExecutableKnown && !(allowDenied && first.ExecutableDenied) {
 		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's executable path is unreadable")
 	}
 	if !first.OwnerKnown {
@@ -559,6 +587,9 @@ func stableRead(reader Reader, pid int64) (Snapshot, *processReadRefusal) {
 	}
 	var firstSystemImage os.FileInfo
 	if !first.Exact.ArgvKnown {
+		if !first.ExecutableKnown {
+			return Snapshot{}, newProcessReadRefusal(pid, OutcomeArgvUnreadable, first, "both the executable path and the arguments are withheld")
+		}
 		if first.OwnerUID != 0 {
 			return Snapshot{}, newProcessReadRefusal(pid, OutcomeArgvUnreadable, first, "the operating system withholds this process's arguments and the process is not owned by root")
 		}
@@ -583,7 +614,10 @@ func stableRead(reader Reader, pid int64) (Snapshot, *processReadRefusal) {
 	if first.ParentPID < 0 {
 		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's parent is invalid")
 	}
-	if !second.ExecutableKnown {
+	if allowDenied && (first.ExecutableKnown != second.ExecutableKnown || first.ExecutableDenied != second.ExecutableDenied || first.KernelName != second.KernelName) {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeChanged, first, "the program name or access to its executable changed between observations")
+	}
+	if !second.ExecutableKnown && !(allowDenied && second.ExecutableDenied) {
 		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's executable path is unreadable on the second observation")
 	}
 	if !second.OwnerKnown {
@@ -696,6 +730,14 @@ func ReadEnrollment(root string) (Enrollment, error) {
 // remain on the invoker's controlling terminal through its session leader;
 // ancestors above the leader have no terminal constraint.
 func ProveTerminal(root string, invokerPID int64, reader Reader, now time.Time) (Proof, error) {
+	proof, err := proveTerminal(root, invokerPID, reader, now)
+	if linuxLogin && err != nil && proof.Outcome != "" {
+		err = loginFailure{err}
+	}
+	return proof, err
+}
+
+func proveTerminal(root string, invokerPID int64, reader Reader, now time.Time) (Proof, error) {
 	if reader == nil {
 		reader = KernelReader{}
 	}
@@ -753,6 +795,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 	var terminalRef ProcessRef
 	reachedSession := terminal == nil
 	agentRuntime := ""
+	branch := loginBranch{account: invoker.OwnerUID}
 
 	for current > 0 {
 		if seen[current] {
@@ -762,7 +805,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 		seen[current] = true
 		if current != invokerPID {
 			var refusal *processReadRefusal
-			currentSnapshot, refusal = stableRead(reader, current)
+			currentSnapshot, refusal = stableProcess(reader, current, terminal != nil && reachedSession)
 			if refusal != nil {
 				outcome, continuation, err := terminalWalkFailure(agentRuntime, refusal.outcome, refusal)
 				return nodes, terminalRef, outcome, continuation, err
@@ -773,12 +816,11 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 			return nodes, terminalRef, outcome, continuation, err
 		}
 
-		executable := sha256.Sum256([]byte(currentSnapshot.Executable))
 		arguments := sha256.Sum256([]byte(strings.Join(currentSnapshot.Exact.Argv, "\x00")))
 		node := Node{
-			Ref:              refOf(currentSnapshot.Exact),
-			ExecutableDigest: hex.EncodeToString(executable[:]), ArgumentDigest: hex.EncodeToString(arguments[:]),
-			OwnerUID: currentSnapshot.OwnerUID, OwnerKnown: currentSnapshot.OwnerKnown,
+			Ref:            refOf(currentSnapshot.Exact),
+			ArgumentDigest: hex.EncodeToString(arguments[:]),
+			OwnerUID:       currentSnapshot.OwnerUID, OwnerKnown: currentSnapshot.OwnerKnown,
 			ArgvWithheld: !currentSnapshot.Exact.ArgvKnown,
 		}
 		if runtime := census.Runtime(strings.Join(currentSnapshot.Exact.Argv, " "), signatures); runtime != "" {
@@ -786,6 +828,24 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 			if agentRuntime == "" {
 				agentRuntime = runtime
 			}
+		}
+		if currentSnapshot.ExecutableKnown {
+			executable := sha256.Sum256([]byte(currentSnapshot.Executable))
+			node.ExecutableDigest = hex.EncodeToString(executable[:])
+		}
+		if linuxLogin && terminal != nil && reachedSession {
+			if currentSnapshot.KernelName == sshSessionName || currentSnapshot.KernelName == "sshd" {
+				node.KernelName = currentSnapshot.KernelName
+			}
+			rule, missing := branch.observe(node, !currentSnapshot.ExecutableKnown, currentSnapshot.ParentPID == 0)
+			if missing != "" {
+				node.ParentRef = ProcessRef{PID: currentSnapshot.ParentPID}
+				nodes = append(nodes, node)
+				refusal := newProcessReadRefusal(current, OutcomeUnreadable, currentSnapshot, missing)
+				outcome, continuation, err := terminalWalkFailure(agentRuntime, refusal.outcome, refusal)
+				return nodes, terminalRef, outcome, continuation, err
+			}
+			node.ExecutableWithheld = rule
 		}
 		if terminal != nil && !reachedSession && currentSnapshot.TerminalID != terminal.terminalID && agentRuntime == "" {
 			nodes = append(nodes, node)
@@ -859,6 +919,15 @@ func Enroll(root string, invokerPID int64, reader Reader, human string, now time
 	}
 	enrollment := Enrollment{Schema: 1, EnrolledAt: now.UTC(), Generation: generation, Human: human,
 		TerminalID: proof.observedTerminalID, TerminalRef: proof.InvokerRef, SessionLeader: proof.TerminalRef}
+	if linuxLogin {
+		enrollment.Login = &LoginEvidence{}
+		for _, node := range proof.Nodes {
+			if node.ExecutableWithheld != "" {
+				enrollment.Login.Nodes = proof.Nodes
+				break
+			}
+		}
+	}
 	encoded, err := json.MarshalIndent(enrollment, "", "  ")
 	if err != nil {
 		return Enrollment{}, err
@@ -1115,6 +1184,10 @@ func recordProof(root, operationID, action string, proof Proof, recordable bool)
 func PlainReason(err error) string {
 	if err == nil {
 		return ""
+	}
+	if failedLogin(err) {
+		reason, _ := LoginRefusal(err)
+		return reason + ".\n" + guardrail
 	}
 	outcome, runtime := OutcomeOf(err)
 	if outcome == OutcomeAgent && runtime != "" {
