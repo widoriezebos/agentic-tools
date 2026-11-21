@@ -268,23 +268,28 @@ func testDeployedFollowRisk(t *testing.T) {
 	const otherRegister = "records/counselor/carried-landings.jsonl"
 	local := followRiskBase + followRiskLocal
 	for _, tc := range []struct {
-		name, deployed, working, extraPath, refusal string
-		alreadyAt, leftover, staged, mode           bool
+		name, deployed, working, extraPath, refusal, wantSuffix string
+		alreadyAt, leftover, staged, mode                       bool
 	}{
 		{name: "clean deployment rewrote register", deployed: followRiskMain},
-		{name: "two local lines", working: local},
-		{name: "main and staged and unstaged local lines", deployed: followRiskBase + followRiskMain, working: local, staged: true},
+		{name: "two local lines", working: local, wantSuffix: followRiskLocal},
+		{name: "main and staged and unstaged local lines", deployed: followRiskBase + followRiskMain, working: local, staged: true, wantSuffix: followRiskLocal},
+		{name: "arrived row", deployed: followRiskBase + followRiskMain, working: followRiskBase + followRiskMain},
+		{name: "conflicting row", deployed: followRiskBase + "{\"id\":\"local-two\",\"title\":\"changed\"}\n", working: local, staged: true, refusal: `accepted risk "local-two" differs between the checkout and the deployment`},
+		{name: "arrived among new rows", deployed: followRiskBase + followRiskMain, working: followRiskBase + followRiskLocal + followRiskMain + "{\"id\":\"last\"}\n", staged: true, wantSuffix: followRiskLocal + "{\"id\":\"last\"}\n"},
+		{name: "deployment rewrote locally dirty register", deployed: followRiskMain, working: local, refusal: dirtyRisk},
+		{name: "inserted before base", working: followRiskFirst + followRiskLocal + strings.TrimPrefix(followRiskBase, followRiskFirst), refusal: dirtyRisk},
 		{name: "changed base", working: followRiskMain, refusal: dirtyRisk},
 		{name: "removed base", working: followRiskFirst, refusal: dirtyRisk},
 		{name: "partial line", working: followRiskBase + "unfinished", refusal: dirtyRisk},
 		{name: "mode with append", working: local, mode: true, refusal: dirtyRisk},
 		{name: "dirty code", working: local, extraPath: "src/product.go", refusal: "the checkout has tracked changes:  M metasystem/src/product.go"},
-		{name: "two registers", working: local, extraPath: receipts},
+		{name: "two registers", working: local, extraPath: receipts, wantSuffix: followRiskLocal},
 		{name: "other counselor register", working: local, extraPath: otherRegister, refusal: "the checkout has tracked changes:  M metasystem/" + otherRegister},
 		{name: "recovery before movement", leftover: true, refusal: "fast-forward recovery file already exists at "},
 		{name: "recovery after movement", alreadyAt: true, leftover: true, refusal: "fast-forward recovery file already exists at "},
 		{name: "rewrite after movement", alreadyAt: true, working: followRiskMain, refusal: dirtyRisk},
-		{name: "append after movement", alreadyAt: true, working: local},
+		{name: "append after movement", alreadyAt: true, working: local, wantSuffix: followRiskLocal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -343,12 +348,15 @@ func testDeployedFollowRisk(t *testing.T) {
 				if tc.working != "" {
 					wantBytes = tc.working
 				}
-			} else if tc.working != "" {
-				wantBytes += followRiskLocal
+			} else {
+				wantBytes += tc.wantSuffix
 			}
 			got, err := os.ReadFile(path)
 			if err != nil || string(got) != wantBytes || followGit(t, b.root, "rev-parse", "HEAD") != wantHead {
 				t.Fatalf("risk=%q want %q, head wanted %s, err=%v", got, wantBytes, wantHead, err)
+			}
+			if !wantFollow && tc.staged && followGit(t, b.root, "show", ":metasystem/"+followRiskPath) != strings.TrimSpace(followRiskBase+strings.SplitAfter(followRiskLocal, "\n")[0]) {
+				t.Fatal("refusal changed the staged risk rows")
 			}
 			if wantFollow && !tc.alreadyAt && followGit(t, b.root, "diff", "--cached", "--name-only") != "" {
 				t.Fatal("follow staged local rows")

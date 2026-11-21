@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -21,8 +22,8 @@ import (
 const engineRequiredCode = "TEST_POLICY_ENGINE_REQUIRED"
 
 type registerSnapshot struct {
-	path, fullPath  string
-	working, suffix []byte
+	path, fullPath           string
+	working, suffix, pending []byte
 }
 
 const fastForwardRecoveryName = "metasystem/fast-forward-recovery.txt"
@@ -108,7 +109,7 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 		_, landedShape := appendDelta(before, beforeOK, landed, landedOK)
 		stagedSuffix, stagedShape := appendDelta(before, beforeOK, staged, stagedOK)
 		workingSuffix, workingShape := appendDelta(staged, stagedOK, working, workingOK)
-		if register == counselor.AcceptedRiskRegisterPath && (!stagedShape || !workingShape || len(stagedSuffix)+len(workingSuffix) == 0) {
+		if register == counselor.AcceptedRiskRegisterPath && (!landedShape || !stagedShape || !workingShape || len(stagedSuffix)+len(workingSuffix) == 0) {
 			return fmt.Errorf("the checkout has tracked changes: %s", riskEntry)
 		}
 		if !landedShape || !stagedShape || !workingShape {
@@ -116,7 +117,14 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 		}
 		suffix := append(append([]byte(nil), stagedSuffix...), workingSuffix...)
 		if len(suffix) != 0 {
-			dirty = append(dirty, registerSnapshot{path, fullPath, working, suffix})
+			pending := suffix
+			if register == counselor.AcceptedRiskRegisterPath {
+				pending, err = pendingRiskRows(landed, suffix)
+				if err != nil {
+					return err
+				}
+			}
+			dirty = append(dirty, registerSnapshot{path, fullPath, working, suffix, pending})
 			restorePaths = append(restorePaths, path)
 		}
 	}
@@ -146,7 +154,10 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 		return fmt.Errorf("fast-forward failed; recovery file remains at %s: %w", recoveryPath, errors.Join(err, recoverRegisters()))
 	}
 	for i, snapshot := range dirty {
-		if err := appendRegister(snapshot.fullPath, snapshot.suffix); err != nil {
+		if len(snapshot.pending) == 0 {
+			continue
+		}
+		if err := appendRegister(snapshot.fullPath, snapshot.pending); err != nil {
 			return fmt.Errorf("re-append registers: %w; recovery file %s; registers not yet re-appended: %s", err, recoveryPath, strings.Join(restorePaths[i:], ", "))
 		}
 	}
@@ -157,6 +168,42 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 	}
 	return nil
 }
+
+// pendingRiskRows compares exact line bytes. Lines without a usable ID can
+// still arrive verbatim, but cannot establish an identity conflict.
+func pendingRiskRows(landed, local []byte) ([]byte, error) {
+	rowID := func(line []byte) string {
+		var row struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(line, &row) != nil {
+			return ""
+		}
+		return strings.TrimSpace(row.ID)
+	}
+	rows := make(map[string]map[string]bool)
+	for line := range bytes.Lines(landed) {
+		id := rowID(line)
+		if rows[id] == nil {
+			rows[id] = make(map[string]bool)
+		}
+		rows[id][string(line)] = true
+	}
+	var pending []byte
+	for line := range bytes.Lines(local) {
+		id := rowID(line)
+		versions := rows[id]
+		identical := versions[string(line)]
+		if id != "" && len(versions) > 0 && (!identical || len(versions) > 1) {
+			return nil, fmt.Errorf("accepted risk %q differs between the checkout and the deployment", id)
+		}
+		if !identical {
+			pending = append(pending, line...)
+		}
+	}
+	return pending, nil
+}
+
 func recoveryText(dirty []registerSnapshot) string {
 	output := "fast-forward recovery v1\n"
 	for _, snapshot := range dirty {
