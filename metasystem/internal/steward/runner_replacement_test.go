@@ -30,6 +30,7 @@ func TestReplacementSignalsSelectedRunner(t *testing.T) {
 		{"TERM finds no process", []delivery{term}, ""},
 		{"reuse after TERM", []delivery{term}, ""},
 		{"unknown before TERM", nil, "pid 41"},
+		{"runner unpublishes after TERM then exits", []delivery{term}, ""},
 		{"missing announcement during wait", []delivery{term, cont}, "announcement"},
 		{"replaced announcement during wait", []delivery{term, cont}, "announcement"},
 		{"new announcement at reused PID", []delivery{term, cont}, "announcement"},
@@ -72,6 +73,10 @@ func TestReplacementSignalsSelectedRunner(t *testing.T) {
 					case "TERM finds no process":
 						state = identity.Dead
 						return syscall.ESRCH
+					case "runner unpublishes after TERM then exits":
+						if err := os.Remove(runnerRecordPath(root)); err != nil {
+							t.Fatal(err)
+						}
 					case "reuse after TERM":
 						process.StartTicks++
 					}
@@ -90,6 +95,8 @@ func TestReplacementSignalsSelectedRunner(t *testing.T) {
 				elapsed += d
 				if elapsed == d {
 					switch tc.name {
+					case "runner unpublishes after TERM then exits":
+						state = identity.Dead
 					case "missing announcement during wait":
 						if err := os.Remove(runnerRecordPath(root)); err != nil {
 							t.Fatal(err)

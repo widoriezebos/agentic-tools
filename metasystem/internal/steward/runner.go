@@ -1535,14 +1535,15 @@ func stopRunnerForReplacementWithClock(repoRoot string, runner RunnerRecord, sig
 		err := readJSON(runnerRecordPath(repoRoot), &current)
 		matches := err == nil && sameRunner(runner, current)
 		state := identity.LiveRef(prober, runner.processRef())
-		if state == identity.Dead && (matches || errors.Is(err, os.ErrNotExist)) {
+		missing := errors.Is(err, os.ErrNotExist) // The runner unpublishes before it exits.
+		if state == identity.Dead && (matches || missing) {
 			return false, nil
+		}
+		if state == identity.Alive && (matches && sig == 0 || missing && sig != syscall.SIGKILL) {
+			return true, nil
 		}
 		if !matches || state != identity.Alive {
 			return false, fmt.Errorf("cannot verify runner pid %d against its announcement during replacement", runner.Pid)
-		}
-		if sig == 0 {
-			return true, nil
 		}
 		err = signal(int(runner.Pid), sig)
 		if err == nil || errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone) {
