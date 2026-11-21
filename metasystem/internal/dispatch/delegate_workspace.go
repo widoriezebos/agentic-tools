@@ -41,7 +41,8 @@ type DelegateWorkspaceProof struct {
 	Closed      func(repo, chain string) error
 	Now         time.Time
 	// Stage names the absorb's partial files.
-	Stage string
+	Stage       string
+	lockOptions OwnerLockOptions
 }
 
 func (DelegateWorkspaceProof) Kind() diskstore.OwnerKind { return diskstore.OwnerDelegate }
@@ -82,7 +83,7 @@ func (p DelegateWorkspaceProof) observe(ctx context.Context, record diskstore.Re
 	if record.Class != diskstore.DelegateClass {
 		return pending("a "+record.Class+" store of chain "+chain+" is released by its own owner, not this proof", "metasystem disk show")
 	}
-	gone, err := DelegateRecordsGone(p.Repo, chain, record.Path)
+	gone, err := p.recordsGone(chain, record.Path)
 	if err != nil {
 		reclaim = errors.Is(err, ErrDispatchLockReclaim)
 		return diskstore.Verdict{Decision: diskstore.Pending, Absorbable: reclaim, Reason: err.Error(), Command: "metasystem disk show"}
@@ -238,12 +239,12 @@ var ErrDispatchLockReclaim = errors.New("a dead dispatch lock needs reclamation 
 // Reclaim lets only an applying pass take over and release a dead launch lock.
 // The caller must then repeat its records and use proofs before absorption.
 func (p DelegateWorkspaceProof) Reclaim(record diskstore.Record) error {
-	if _, err := DelegateRecordsGone(p.Repo, record.Owner.Ref, record.Path); !errors.Is(err, ErrDispatchLockReclaim) {
+	if _, err := p.recordsGone(record.Owner.Ref, record.Path); !errors.Is(err, ErrDispatchLockReclaim) {
 		return nil
 	}
 	directory := filepath.Join(p.Repo, "artifacts", "agents", "locks", record.Owner.Ref+".d")
 	pid, tag := int64(os.Getpid()), strings.Join(os.Args, " ")
-	if err := OwnerLockClaim(directory, pid, tag); err != nil {
+	if _, err := OwnerLockClaimWith(directory, lock.Identity{Pid: pid, Tag: tag}, p.lockOptions); err != nil {
 		return err
 	}
 	return OwnerLockRelease(directory, pid, tag)
@@ -252,19 +253,23 @@ func (p DelegateWorkspaceProof) Reclaim(record diskstore.Record) error {
 // DelegateRecordsGone confirms absence using the launch lock and whole readable job inventory.
 // Broken ancestry cannot prove that a surviving round belongs elsewhere.
 func DelegateRecordsGone(repo, chain, workspace string) (bool, error) {
-	directory := filepath.Join(repo, "artifacts", "agents", "locks", chain+".d")
+	return (DelegateWorkspaceProof{Repo: repo}).recordsGone(chain, workspace)
+}
+
+func (p DelegateWorkspaceProof) recordsGone(chain, workspace string) (bool, error) {
+	directory := filepath.Join(p.Repo, "artifacts", "agents", "locks", chain+".d")
 	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
 		if err != nil {
 			return false, err
 		}
 		data, readErr := os.ReadFile(filepath.Join(directory, "owner.json"))
 		holder, decodeErr := (ownerLockCodec{}).Decode(data)
-		if readErr == nil && decodeErr == nil && ownerHolderProbe(holder) == lock.Dead {
+		if readErr == nil && decodeErr == nil && p.lockOptions.probe(holder) == lock.Dead {
 			return false, ErrDispatchLockReclaim
 		}
 		return false, fmt.Errorf("a dispatch of this chain is in progress: %s", directory)
 	}
-	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+	jobs := filepath.Join(p.Repo, "artifacts", "agents", "jobs")
 	_, rootErr := os.Stat(filepath.Join(jobs, chain+".json"))
 	if rootErr != nil && !errors.Is(rootErr, os.ErrNotExist) {
 		return false, rootErr

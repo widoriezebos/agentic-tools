@@ -25,14 +25,23 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // Identity names a lock holder by kernel facts, never by claims.
 type Identity struct {
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
-	Tag          string `json:"instanceTag,omitempty"`
-	Label        string `json:"label,omitempty"`
+	Pid          int64        `json:"pid"`
+	PidStartedAt int64        `json:"pidStartedAt"`
+	Tag          string       `json:"instanceTag,omitempty"`
+	Label        string       `json:"label,omitempty"`
+	Process      identity.Ref `json:"process,omitzero"`
+}
+
+// A named release or handoff can be made on behalf of a holder that has
+// already exited. The optional process reference proves liveness on takeover.
+func (id Identity) sameNamedHolder(other Identity) bool {
+	id.Process, other.Process = identity.Ref{}, identity.Ref{}
+	return id == other
 }
 
 // Liveness is the three-way answer the takeover rule requires: only a
@@ -269,7 +278,7 @@ func ReleaseNamed(path string, self Identity, codec OwnerCodec) error {
 		if err != nil {
 			return fmt.Errorf("lock: release verification: %w", err)
 		}
-		if holder != self {
+		if !holder.sameNamedHolder(self) {
 			return &NotHolderError{Path: path, Holder: holder}
 		}
 		return removeLock(path)
@@ -289,7 +298,7 @@ func TransferNamed(path string, current, successor Identity, codec OwnerCodec) e
 		if err != nil {
 			return fmt.Errorf("lock: transfer verification: %w", err)
 		}
-		if holder != current {
+		if !holder.sameNamedHolder(current) {
 			return fmt.Errorf("lock %s no longer names the transferring holder (found pid %d started %d)", path, holder.Pid, holder.PidStartedAt)
 		}
 		owner, err := codec.Encode(successor)

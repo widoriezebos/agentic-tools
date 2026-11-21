@@ -13,14 +13,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
-// The dispatch owner lock is a THIN BINDING over internal/lock, the one
-// home of the rename-born directory-lock protocol:
-// this file contributes only the owner-file schema
-// and the holder classification. Takeover is legal only when the recorded
-// holder is provably dead or provably stale — a live pid whose READ argv
-// no longer carries the recorded tag is a stranger, which the probe
-// reports as Dead (the custodian rule); a live or unreadable holder keeps
-// the lock.
+// An owner with a native process reference is held until that process exits.
+// Owners recorded with only a pid and tag use the command-line probe.
 
 // ErrOwnerLockBusy and ErrOwnerLockNotOwner are the distinguished refusals.
 var (
@@ -30,13 +24,17 @@ var (
 
 // ownerLockCodec keeps this lock's historical owner.json bytes:
 // {"acquiredAt":...,"instanceTag":...,"pid":...}.
-type ownerLockCodec struct{}
+type ownerLockCodec struct{ now func() time.Time }
 
-func (ownerLockCodec) Encode(self lock.Identity) ([]byte, error) {
-	payload, err := json.Marshal(map[string]any{
+func (c ownerLockCodec) Encode(self lock.Identity) ([]byte, error) {
+	fields := map[string]any{
 		"pid": self.Pid, "instanceTag": self.Tag,
-		"acquiredAt": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-	})
+		"acquiredAt": c.now().UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	if self.Process != (identity.Ref{}) {
+		fields["process"] = self.Process
+	}
+	payload, err := json.Marshal(fields)
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +43,9 @@ func (ownerLockCodec) Encode(self lock.Identity) ([]byte, error) {
 
 func (ownerLockCodec) Decode(data []byte) (lock.Identity, error) {
 	var value struct {
-		Pid         *int64 `json:"pid"`
-		InstanceTag string `json:"instanceTag"`
+		Pid         *int64        `json:"pid"`
+		InstanceTag string        `json:"instanceTag"`
+		Process     *identity.Ref `json:"process"`
 	}
 	if err := json.Unmarshal(data, &value); err != nil {
 		return lock.Identity{}, err
@@ -54,22 +53,55 @@ func (ownerLockCodec) Decode(data []byte) (lock.Identity, error) {
 	if value.Pid == nil {
 		return lock.Identity{}, fmt.Errorf("owner file names no pid")
 	}
-	return lock.Identity{Pid: *value.Pid, Tag: value.InstanceTag}, nil
+	holder := lock.Identity{Pid: *value.Pid, Tag: value.InstanceTag}
+	if value.Process != nil {
+		ref := *value.Process
+		if ref.Pid != holder.Pid || (ref.Mode() != identity.CompareLinuxTicksBootID && ref.Mode() != identity.CompareDarwinMicroseconds) {
+			return lock.Identity{}, errors.New("owner file has an invalid process reference")
+		}
+		holder.Process = ref
+	}
+	return holder, nil
 }
 
-// ownerHolderProbe classifies the recorded holder three-way. Dead covers
-// both a vanished pid and a STALE one — a successfully read argv without
-// the recorded tag proves the recorded holder is gone and a stranger
-// recycled its pid. An unreadable argv on a live pid is absence of
-// evidence, never evidence of a stranger: the holder keeps its lock.
-func ownerHolderProbe(holder lock.Identity) lock.Liveness {
-	switch unix.Kill(int(holder.Pid), 0) {
+// KernelOwnerLockProber preserves the existence check for pid-and-tag owners.
+// Exact owners use KernelProber.ReadStart through identity.LiveRef.
+type KernelOwnerLockProber struct{ identity.KernelProber }
+
+func (p KernelOwnerLockProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	switch unix.Kill(int(pid), 0) {
 	case unix.ESRCH:
-		return lock.Dead
+		return identity.Exact{}, identity.Dead, nil
 	case unix.EPERM:
-		return lock.Alive
+		return identity.Exact{Pid: pid}, identity.Alive, nil
 	}
-	exact, state, err := identity.KernelProber{}.Probe(holder.Pid)
+	exact, state, err := p.KernelProber.Probe(pid)
+	if state != identity.Alive {
+		// Only ESRCH on the existence check proves a legacy owner absent.
+		return identity.Exact{}, identity.Unknown, err
+	}
+	return exact, state, err
+}
+
+func (opts OwnerLockOptions) probe(holder lock.Identity) lock.Liveness {
+	prober := opts.Prober
+	if prober == nil {
+		prober = KernelOwnerLockProber{}
+	}
+	if holder.Process != (identity.Ref{}) {
+		switch identity.LiveRef(prober, holder.Process) {
+		case identity.Alive:
+			return lock.Alive
+		case identity.Dead:
+			return lock.Dead
+		default:
+			return lock.Unknown
+		}
+	}
+	exact, state, err := prober.Probe(holder.Pid)
+	if err == nil && state == identity.Dead {
+		return lock.Dead
+	}
 	if err != nil || state != identity.Alive {
 		return lock.Unknown
 	}
@@ -93,10 +125,26 @@ func OwnerLockClaim(directory string, pid int64, tag string) error {
 // OwnerLockClaimWithHolder also returns the holder observed on a busy claim.
 // An unreadable owner record leaves the identity empty.
 func OwnerLockClaimWithHolder(directory string, pid int64, tag string) (lock.Identity, error) {
-	self := lock.Identity{Pid: pid, Tag: tag}
+	return OwnerLockClaimWith(directory, lock.Identity{Pid: pid, Tag: tag}, OwnerLockOptions{})
+}
+
+// OwnerLockOptions defaults to the wall clock and the kernel process reader.
+type OwnerLockOptions struct {
+	Now    func() time.Time
+	Sleep  func(time.Duration)
+	Prober identity.Prober
+}
+
+// OwnerLockClaimWith carries the claimant's clock and kernel reader through
+// publication and every inspection, including fenced takeover.
+func OwnerLockClaimWith(directory string, self lock.Identity, opts OwnerLockOptions) (lock.Identity, error) {
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
 	_, err := lock.Acquire(directory, self, lock.Options{
-		Probe: ownerHolderProbe,
-		Codec: ownerLockCodec{},
+		Now: opts.Now, Sleep: opts.Sleep,
+		Probe: opts.probe,
+		Codec: ownerLockCodec{now: opts.Now},
 	})
 	var holder *lock.HolderError
 	if errors.As(err, &holder) {

@@ -101,7 +101,7 @@ func TestOwnerCodecDegrades(t *testing.T) {
 // never answer Dead.
 func TestHolderProbeUnreadableArgvIsNeverDead(t *testing.T) {
 	holder := lock.Identity{Pid: 1, Tag: "tag-no-init-carries"}
-	if state := ownerHolderProbe(holder); state == lock.Dead {
+	if state := (OwnerLockOptions{}).probe(holder); state == lock.Dead {
 		t.Fatal("a holder with unverifiable argv was ruled dead (takeover permitted)")
 	}
 }

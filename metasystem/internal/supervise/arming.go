@@ -296,16 +296,42 @@ func scaledWait(baseSeconds int, scaleMilli int) time.Duration {
 
 var ErrCapAuthorityBusy = errors.New("repository cap-authority lock remained busy")
 
+type startLockClaim struct {
+	pid    int64
+	now    func() time.Time
+	sleep  func(time.Duration)
+	reader interface {
+		identity.VerificationReader
+		identity.Prober
+	}
+}
+
 func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) {
+	claim := startLockClaim{int64(os.Getpid()), armingNow, armingSleep, dispatch.KernelOwnerLockProber{}}
+	return claim.acquire(root, scaleMilli)
+}
+
+func (c startLockClaim) acquire(root string, scaleMilli int) (func() error, error) {
 	directory := filepath.Join(SupervisionDir(root), "cap-authority.lock.d")
 	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
 		return nil, err
 	}
-	pid := int64(os.Getpid())
-	tag := startLockTag(pid)
-	deadline := armingNow().Add(scaledWait(10, scaleMilli))
+	pid := c.pid
+	exact, state, err := c.reader.ReadStart(pid)
+	if err != nil || state != identity.Alive {
+		return nil, fmt.Errorf("cannot identify the start process %d (%s)", pid, state)
+	}
+	ref := exact.Ref()
+	ref.StartedAtSec = 0
+	if ref.Mode() == identity.CompareInvalid || ref.Pid != pid {
+		return nil, fmt.Errorf("start process %d has no exact start identity", pid)
+	}
+	tag := c.tag()
+	self := lock.Identity{Pid: pid, Tag: tag, Process: ref}
+	opts := dispatch.OwnerLockOptions{Now: c.now, Sleep: c.sleep, Prober: c.reader}
+	deadline := c.now().Add(scaledWait(10, scaleMilli))
 	for {
-		holder, err := dispatch.OwnerLockClaimWithHolder(directory, pid, tag)
+		holder, err := dispatch.OwnerLockClaimWith(directory, self, opts)
 		if err == nil {
 			return func() error {
 				return dispatch.OwnerLockRelease(directory, pid, tag)
@@ -314,19 +340,19 @@ func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) 
 		if !errors.Is(err, dispatch.ErrOwnerLockBusy) {
 			return nil, err
 		}
-		if !armingNow().Before(deadline) {
+		if !c.now().Before(deadline) {
 			if holder.Pid == 0 {
 				return nil, fmt.Errorf("%w. Holder unreadable. Please wait and retry", ErrCapAuthorityBusy)
 			}
-			return nil, fmt.Errorf("%w. Please wait for process %d (%s) and retry", ErrCapAuthorityBusy, holder.Pid, capLockOperation(holder))
+			return nil, fmt.Errorf("%w. Please wait for process %d (%s) and retry", ErrCapAuthorityBusy, holder.Pid, c.operation(holder))
 		}
-		armingSleep(50 * time.Millisecond)
+		c.sleep(50 * time.Millisecond)
 	}
 }
 
 // Use the same argv view a contender sees, including trailing empty arguments.
-func startLockTag(pid int64) string {
-	args, known := (identity.KernelProber{}).ReadArgv(pid)
+func (c startLockClaim) tag() string {
+	args, known := c.reader.ReadArgv(c.pid)
 	if !known {
 		args = os.Args
 	}
@@ -347,10 +373,10 @@ func startLockTag(pid int64) string {
 
 // A delegation can hold this lock too. Only describe the operation: its
 // command line may also contain a private brief or a human authorization.
-func capLockOperation(holder lock.Identity) string {
+func (c startLockClaim) operation(holder lock.Identity) string {
 	command := holder.Tag
 	operation := "checkout operation"
-	if argv, ok := (identity.KernelProber{}).ReadArgv(holder.Pid); ok && len(argv) > 0 {
+	if argv, ok := c.reader.ReadArgv(holder.Pid); ok && len(argv) > 0 {
 		if strings.Contains(strings.Join(argv, " "), holder.Tag) {
 			operation = filepath.Base(argv[0])
 		}
