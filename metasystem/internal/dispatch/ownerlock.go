@@ -86,19 +86,23 @@ func ownerHolderProbe(holder lock.Identity) lock.Liveness {
 // OwnerLockClaim takes the lock for (pid, tag). It returns nil when claimed,
 // ErrOwnerLockBusy when a live or unreadable holder keeps it.
 func OwnerLockClaim(directory string, pid int64, tag string) error {
+	_, err := OwnerLockClaimWithHolder(directory, pid, tag)
+	return err
+}
+
+// OwnerLockClaimWithHolder also returns the holder observed on a busy claim.
+// An unreadable owner record leaves the identity empty.
+func OwnerLockClaimWithHolder(directory string, pid int64, tag string) (lock.Identity, error) {
 	self := lock.Identity{Pid: pid, Tag: tag}
 	_, err := lock.Acquire(directory, self, lock.Options{
 		Probe: ownerHolderProbe,
 		Codec: ownerLockCodec{},
 	})
-	if err == nil {
-		return nil
-	}
 	var holder *lock.HolderError
 	if errors.As(err, &holder) {
-		return ErrOwnerLockBusy
+		return holder.Holder, ErrOwnerLockBusy
 	}
-	return err
+	return lock.Identity{}, err
 }
 
 // OwnerLockRelease frees the lock only when (pid, tag) still owns it. An

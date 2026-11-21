@@ -161,6 +161,13 @@ func writeArmingHelperJSON(path string, value any) error {
 
 // Subprocess helpers are process entrypoints, not independently skipped tests.
 func TestMain(m *testing.M) {
+	if os.Getenv("GO_WANT_HELD_START_LOCK") == "1" {
+		if err := heldStartLock(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if args, helper := armingHelperArgs(); helper {
 		if err := armingOwnerHelper(args); err != nil {
 			fmt.Fprintln(os.Stderr, err)

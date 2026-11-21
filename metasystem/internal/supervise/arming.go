@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
@@ -296,22 +297,78 @@ func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) 
 	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
 		return nil, err
 	}
+	pid := int64(os.Getpid())
+	tag := startLockTag(pid)
 	deadline := armingNow().Add(scaledWait(10, scaleMilli))
 	for {
-		err := dispatch.OwnerLockClaim(directory, int64(os.Getpid()), "metasystem up")
+		holder, err := dispatch.OwnerLockClaimWithHolder(directory, pid, tag)
 		if err == nil {
 			return func() error {
-				return dispatch.OwnerLockRelease(directory, int64(os.Getpid()), "metasystem up")
+				return dispatch.OwnerLockRelease(directory, pid, tag)
 			}, nil
 		}
 		if !errors.Is(err, dispatch.ErrOwnerLockBusy) {
 			return nil, err
 		}
 		if !armingNow().Before(deadline) {
-			return nil, fmt.Errorf("repository cap-authority lock remained busy")
+			if holder.Pid == 0 {
+				return nil, errors.New("repository cap-authority lock remained busy. Holder unreadable. Please wait and retry")
+			}
+			return nil, fmt.Errorf("repository cap-authority lock remained busy. Please wait for process %d (%s) and retry", holder.Pid, capLockOperation(holder))
 		}
 		armingSleep(50 * time.Millisecond)
 	}
+}
+
+// Use the same argv view a contender sees, including trailing empty arguments.
+func startLockTag(pid int64) string {
+	args, known := (identity.KernelProber{}).ReadArgv(pid)
+	if !known {
+		args = os.Args
+	}
+	tag := strings.Join(args, " ")
+	if !utf8.ValidString(tag) {
+		// JSON cannot round-trip an invalid filename byte. Keep the longest
+		// contiguous part both the owner file and an older reader can match.
+		parts := strings.Split(strings.ToValidUTF8(tag, "\x00"), "\x00")
+		tag = ""
+		for _, part := range parts {
+			if len(part) > len(tag) {
+				tag = part
+			}
+		}
+	}
+	return tag
+}
+
+// A delegation can hold this lock too. Only describe the operation: its
+// command line may also contain a private brief or a human authorization.
+func capLockOperation(holder lock.Identity) string {
+	command := holder.Tag
+	operation := "checkout operation"
+	if argv, ok := (identity.KernelProber{}).ReadArgv(holder.Pid); ok && len(argv) > 0 {
+		if strings.Contains(strings.Join(argv, " "), holder.Tag) {
+			operation = filepath.Base(argv[0])
+		}
+		command = strings.TrimPrefix(command, argv[0]+" ")
+	}
+	// Legacy records carry just "metasystem up".
+	if _, words, found := strings.Cut(command, "/metasystem "); found && filepath.IsAbs(command) {
+		command = words
+	}
+	command = strings.TrimPrefix(command, "metasystem ") + " "
+	if strings.HasPrefix(command, "internal hook ") {
+		return "runtime session-start hook"
+	}
+	for _, verb := range []string{"internal delegate", "delegate", "work build", "work review", "system start", "session start", "helm return", "up"} {
+		if strings.HasPrefix(command, verb+" ") {
+			if verb == "system start" && strings.Contains(command, " --if-down ") {
+				return "metasystem system start --if-down"
+			}
+			return "metasystem " + verb
+		}
+	}
+	return operation
 }
 
 func requireCeilingClear(root, metasystemRoot string, ceiling int64) error {
