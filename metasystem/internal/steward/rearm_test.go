@@ -969,6 +969,31 @@ func TestRearmStageTransitionsAndDurability(t *testing.T) {
 		}
 	})
 
+	t.Run("runner exits on marker before TERM", func(t *testing.T) {
+		bed := newRearmBed(t, true)
+		old, alive := liveRunner(bed.root)
+		if !alive {
+			t.Fatal("fixture runner is absent before re-arm")
+		}
+		writeMarker := runnerStopWriter
+		defer func() { runnerStopWriter = writeMarker }()
+		runnerStopWriter = func(path string, data []byte, mode os.FileMode) error {
+			if err := writeMarker(path, data, mode); err != nil {
+				return err
+			}
+			return testenv.AwaitProcessTargetGone(int(old.Pid))
+		}
+		deps := bed.successDeps(t)
+		deps.signal = func(pid int, sig syscall.Signal) error {
+			t.Fatalf("sent %v to pid %d after runner exit", sig, pid)
+			return nil
+		}
+		got, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine)
+		if err != nil || got.Status != "re-armed" || got.Stage != StageMinted || got.StoppedRunnerPid != old.Pid || got.RunnerPid <= 0 || got.RunnerPid == old.Pid {
+			t.Fatalf("replacement after marker exit: %+v %v", got, err)
+		}
+	})
+
 	t.Run("StopAttempted to Stopped then mint failure", func(t *testing.T) {
 		bed := newRearmBed(t, true)
 		original := identityWriter
@@ -1282,15 +1307,21 @@ func TestCommandTimeDriftSurvivesTheStewardLaunchChain(t *testing.T) {
 
 func TestSignalFailureNamesStopAttempted(t *testing.T) {
 	bed := newRearmBed(t, true)
+	// Withhold the marker so the runner stays alive for the failing TERM.
+	writeMarker := runnerStopWriter
+	defer func() { runnerStopWriter = writeMarker }()
+	runnerStopWriter = func(string, []byte, os.FileMode) error { return nil }
+
 	deps := bed.successDeps(t)
+	termErr := errors.New("injected termination failure")
 	deps.signal = func(pid int, signal syscall.Signal) error {
 		if signal == syscall.SIGTERM {
-			return errors.New("injected termination failure")
+			return termErr
 		}
 		return syscall.Kill(pid, signal)
 	}
 	outcome, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine)
-	if err == nil || outcome.Stage != StageStopAttempted || !strings.Contains(err.Error(), "stop runner pid") {
+	if !errors.Is(err, termErr) || outcome.Stage != StageStopAttempted || !strings.Contains(err.Error(), "stop runner pid") {
 		t.Fatalf("signal failure transition: %+v %v", outcome, err)
 	}
 }
